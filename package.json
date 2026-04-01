@@ -1,0 +1,11 @@
+{
+  "name": "ai-cofounder",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "python -m uvicorn app.main:app --reload --app-dir apps/api",
+    "test:web": "pnpm --filter web test",
+    "test:api": "pytest apps/api/tests -q"
+  }
+}

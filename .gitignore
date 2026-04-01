@@ -1,1 +1,12 @@
-.worktrees/
+node_modules
+.next
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.env
+.env.*
+dist
+coverage
+.DS_Store
+.superpowers
