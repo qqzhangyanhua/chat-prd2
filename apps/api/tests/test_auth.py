@@ -9,6 +9,53 @@ def test_register_returns_token(client):
     assert data["access_token"]
 
 
+def test_login_returns_token_for_existing_user(client):
+    client.post(
+        "/api/auth/register",
+        json={"email": "login-user@example.com", "password": "secret123"},
+    )
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "login-user@example.com", "password": "secret123"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user"]["email"] == "login-user@example.com"
+    assert data["access_token"]
+
+
+def test_login_rejects_invalid_password(client):
+    client.post(
+        "/api/auth/register",
+        json={"email": "login-fail@example.com", "password": "secret123"},
+    )
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "login-fail@example.com", "password": "wrongpass"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid email or password"}
+
+
+def test_login_rejects_short_invalid_password_with_401(client):
+    client.post(
+        "/api/auth/register",
+        json={"email": "short-login-fail@example.com", "password": "secret123"},
+    )
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "short-login-fail@example.com", "password": "short"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid email or password"}
+
+
 def test_me_requires_auth(client):
     response = client.get("/api/auth/me")
     assert response.status_code == 401

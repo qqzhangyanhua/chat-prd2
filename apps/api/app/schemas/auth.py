@@ -6,6 +6,11 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
