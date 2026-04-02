@@ -1,7 +1,15 @@
+"use client";
+
+import { useWorkspaceStore } from "../../store/workspace-store";
 import { PrdSectionCard } from "./prd-section-card";
 
 
+const sectionOrder = ["target_user", "problem", "solution", "mvp_scope"];
+
+
 export function PrdPanel() {
+  const sections = useWorkspaceStore((state) => state.prd.sections);
+
   return (
     <aside className="flex h-full flex-col rounded-[28px] border border-stone-200 bg-stone-50 p-5 shadow-sm">
       <div className="border-b border-stone-200 pb-4">
@@ -15,26 +23,17 @@ export function PrdPanel() {
       </div>
 
       <div className="mt-5 space-y-3">
-        <PrdSectionCard
-          description="已经聚焦到方向模糊、需要被追问和收敛的独立开发者。"
-          status="confirmed"
-          title="目标用户"
-        />
-        <PrdSectionCard
-          description="他们往往能描述很多想法，但说不清核心问题、用户和优先级。"
-          status="inferred"
-          title="核心问题"
-        />
-        <PrdSectionCard
-          description="通过结构化提问、挑战和选项推进，把模糊想法收敛成可执行 PRD。"
-          status="inferred"
-          title="解决方案"
-        />
-        <PrdSectionCard
-          description="还没有正式框定 MVP，只能先看出会围绕对话、决策与 PRD 面板。"
-          status="missing"
-          title="MVP 范围"
-        />
+        {sectionOrder
+          .map((key) => sections[key])
+          .filter(Boolean)
+          .map((section) => (
+            <PrdSectionCard
+              key={section.title}
+              description={section.content}
+              status={section.status}
+              title={section.title}
+            />
+          ))}
       </div>
     </aside>
   );

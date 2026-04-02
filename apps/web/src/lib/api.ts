@@ -37,3 +37,28 @@ export function login(email: string, password: string): Promise<AuthResponse> {
 export function register(email: string, password: string): Promise<AuthResponse> {
   return requestAuth("/api/auth/register", email, password);
 }
+
+
+export async function sendMessage(
+  sessionId: string,
+  content: string,
+  accessToken?: string | null,
+): Promise<ReadableStream<Uint8Array>> {
+  const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ content }),
+  });
+
+  if (!response.ok || !response.body) {
+    const errorPayload = (await response.json().catch(() => null)) as
+      | { detail?: string }
+      | null;
+    throw new Error(errorPayload?.detail ?? "消息发送失败");
+  }
+
+  return response.body;
+}

@@ -1,7 +1,29 @@
+import type { NextAction } from "../../lib/types";
 import { ActionOptions } from "./action-options";
 
 
-export function AssistantTurnCard() {
+interface AssistantTurnCardProps {
+  currentAction: NextAction | null;
+  latestAssistantMessage: string;
+}
+
+
+const defaultOptions = [
+  "继续追问早期创业者",
+  "收窄到独立开发者",
+  "直接定义第一个 MVP 人群",
+];
+
+
+export function AssistantTurnCard({
+  currentAction,
+  latestAssistantMessage,
+}: AssistantTurnCardProps) {
+  const nextQuestion =
+    currentAction?.target === "target_user"
+      ? "你最想先服务的是哪一类人: 第一次做产品的创业者，还是已经在做产品但方向模糊的独立开发者？"
+      : "你希望这一轮先推进用户画像、问题定义，还是 MVP 范围？";
+
   return (
     <article className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between gap-4 border-b border-stone-200 pb-4">
@@ -22,7 +44,8 @@ export function AssistantTurnCard() {
             理解
           </p>
           <p className="mt-3 text-sm leading-7 text-stone-700">
-            你现在想做的是一个能陪用户反复梳理产品方向的智能体，而不是一次性写完文档的 PRD 生成器。
+            {latestAssistantMessage ||
+              "先把目标用户讲清楚，再往下定义问题和 MVP。"}
           </p>
         </section>
 
@@ -31,7 +54,8 @@ export function AssistantTurnCard() {
             判断
           </p>
           <p className="mt-3 text-sm leading-7 text-stone-700">
-            如果目标用户仍然太宽，后面的功能、场景和 MVP 都会继续发散，所以这轮应该优先收窄用户画像。
+            {currentAction?.reason ??
+              "当前还需要继续追问，先避免把范围扩到过大的用户群。"}
           </p>
         </section>
 
@@ -48,16 +72,14 @@ export function AssistantTurnCard() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
             可选方案
           </p>
-          <ActionOptions />
+          <ActionOptions options={defaultOptions} />
         </section>
 
         <section className="rounded-2xl border border-stone-200 bg-stone-950 p-4 text-white">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-300">
             下一步问题
           </p>
-          <p className="mt-3 text-sm leading-7 text-stone-100">
-            你最想先服务的是哪一类人: 第一次做产品的创业者，还是已经在做产品但方向模糊的独立开发者？
-          </p>
+          <p className="mt-3 text-sm leading-7 text-stone-100">{nextQuestion}</p>
         </section>
       </div>
     </article>

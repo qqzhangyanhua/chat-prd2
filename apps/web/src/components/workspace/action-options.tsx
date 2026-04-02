@@ -1,11 +1,9 @@
-const options = [
-  "继续追问早期创业者",
-  "收窄到独立开发者",
-  "直接定义第一个 MVP 人群",
-];
+interface ActionOptionsProps {
+  options: string[];
+}
 
 
-export function ActionOptions() {
+export function ActionOptions({ options }: ActionOptionsProps) {
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       {options.map((option, index) => (
