@@ -21,7 +21,7 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.String(), primary_key=True),
-        sa.Column("email", sa.String(), nullable=False, unique=True),
+        sa.Column("email", sa.String(), nullable=False),
         sa.Column("password_hash", sa.String(), nullable=False),
     )
     op.create_index("ix_users_email", "users", ["email"], unique=True)
