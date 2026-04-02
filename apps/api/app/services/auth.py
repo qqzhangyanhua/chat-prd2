@@ -4,11 +4,10 @@ from sqlalchemy.orm import Session
 from app.core.security import create_access_token, decode_access_token, hash_password
 from app.db.models import User
 from app.repositories import auth as auth_repository
-from app.schemas.auth import RegisterRequest, UserResponse
 
 
-def register(db: Session, payload: RegisterRequest) -> UserResponse:
-    existing_user = auth_repository.get_user_by_email(db, payload.email)
+def register(db: Session, email: str, password: str) -> User:
+    existing_user = auth_repository.get_user_by_email(db, email)
     if existing_user is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -17,13 +16,13 @@ def register(db: Session, payload: RegisterRequest) -> UserResponse:
 
     user = auth_repository.create_user(
         db=db,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
+        email=email,
+        password_hash=hash_password(password),
     )
-    return UserResponse.model_validate(user)
+    return user
 
 
-def issue_token(user: UserResponse) -> str:
+def issue_token(user: User) -> str:
     return create_access_token(subject=user.id)
 
 

@@ -12,9 +12,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/register", response_model=AuthResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    user = auth_service.register(db, payload)
+    user = auth_service.register(db, payload.email, payload.password)
     token = auth_service.issue_token(user)
-    return AuthResponse(user=user, access_token=token)
+    return AuthResponse(user=UserResponse.model_validate(user), access_token=token)
 
 
 @router.get("/me", response_model=UserResponse)
