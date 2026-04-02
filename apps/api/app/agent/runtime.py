@@ -4,9 +4,7 @@ from app.agent.prompts import PROBE_TARGET_USER_REPLY, SUMMARIZE_UNDERSTANDING_R
 from app.agent.types import AgentResult, NextAction
 
 
-def decide_next_action(state: dict, user_input: str) -> NextAction:
-    del user_input
-
+def decide_next_action(state: dict, _user_input: str) -> NextAction:
     if not state.get("target_user"):
         return NextAction(
             action="probe_deeper",
