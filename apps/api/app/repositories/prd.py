@@ -18,6 +18,5 @@ def create_prd_snapshot(
         sections=sections,
     )
     db.add(prd_snapshot)
-    db.commit()
-    db.refresh(prd_snapshot)
+    db.flush()
     return prd_snapshot

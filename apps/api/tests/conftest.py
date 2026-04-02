@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -55,3 +55,25 @@ def auth_client(client: TestClient) -> TestClient:
     token = response.json()["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
     return client
+
+
+@pytest.fixture
+def db_session() -> Iterator[Session]:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        future=True,
+    )
+    testing_session_local = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+    )
+    Base.metadata.create_all(bind=engine)
+
+    db = testing_session_local()
+    try:
+        yield db
+    finally:
+        db.close()

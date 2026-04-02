@@ -18,6 +18,5 @@ def create_session(
         initial_idea=initial_idea,
     )
     db.add(session)
-    db.commit()
-    db.refresh(session)
+    db.flush()
     return session

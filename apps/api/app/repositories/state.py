@@ -18,6 +18,5 @@ def create_state_version(
         state_json=state_json,
     )
     db.add(state_version)
-    db.commit()
-    db.refresh(state_version)
+    db.flush()
     return state_version

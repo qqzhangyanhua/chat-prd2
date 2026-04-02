@@ -35,26 +35,31 @@ def create_session(
     user_id: str,
     payload: SessionCreateRequest,
 ) -> SessionCreateResponse:
-    session = sessions_repository.create_session(
-        db=db,
-        user_id=user_id,
-        title=payload.title,
-        initial_idea=payload.initial_idea,
-    )
+    try:
+        session = sessions_repository.create_session(
+            db=db,
+            user_id=user_id,
+            title=payload.title,
+            initial_idea=payload.initial_idea,
+        )
 
-    initial_state = build_initial_state(payload.initial_idea)
-    state_repository.create_state_version(
-        db=db,
-        session_id=session.id,
-        version=1,
-        state_json=initial_state,
-    )
-    prd_snapshot = prd_repository.create_prd_snapshot(
-        db=db,
-        session_id=session.id,
-        version=1,
-        sections=initial_state["prd_snapshot"]["sections"],
-    )
+        initial_state = build_initial_state(payload.initial_idea)
+        state_repository.create_state_version(
+            db=db,
+            session_id=session.id,
+            version=1,
+            state_json=initial_state,
+        )
+        prd_snapshot = prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=session.id,
+            version=1,
+            sections=initial_state["prd_snapshot"]["sections"],
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
