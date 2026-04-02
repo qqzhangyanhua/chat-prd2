@@ -18,7 +18,7 @@ from app.main import app
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def testing_session_local():
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -32,6 +32,11 @@ def client() -> Iterator[TestClient]:
     )
 
     Base.metadata.create_all(bind=engine)
+    return testing_session_local
+
+
+@pytest.fixture
+def client(testing_session_local) -> Iterator[TestClient]:
 
     def override_get_db():
         db = testing_session_local()
@@ -52,6 +57,7 @@ def auth_client(client: TestClient) -> TestClient:
         "/api/auth/register",
         json={"email": "session-user@example.com", "password": "secret123"},
     )
+    assert response.is_success
     token = response.json()["access_token"]
     client.headers.update({"Authorization": f"Bearer {token}"})
     return client
@@ -66,6 +72,7 @@ def seeded_session(auth_client: TestClient) -> str:
             "initial_idea": "我想做一个帮助创业者梳理产品想法的助手",
         },
     )
+    assert response.is_success
     return response.json()["session"]["id"]
 
 
