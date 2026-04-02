@@ -44,3 +44,14 @@ def client() -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_client(client: TestClient) -> TestClient:
+    response = client.post(
+        "/api/auth/register",
+        json={"email": "session-user@example.com", "password": "secret123"},
+    )
+    token = response.json()["access_token"]
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    return client
