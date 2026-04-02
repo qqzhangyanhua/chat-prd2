@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="AI Co-founder API")
+from .core.config import settings
+
+
+app = FastAPI(title=settings.app_name)
 
 
 @app.get("/api/health")
