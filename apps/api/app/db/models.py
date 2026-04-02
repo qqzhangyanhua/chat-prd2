@@ -45,3 +45,17 @@ class PrdSnapshot(Base):
     )
     version: Mapped[int] = mapped_column(Integer)
     sections: Mapped[dict] = mapped_column(JSON)
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("project_sessions.id"),
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text)
+    message_type: Mapped[str] = mapped_column(String, default="chat")
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)

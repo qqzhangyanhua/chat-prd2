@@ -58,6 +58,18 @@ def auth_client(client: TestClient) -> TestClient:
 
 
 @pytest.fixture
+def seeded_session(auth_client: TestClient) -> str:
+    response = auth_client.post(
+        "/api/sessions",
+        json={
+            "title": "AI Co-founder",
+            "initial_idea": "我想做一个帮助创业者梳理产品想法的助手",
+        },
+    )
+    return response.json()["session"]["id"]
+
+
+@pytest.fixture
 def db_session() -> Iterator[Session]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",

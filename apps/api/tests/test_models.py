@@ -94,3 +94,26 @@ def test_followup_migration_creates_state_and_prd_tables(monkeypatch) -> None:
     assert "prd_snapshots" in created_tables
     assert "ix_project_state_versions_session_id" in created_indexes
     assert "ix_prd_snapshots_session_id" in created_indexes
+
+
+def test_followup_migration_creates_conversation_messages_table(monkeypatch) -> None:
+    migration = _load_migration_module(
+        "0003_add_conversation_messages.py",
+        "alembic_0003_add_conversation_messages",
+    )
+    created_tables: list[str] = []
+    created_indexes: list[str] = []
+
+    def fake_create_table(name, *columns, **kwargs):
+        created_tables.append(name)
+
+    def fake_create_index(name, table_name, columns, unique=False, **kwargs):
+        created_indexes.append(name)
+
+    monkeypatch.setattr(migration.op, "create_table", fake_create_table)
+    monkeypatch.setattr(migration.op, "create_index", fake_create_index)
+
+    migration.upgrade()
+
+    assert "conversation_messages" in created_tables
+    assert "ix_conversation_messages_session_id" in created_indexes
