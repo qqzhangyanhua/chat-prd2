@@ -175,8 +175,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    const deleteButton = await screen.findByRole("button", { name: "删除会话" });
-    fireEvent.click(deleteButton);
+    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
 
     expect(deleteSessionMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
@@ -187,12 +186,23 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
 
     expect(window.confirm).toHaveBeenCalledWith("确认删除当前会话？此操作不可恢复。");
     await waitFor(() => {
       expect(deleteSessionMock).toHaveBeenCalledWith("session-1", null);
     });
     expect(pushMock).toHaveBeenCalledWith("/workspace");
+  });
+
+  it("shows delete error when request fails", async () => {
+    deleteSessionMock.mockRejectedValue(new Error("删除失败"));
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+
+    expect(await screen.findByText("删除失败")).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

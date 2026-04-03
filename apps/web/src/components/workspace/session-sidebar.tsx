@@ -50,6 +50,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +83,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   useEffect(() => {
     setTitleDraft(activeSession?.title ?? "");
     setRenameError(null);
+    setDeleteError(null);
   }, [activeSession]);
 
   async function handleExport() {
@@ -138,8 +140,13 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
       return;
     }
 
-    await deleteSession(sessionId, accessToken);
-    router.push("/workspace");
+    try {
+      setDeleteError(null);
+      await deleteSession(sessionId, accessToken);
+      router.push("/workspace");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "删除失败，请稍后再试");
+    }
   }
 
   return (
@@ -203,6 +210,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
         >
           删除会话
         </button>
+        {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
       </div>
 
       <div className="mt-6 space-y-3">
