@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createSession, listSessions } from "../../lib/api";
 import type { SessionResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
-
+import { WorkspaceToastViewport } from "./workspace-toast-viewport";
 
 export function WorkspaceEntry() {
   const router = useRouter();
@@ -67,14 +67,15 @@ export function WorkspaceEntry() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.16),_transparent_30%),linear-gradient(180deg,_#f7f3ea_0%,_#f5f5f4_100%)] px-4 py-6 md:px-6">
+      <WorkspaceToastViewport />
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,1.2fr)_380px]">
         <section className="rounded-[32px] border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
             AI Co-founder
           </p>
-          <h1 className="mt-3 text-3xl font-semibold text-stone-950">开始一个新会话</h1>
+          <h1 className="mt-3 text-3xl font-semibold text-stone-950">创建新会话</h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
-            输入一个想法，系统会持续追问、澄清和推动决策，并把过程沉淀成可执行的 PRD。
+            从一个模糊想法开始，进入工作台后由智能体持续追问、挑战和收敛。
           </p>
 
           <form className="mt-8 grid gap-5" onSubmit={handleSubmit}>
@@ -118,7 +119,7 @@ export function WorkspaceEntry() {
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
             Recent Sessions
           </p>
-          <h2 className="mt-3 text-2xl font-semibold text-stone-950">继续已有项目</h2>
+          <h2 className="mt-3 text-2xl font-semibold text-stone-950">最近活跃</h2>
           <div className="mt-6 grid gap-3">
             {sessions.length > 0 ? (
               sessions.map((session) => (
@@ -135,13 +136,13 @@ export function WorkspaceEntry() {
                     onClick={() => router.push(`/workspace/${session.id}`)}
                     type="button"
                   >
-                    进入已有项目
+                    进入会话
                   </button>
                 </article>
               ))
             ) : (
               <div className="rounded-3xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm leading-7 text-stone-600">
-                还没有会话。先创建一个项目，让智能体开始帮你收敛想法。
+                还没有可恢复的会话，先创建一个想法开始推进。
               </div>
             )}
           </div>

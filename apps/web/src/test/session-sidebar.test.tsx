@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionSidebar } from "../components/workspace/session-sidebar";
+import { useToastStore } from "../store/toast-store";
 
 const exportSessionMock = vi.fn();
 const getSessionMock = vi.fn();
@@ -35,13 +36,14 @@ describe("SessionSidebar", () => {
     deleteSessionMock.mockReset();
     updateSessionMock.mockReset();
     pushMock.mockReset();
+    useToastStore.getState().clearToast();
 
     listSessionsMock.mockResolvedValue({
       sessions: [
         {
           id: "session-1",
           user_id: "user-1",
-          title: "当前项目",
+          title: "产品调研",
           initial_idea: "idea",
           created_at: "2026-04-03T12:00:00Z",
           updated_at: "2026-04-03T12:30:00Z",
@@ -49,7 +51,7 @@ describe("SessionSidebar", () => {
         {
           id: "session-2",
           user_id: "user-1",
-          title: "另一个项目",
+          title: "定价策略",
           initial_idea: "another idea",
           created_at: "2026-04-03T10:00:00Z",
           updated_at: "2026-04-03T11:00:00Z",
@@ -60,6 +62,7 @@ describe("SessionSidebar", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    useToastStore.getState().clearToast();
   });
 
   it("calls export when clicking export prd", async () => {
@@ -87,7 +90,7 @@ describe("SessionSidebar", () => {
       },
       state: {
         idea: "idea",
-        stage_hint: "澄清问题",
+        stage_hint: "明确目标用户",
       },
       prd_snapshot: {
         sections: {},
@@ -106,7 +109,7 @@ describe("SessionSidebar", () => {
   it("loads sessions and switches to the selected session", async () => {
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByText("另一个项目"));
+    fireEvent.click(await screen.findByRole("button", { name: "打开会话 定价策略" }));
 
     expect(listSessionsMock).toHaveBeenCalledWith(null);
     expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
@@ -117,7 +120,7 @@ describe("SessionSidebar", () => {
       session: {
         id: "session-1",
         user_id: "user-1",
-        title: "改过的标题",
+        title: "竞品分析",
         initial_idea: "idea",
         created_at: "2026-04-03T12:00:00Z",
         updated_at: "2026-04-03T12:40:00Z",
@@ -127,20 +130,24 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.change(await screen.findByLabelText("会话标题"), {
-      target: { value: "改过的标题" },
+      target: { value: "竞品分析" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
-      expect(updateSessionMock).toHaveBeenCalledWith("session-1", { title: "改过的标题" }, null);
+      expect(updateSessionMock).toHaveBeenCalledWith(
+        "session-1",
+        { title: "竞品分析" },
+        null,
+      );
     });
   });
 
   it("shows recent activity as relative time", async () => {
     render(<SessionSidebar sessionId="session-1" />);
 
-    expect((await screen.findAllByText("最近活跃 15 分钟前")).length).toBeGreaterThan(0);
-    expect(screen.getByText("最近活跃 1 小时前")).toBeInTheDocument();
+    expect((await screen.findAllByText("15 分钟前")).length).toBeGreaterThan(0);
+    expect(screen.getByText("1 小时前")).toBeInTheDocument();
   });
 
   it("does not submit rename when title is empty after trimming", async () => {
@@ -163,7 +170,7 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.change(await screen.findByLabelText("会话标题"), {
-      target: { value: "新标题" },
+      target: { value: "访谈提纲" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
@@ -229,6 +236,31 @@ describe("SessionSidebar", () => {
     resolveDelete?.();
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/workspace");
+    });
+  });
+
+  it("shows deleting toast and disables the active session card while deleting", async () => {
+    let resolveDelete: (() => void) | null = null;
+    deleteSessionMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDelete = resolve;
+        }),
+    );
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("正在删除会话...");
+    });
+
+    expect(screen.getByRole("button", { name: "打开会话 产品调研" })).toBeDisabled();
+
+    resolveDelete?.();
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("会话已删除");
     });
   });
 });

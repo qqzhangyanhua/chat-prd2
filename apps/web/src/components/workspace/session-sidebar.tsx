@@ -12,6 +12,7 @@ import {
 } from "../../lib/api";
 import type { SessionResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
+import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 
 interface SessionSidebarProps {
@@ -21,32 +22,33 @@ interface SessionSidebarProps {
 function formatRecentActivity(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return "最近活跃时间未知";
+    return "时间未知";
   }
 
   const diffMs = Math.max(Date.now() - date.getTime(), 0);
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
 
   if (diffMinutes < 1) {
-    return "最近活跃 刚刚";
+    return "刚刚活跃";
   }
 
   if (diffMinutes < 60) {
-    return `最近活跃 ${diffMinutes} 分钟前`;
+    return `${diffMinutes} 分钟前`;
   }
 
   const diffHours = Math.floor(diffMinutes / 60);
   if (diffHours < 24) {
-    return `最近活跃 ${diffHours} 小时前`;
+    return `${diffHours} 小时前`;
   }
 
   const diffDays = Math.floor(diffHours / 24);
-  return `最近活跃 ${diffDays} 天前`;
+  return `${diffDays} 天前`;
 }
 
 export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const showToast = useToastStore((state) => state.showToast);
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -149,11 +151,27 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
     try {
       setDeleteError(null);
       setIsDeleting(true);
+      showToast({
+        id: `delete-session-${sessionId}`,
+        message: "正在删除会话...",
+        tone: "info",
+      });
       await deleteSession(sessionId, accessToken);
+      showToast({
+        id: `delete-session-${sessionId}`,
+        message: "会话已删除",
+        tone: "success",
+      });
       router.push("/workspace");
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "删除失败，请稍后再试");
+      const message = error instanceof Error ? error.message : "删除失败，请稍后再试";
+      setDeleteError(message);
       setIsDeleting(false);
+      showToast({
+        id: `delete-session-${sessionId}`,
+        message,
+        tone: "error",
+      });
     }
   }
 
@@ -163,9 +181,9 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">
           Project Board
         </p>
-        <h2 className="text-2xl font-semibold text-stone-950">会话工作台</h2>
+        <h2 className="text-2xl font-semibold text-stone-950">会话侧栏</h2>
         <p className="text-sm leading-6 text-stone-600">
-          这里展示当前用户的真实会话，你可以恢复当前状态、导出 PRD，或者切到其他项目继续推进。
+          在这里管理当前会话、切换历史讨论，并随时把上下文恢复到工作台。
         </p>
       </div>
 
@@ -223,22 +241,34 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
       </div>
 
       <div className="mt-6 space-y-3">
-        {sessions.map((session) => (
-          <button
-            key={session.id}
-            className={`block w-full rounded-2xl border px-4 py-4 text-left transition ${
-              session.id === sessionId
-                ? "border-stone-900 bg-white shadow-sm"
-                : "border-stone-200 bg-white/70"
-            }`}
-            onClick={() => router.push(`/workspace/${session.id}`)}
-            type="button"
-          >
-            <p className="text-sm font-semibold text-stone-900">{session.title}</p>
-            <p className="mt-2 text-xs leading-5 text-stone-500">{session.initial_idea}</p>
-            <p className="mt-2 text-xs text-stone-500">{formatRecentActivity(session.updated_at)}</p>
-          </button>
-        ))}
+        {sessions.map((session) => {
+          const isActive = session.id === sessionId;
+          const isDeletingCurrentSession = isActive && isDeleting;
+
+          return (
+            <button
+              key={session.id}
+              aria-label={`打开会话 ${session.title}`}
+              className={`block w-full rounded-2xl border px-4 py-4 text-left transition ${
+                isActive ? "border-stone-900 bg-white shadow-sm" : "border-stone-200 bg-white/70"
+              } ${
+                isDeletingCurrentSession ? "cursor-not-allowed opacity-60" : ""
+              }`}
+              disabled={isDeletingCurrentSession}
+              onClick={() => router.push(`/workspace/${session.id}`)}
+              type="button"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-stone-900">{session.title}</p>
+                {isDeletingCurrentSession ? (
+                  <span className="text-xs font-medium text-red-600">删除中...</span>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-stone-500">{session.initial_idea}</p>
+              <p className="mt-2 text-xs text-stone-500">{formatRecentActivity(session.updated_at)}</p>
+            </button>
+          );
+        })}
       </div>
 
       <div className="mt-auto rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-4">
@@ -249,7 +279,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           {activeSession?.title ?? sessionId}
         </p>
         <p className="mt-2 text-sm leading-6 text-stone-600">
-          {activeSession ? formatRecentActivity(activeSession.updated_at) : "最近活跃时间未知"}
+          {activeSession ? formatRecentActivity(activeSession.updated_at) : "时间未知"}
         </p>
       </div>
     </aside>

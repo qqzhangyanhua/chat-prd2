@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkspacePage from "../app/workspace/page";
 
-
 const listSessionsMock = vi.fn();
 const pushMock = vi.fn();
 
@@ -21,7 +20,6 @@ vi.mock("../lib/api", async () => {
   };
 });
 
-
 describe("WorkspacePage", () => {
   beforeEach(() => {
     listSessionsMock.mockReset();
@@ -32,7 +30,7 @@ describe("WorkspacePage", () => {
   it("renders the session entry surface", async () => {
     render(<WorkspacePage />);
 
-    expect(await screen.findByRole("heading", { name: "开始一个新会话" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "创建新会话" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建并进入工作台" })).toBeInTheDocument();
   });
 
@@ -42,13 +40,13 @@ describe("WorkspacePage", () => {
         {
           id: "session-1",
           user_id: "user-1",
-          title: "最近活跃项目",
+          title: "最近活跃会话",
           initial_idea: "most recent activity",
         },
         {
           id: "session-2",
           user_id: "user-1",
-          title: "旧项目",
+          title: "更早的会话",
           initial_idea: "older idea",
         },
       ],
@@ -56,7 +54,7 @@ describe("WorkspacePage", () => {
 
     render(<WorkspacePage />);
 
-    await screen.findByText("继续已有项目");
+    await screen.findByText("最近活跃");
     expect(pushMock).toHaveBeenCalledWith("/workspace/session-1");
   });
 });
