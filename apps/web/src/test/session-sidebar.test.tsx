@@ -132,4 +132,30 @@ describe("SessionSidebar", () => {
 
     expect(await screen.findByText(/最近活跃/)).toBeInTheDocument();
   });
+  it("does not submit rename when title is empty after trimming", async () => {
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.change(await screen.findByLabelText("会话标题"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
+
+    await waitFor(() => {
+      expect(updateSessionMock).not.toHaveBeenCalled();
+    });
+    expect(screen.getByText("会话标题不能为空")).toBeInTheDocument();
+  });
+
+  it("shows rename error when update request fails", async () => {
+    updateSessionMock.mockRejectedValue(new Error("é‡å‘½åå¤±è´¥"));
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.change(await screen.findByLabelText("会话标题"), {
+      target: { value: "æ–°æ ‡é¢˜" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
+
+    expect(await screen.findByText("é‡å‘½åå¤±è´¥")).toBeInTheDocument();
+  });
 });

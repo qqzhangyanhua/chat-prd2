@@ -175,3 +175,12 @@ def test_update_session_title_renames_owned_session(auth_client, seeded_session)
     data = response.json()
     assert data["session"]["id"] == seeded_session
     assert data["session"]["title"] == "Renamed Session"
+
+
+def test_update_session_title_rejects_blank_title(auth_client, seeded_session):
+    response = auth_client.patch(
+        f"/api/sessions/{seeded_session}",
+        json={"title": "   "},
+    )
+
+    assert response.status_code == 422

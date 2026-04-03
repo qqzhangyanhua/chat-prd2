@@ -34,6 +34,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const accessToken = useAuthStore((state) => state.accessToken);
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +66,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
   useEffect(() => {
     setTitleDraft(activeSession?.title ?? "");
+    setRenameError(null);
   }, [activeSession]);
 
   async function handleExport() {
@@ -92,12 +94,25 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   }
 
   async function handleRename() {
-    const snapshot = await updateSession(sessionId, { title: titleDraft }, accessToken);
-    setSessions((current) =>
-      current.map((session) =>
-        session.id === sessionId ? { ...session, ...snapshot.session } : session,
-      ),
-    );
+    const normalizedTitle = titleDraft.trim();
+
+    if (!normalizedTitle) {
+      setRenameError("会话标题不能为空");
+      return;
+    }
+
+    try {
+      setRenameError(null);
+      const snapshot = await updateSession(sessionId, { title: normalizedTitle }, accessToken);
+      setTitleDraft(snapshot.session.title);
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === sessionId ? { ...session, ...snapshot.session } : session,
+        ),
+      );
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : "重命名失败，请稍后再试");
+    }
   }
 
   return (
@@ -128,6 +143,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
         >
           保存标题
         </button>
+        {renameError ? <p className="mt-3 text-sm text-red-600">{renameError}</p> : null}
       </div>
 
       <button

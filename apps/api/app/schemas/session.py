@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from app.schemas.prd import PrdSnapshotResponse
 from app.schemas.state import StateSnapshot
@@ -9,8 +11,11 @@ class SessionCreateRequest(BaseModel):
     initial_idea: str
 
 
+NonEmptyTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class SessionUpdateRequest(BaseModel):
-    title: str
+    title: NonEmptyTitle
 
 
 class SessionResponse(BaseModel):
