@@ -131,6 +131,13 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   }
 
   async function handleDelete() {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("确认删除当前会话？此操作不可恢复。")
+    ) {
+      return;
+    }
+
     await deleteSession(sessionId, accessToken);
     router.push("/workspace");
   }

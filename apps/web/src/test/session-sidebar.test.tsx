@@ -27,6 +27,7 @@ vi.mock("../lib/api", () => ({
 describe("SessionSidebar", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-04-03T12:45:00Z").getTime());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     exportSessionMock.mockReset();
     getSessionMock.mockReset();
@@ -169,13 +170,26 @@ describe("SessionSidebar", () => {
     expect(await screen.findByText("重命名失败")).toBeInTheDocument();
   });
 
-  it("deletes the active session and returns to workspace entry", async () => {
+  it("does not delete the session when confirmation is cancelled", async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    const deleteButton = await screen.findByRole("button", { name: "删除会话" });
+    fireEvent.click(deleteButton);
+
+    expect(deleteSessionMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes the active session after confirmation and returns to workspace entry", async () => {
     deleteSessionMock.mockResolvedValue(undefined);
 
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
 
+    expect(window.confirm).toHaveBeenCalledWith("确认删除当前会话？此操作不可恢复。");
     await waitFor(() => {
       expect(deleteSessionMock).toHaveBeenCalledWith("session-1", null);
     });
