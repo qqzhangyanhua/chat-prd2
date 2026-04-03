@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import { sendMessage } from "../../lib/api";
 import { parseEventStream } from "../../lib/sse";
 import { useAuthStore } from "../../store/auth-store";
@@ -10,7 +12,14 @@ interface ComposerProps {
   sessionId: string;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
+
 export function Composer({ sessionId }: ComposerProps) {
+  const abortControllerRef = useRef<AbortController | null>(null);
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const errorMessage = useWorkspaceStore((state) => state.errorMessage);
@@ -20,16 +29,30 @@ export function Composer({ sessionId }: ComposerProps) {
   const resetError = useWorkspaceStore((state) => state.resetError);
   const setInputValue = useWorkspaceStore((state) => state.setInputValue);
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
+
   async function handleSend() {
     const content = inputValue.trim();
     if (!content || isStreaming) {
       return;
     }
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
     workspaceStore.getState().startRequest(content);
 
     try {
-      const stream = await sendMessage(sessionId, content, accessToken);
+      const stream = await sendMessage(
+        sessionId,
+        content,
+        accessToken,
+        abortController.signal,
+      );
       for await (const event of parseEventStream(stream)) {
         workspaceStore.getState().applyEvent(event);
       }
@@ -37,6 +60,12 @@ export function Composer({ sessionId }: ComposerProps) {
         workspaceStore.getState().setStreaming(false);
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        workspaceStore.getState().setStreaming(false);
+        workspaceStore.getState().resetError();
+        return;
+      }
+
       const message = error instanceof Error ? error.message : "消息发送失败";
       workspaceStore.getState().failRequest(message);
       showToast({
@@ -44,7 +73,15 @@ export function Composer({ sessionId }: ComposerProps) {
         message,
         tone: "error",
       });
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
+  }
+
+  function handleCancel() {
+    abortControllerRef.current?.abort();
   }
 
   const statusMessage =
@@ -81,11 +118,16 @@ export function Composer({ sessionId }: ComposerProps) {
         </div>
         <button
           className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-stone-400"
-          disabled={isStreaming}
-          onClick={() => void handleSend()}
+          onClick={() => {
+            if (isStreaming) {
+              handleCancel();
+              return;
+            }
+            void handleSend();
+          }}
           type="button"
         >
-          {isStreaming ? "发送中..." : "发送消息"}
+          {isStreaming ? "停止生成" : "发送消息"}
         </button>
       </div>
     </form>

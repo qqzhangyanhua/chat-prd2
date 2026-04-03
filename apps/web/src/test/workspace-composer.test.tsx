@@ -72,6 +72,57 @@ describe("Composer", () => {
     expect(await screen.findByText("正在生成回复...")).toBeInTheDocument();
   });
 
+  it("cancels the in-flight stream and restores the idle composer state", async () => {
+    let capturedSignal: AbortSignal | undefined;
+
+    vi.mocked(sendMessage).mockImplementation(async (_sessionId, _content, _token, signal) => {
+      capturedSignal = signal;
+      return new Promise<ReadableStream<Uint8Array>>((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    const stopButton = await screen.findByRole("button", { name: "停止生成" });
+    expect(stopButton).toBeInTheDocument();
+
+    fireEvent.click(stopButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送消息" })).not.toBeDisabled();
+    });
+
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(screen.getByText("优先用选择推进，必要时再补自由输入。")).toBeInTheDocument();
+  });
+
+  it("does not show an error toast when the user cancels generation", async () => {
+    vi.mocked(sendMessage).mockImplementation(async (_sessionId, _content, _token, signal) => {
+      return new Promise<ReadableStream<Uint8Array>>((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    fireEvent.click(await screen.findByRole("button", { name: "停止生成" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "发送消息" })).not.toBeDisabled();
+    });
+
+    expect(useToastStore.getState().toast).toBeNull();
+    expect(screen.queryByText("消息发送失败")).not.toBeInTheDocument();
+  });
+
   it("shows a global toast when sending a message fails", async () => {
     vi.mocked(sendMessage).mockRejectedValue(new Error("消息发送失败"));
 
