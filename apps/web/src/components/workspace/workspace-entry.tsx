@@ -24,6 +24,10 @@ export function WorkspaceEntry() {
       try {
         const response = await listSessions(accessToken);
         if (!cancelled) {
+          if (response.sessions.length > 0) {
+            router.push(`/workspace/${response.sessions[0].id}`);
+            return;
+          }
           setSessions(response.sessions);
         }
       } catch (error) {
@@ -38,7 +42,7 @@ export function WorkspaceEntry() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

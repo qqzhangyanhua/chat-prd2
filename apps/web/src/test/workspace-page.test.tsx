@@ -36,21 +36,27 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("button", { name: "创建并进入工作台" })).toBeInTheDocument();
   });
 
-  it("shows existing sessions from api", async () => {
+  it("redirects to the latest existing session", async () => {
     listSessionsMock.mockResolvedValue({
       sessions: [
         {
+          id: "session-2",
+          user_id: "user-1",
+          title: "最近项目",
+          initial_idea: "latest idea",
+        },
+        {
           id: "session-1",
           user_id: "user-1",
-          title: "已有项目",
-          initial_idea: "idea",
+          title: "旧项目",
+          initial_idea: "older idea",
         },
       ],
     });
 
     render(<WorkspacePage />);
 
-    expect(await screen.findByRole("button", { name: "进入已有项目" })).toBeInTheDocument();
-    expect(screen.getByText("已有项目")).toBeInTheDocument();
+    await screen.findByText("继续已有项目");
+    expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
   });
 });

@@ -80,8 +80,10 @@ describe("WorkspaceEntry", () => {
 
     render(<WorkspaceEntry />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "进入已有项目" }));
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
+    });
 
-    expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
+    expect(screen.queryByText("已有项目")).not.toBeInTheDocument();
   });
 });

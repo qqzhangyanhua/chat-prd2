@@ -107,3 +107,26 @@ def test_list_sessions_returns_only_current_user_sessions(client):
     data = response.json()
     assert len(data["sessions"]) == 1
     assert data["sessions"][0]["title"] == "First Session"
+
+
+def test_list_sessions_returns_latest_session_first(auth_client):
+    first_response = auth_client.post(
+        "/api/sessions",
+        json={"title": "Old Session", "initial_idea": "idea one"},
+    )
+    assert first_response.status_code == 200
+
+    second_response = auth_client.post(
+        "/api/sessions",
+        json={"title": "New Session", "initial_idea": "idea two"},
+    )
+    assert second_response.status_code == 200
+
+    response = auth_client.get("/api/sessions")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [session["title"] for session in data["sessions"]] == [
+        "New Session",
+        "Old Session",
+    ]

@@ -32,5 +32,9 @@ def get_session_for_user(db: Session, session_id: str, user_id: str) -> ProjectS
 
 
 def list_sessions_for_user(db: Session, user_id: str) -> list[ProjectSession]:
-    statement = select(ProjectSession).where(ProjectSession.user_id == user_id)
+    statement = (
+        select(ProjectSession)
+        .where(ProjectSession.user_id == user_id)
+        .order_by(ProjectSession.created_at.desc())
+    )
     return list(db.execute(statement).scalars().all())

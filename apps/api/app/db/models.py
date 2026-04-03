@@ -1,4 +1,6 @@
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from datetime import datetime, timezone
+
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -21,6 +23,10 @@ class ProjectSession(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String)
     initial_idea: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
 
 
 class ProjectStateVersion(Base):
