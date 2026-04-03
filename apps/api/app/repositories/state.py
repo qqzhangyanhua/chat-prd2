@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models import ProjectStateVersion
@@ -31,3 +31,9 @@ def get_latest_state_version(db: Session, session_id: str) -> ProjectStateVersio
         .limit(1)
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def delete_state_versions(db: Session, session_id: str) -> None:
+    db.execute(
+        delete(ProjectStateVersion).where(ProjectStateVersion.session_id == session_id),
+    )

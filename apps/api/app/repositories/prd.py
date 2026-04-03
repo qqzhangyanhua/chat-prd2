@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models import PrdSnapshot
@@ -31,3 +31,9 @@ def get_latest_prd_snapshot(db: Session, session_id: str) -> PrdSnapshot | None:
         .limit(1)
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def delete_prd_snapshots(db: Session, session_id: str) -> None:
+    db.execute(
+        delete(PrdSnapshot).where(PrdSnapshot.session_id == session_id),
+    )

@@ -63,6 +63,18 @@ async function requestJson<T>(
 }
 
 
+async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
+
+  if (!response.ok) {
+    const errorPayload = (await response.json().catch(() => null)) as
+      | { detail?: string }
+      | null;
+    throw new Error(errorPayload?.detail ?? "请求失败");
+  }
+}
+
+
 export async function sendMessage(
   sessionId: string,
   content: string,
@@ -119,6 +131,19 @@ export function listSessions(
   accessToken?: string | null,
 ): Promise<SessionListResponse> {
   return requestJson<SessionListResponse>("/api/sessions", {
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+}
+
+
+export function deleteSession(
+  sessionId: string,
+  accessToken?: string | null,
+): Promise<void> {
+  return requestVoid(`/api/sessions/${sessionId}`, {
+    method: "DELETE",
     headers: {
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },

@@ -184,3 +184,14 @@ def test_update_session_title_rejects_blank_title(auth_client, seeded_session):
     )
 
     assert response.status_code == 422
+
+
+def test_delete_session_removes_owned_session(auth_client, seeded_session):
+    response = auth_client.delete(f"/api/sessions/{seeded_session}")
+
+    assert response.status_code == 204
+
+    sessions_response = auth_client.get("/api/sessions")
+    assert sessions_response.status_code == 200
+    data = sessions_response.json()
+    assert [session["id"] for session in data["sessions"]] == []

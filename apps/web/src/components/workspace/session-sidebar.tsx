@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { exportSession, getSession, listSessions, updateSession } from "../../lib/api";
+import {
+  deleteSession,
+  exportSession,
+  getSession,
+  listSessions,
+  updateSession,
+} from "../../lib/api";
 import type { SessionResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { workspaceStore } from "../../store/workspace-store";
@@ -124,6 +130,11 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
     }
   }
 
+  async function handleDelete() {
+    await deleteSession(sessionId, accessToken);
+    router.push("/workspace");
+  }
+
   return (
     <aside className="flex h-full flex-col rounded-[28px] border border-stone-200 bg-stone-50 p-5 shadow-sm">
       <div className="space-y-1 border-b border-stone-200 pb-4">
@@ -177,6 +188,13 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           type="button"
         >
           导出 PRD
+        </button>
+        <button
+          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+          onClick={() => void handleDelete()}
+          type="button"
+        >
+          删除会话
         </button>
       </div>
 

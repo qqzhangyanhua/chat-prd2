@@ -6,6 +6,7 @@ import { SessionSidebar } from "../components/workspace/session-sidebar";
 const exportSessionMock = vi.fn();
 const getSessionMock = vi.fn();
 const listSessionsMock = vi.fn();
+const deleteSessionMock = vi.fn();
 const updateSessionMock = vi.fn();
 const pushMock = vi.fn();
 
@@ -19,6 +20,7 @@ vi.mock("../lib/api", () => ({
   exportSession: (...args: unknown[]) => exportSessionMock(...args),
   getSession: (...args: unknown[]) => getSessionMock(...args),
   listSessions: (...args: unknown[]) => listSessionsMock(...args),
+  deleteSession: (...args: unknown[]) => deleteSessionMock(...args),
   updateSession: (...args: unknown[]) => updateSessionMock(...args),
 }));
 
@@ -29,6 +31,7 @@ describe("SessionSidebar", () => {
     exportSessionMock.mockReset();
     getSessionMock.mockReset();
     listSessionsMock.mockReset();
+    deleteSessionMock.mockReset();
     updateSessionMock.mockReset();
     pushMock.mockReset();
 
@@ -164,5 +167,18 @@ describe("SessionSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     expect(await screen.findByText("重命名失败")).toBeInTheDocument();
+  });
+
+  it("deletes the active session and returns to workspace entry", async () => {
+    deleteSessionMock.mockResolvedValue(undefined);
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+
+    await waitFor(() => {
+      expect(deleteSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+    expect(pushMock).toHaveBeenCalledWith("/workspace");
   });
 });

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
@@ -49,3 +49,13 @@ def update_session(
     db: Session = Depends(get_db),
 ) -> SessionCreateResponse:
     return session_service.update_session(db, session_id, current_user.id, payload)
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    session_service.delete_session(db, session_id, current_user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
