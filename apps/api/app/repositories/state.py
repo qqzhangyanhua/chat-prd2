@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ProjectStateVersion
@@ -20,3 +21,13 @@ def create_state_version(
     db.add(state_version)
     db.flush()
     return state_version
+
+
+def get_latest_state_version(db: Session, session_id: str) -> ProjectStateVersion | None:
+    statement = (
+        select(ProjectStateVersion)
+        .where(ProjectStateVersion.session_id == session_id)
+        .order_by(ProjectStateVersion.version.desc())
+        .limit(1)
+    )
+    return db.execute(statement).scalar_one_or_none()

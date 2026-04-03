@@ -45,3 +45,25 @@ def test_create_session_rolls_back_all_writes_when_prd_creation_fails(
     assert db_session.execute(select(ProjectSession)).scalars().all() == []
     assert db_session.execute(select(ProjectStateVersion)).scalars().all() == []
     assert db_session.execute(select(PrdSnapshot)).scalars().all() == []
+
+
+def test_export_returns_markdown(auth_client, seeded_session):
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/export",
+        json={"format": "md"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["file_name"] == "ai-cofounder-prd.md"
+    assert data["content"].startswith("# PRD")
+
+
+def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
+    response = auth_client.get(f"/api/sessions/{seeded_session}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session"]["id"] == seeded_session
+    assert data["state"]["idea"]
+    assert "sections" in data["prd_snapshot"]

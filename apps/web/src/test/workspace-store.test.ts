@@ -48,6 +48,47 @@ describe("workspace store", () => {
     );
     expect(store.getState().messages.at(-1)?.role).toBe("assistant");
   });
+
+  it("hydrates a recovered session as a consistent fresh snapshot", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("旧输入");
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        delta: "旧回答",
+      },
+    });
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "新 idea",
+      },
+      state: {
+        idea: "新 idea",
+        stage_hint: "验证需求",
+      },
+      prd_snapshot: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            content: "新的目标用户",
+            status: "confirmed",
+          },
+        },
+      },
+    });
+
+    expect(store.getState().inputValue).toBe("新 idea");
+    expect(store.getState().messages).toEqual([]);
+    expect(store.getState().currentAction).toBeNull();
+    expect(store.getState().isStreaming).toBe(false);
+    expect(store.getState().pendingUserInput).toBeNull();
+    expect(store.getState().prd.sections.target_user?.content).toBe("新的目标用户");
+  });
 });
 
 

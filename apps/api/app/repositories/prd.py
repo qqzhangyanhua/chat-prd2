@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import PrdSnapshot
@@ -20,3 +21,13 @@ def create_prd_snapshot(
     db.add(prd_snapshot)
     db.flush()
     return prd_snapshot
+
+
+def get_latest_prd_snapshot(db: Session, session_id: str) -> PrdSnapshot | None:
+    statement = (
+        select(PrdSnapshot)
+        .where(PrdSnapshot.session_id == session_id)
+        .order_by(PrdSnapshot.version.desc())
+        .limit(1)
+    )
+    return db.execute(statement).scalar_one_or_none()

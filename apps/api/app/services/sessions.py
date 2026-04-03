@@ -1,3 +1,4 @@
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.repositories import prd as prd_repository
@@ -64,5 +65,26 @@ def create_session(
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(initial_state),
+        prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+    )
+
+
+def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionCreateResponse:
+    session = sessions_repository.get_session_for_user(db, session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    state_version = state_repository.get_latest_state_version(db, session_id)
+    prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
+
+    if state_version is None or prd_snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session snapshot not found",
+        )
+
+    return SessionCreateResponse(
+        session=SessionResponse.model_validate(session),
+        state=StateSnapshot.model_validate(state_version.state_json),
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
     )

@@ -1,7 +1,13 @@
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 
-import type { NextAction, PrdState, WorkspaceEvent, WorkspaceMessage } from "../lib/types";
+import type {
+  NextAction,
+  PrdState,
+  SessionSnapshotResponse,
+  WorkspaceEvent,
+  WorkspaceMessage,
+} from "../lib/types";
 
 
 interface WorkspaceState {
@@ -18,6 +24,7 @@ interface WorkspaceState {
   setStreaming: (value: boolean) => void;
   startRequest: (content: string) => void;
   failRequest: (message: string) => void;
+  hydrateSession: (snapshot: SessionSnapshotResponse) => void;
 }
 
 
@@ -45,6 +52,28 @@ const initialPrdSections: PrdState["sections"] = {
 };
 
 
+function normalizePrdSections(
+  sections: SessionSnapshotResponse["prd_snapshot"]["sections"],
+): PrdState["sections"] {
+  const normalizedEntries = Object.entries(sections)
+    .map(([key, value]) => {
+      const content = typeof value.content === "string" ? value.content : "";
+      const title =
+        typeof value.title === "string" && value.title ? value.title : key;
+      const status =
+        value.status === "confirmed" ||
+        value.status === "inferred" ||
+        value.status === "missing"
+          ? value.status
+          : "missing";
+
+      return [key, { content, title, status }] as const;
+    });
+
+  return Object.fromEntries(normalizedEntries);
+}
+
+
 function createInitialState(): Omit<
   WorkspaceState,
   | "applyEvent"
@@ -53,6 +82,7 @@ function createInitialState(): Omit<
   | "setInputValue"
   | "setStreaming"
   | "startRequest"
+  | "hydrateSession"
 > {
   return {
     currentAction: {
@@ -171,6 +201,23 @@ export function createWorkspaceStore() {
         errorMessage: message,
         isStreaming: false,
         pendingUserInput: null,
+      })),
+    hydrateSession: (snapshot) =>
+      set((state) => ({
+        ...state,
+        currentAction: null,
+        errorMessage: null,
+        inputValue:
+          typeof snapshot.state.idea === "string" ? snapshot.state.idea : state.inputValue,
+        isStreaming: false,
+        messages: [],
+        pendingUserInput: null,
+        prd: {
+          sections:
+            Object.keys(snapshot.prd_snapshot.sections).length > 0
+              ? normalizePrdSections(snapshot.prd_snapshot.sections)
+              : state.prd.sections,
+        },
       })),
     resetError: () =>
       set((state) => ({

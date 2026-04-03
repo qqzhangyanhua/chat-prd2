@@ -1,9 +1,47 @@
-export function SessionSidebar() {
+"use client";
+
+import { getSession, exportSession } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
+import { workspaceStore } from "../../store/workspace-store";
+
+
+interface SessionSidebarProps {
+  sessionId: string;
+}
+
+
+export function SessionSidebar({ sessionId }: SessionSidebarProps) {
+  const accessToken = useAuthStore((state) => state.accessToken);
+
   const sessions = [
     { title: "AI 产品陪跑助手", stage: "理解问题", active: true },
     { title: "独立开发者 PRD 生成器", stage: "定义 MVP", active: false },
     { title: "出海工具导航", stage: "验证需求", active: false },
   ];
+
+  async function handleExport() {
+    const exported = await exportSession(sessionId, accessToken);
+    if (
+      typeof document === "undefined" ||
+      typeof URL.createObjectURL !== "function" ||
+      typeof URL.revokeObjectURL !== "function"
+    ) {
+      return;
+    }
+
+    const blob = new Blob([exported.content], { type: "text/markdown;charset=utf-8" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = exported.file_name;
+    link.click();
+    URL.revokeObjectURL(downloadUrl);
+  }
+
+  async function handleRecover() {
+    const snapshot = await getSession(sessionId, accessToken);
+    workspaceStore.getState().hydrateSession(snapshot);
+  }
 
   return (
     <aside className="flex h-full flex-col rounded-[28px] border border-stone-200 bg-stone-50 p-5 shadow-sm">
@@ -23,6 +61,23 @@ export function SessionSidebar() {
       >
         新建项目
       </button>
+
+      <div className="mt-3 grid gap-3">
+        <button
+          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900"
+          onClick={() => void handleRecover()}
+          type="button"
+        >
+          恢复会话
+        </button>
+        <button
+          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900"
+          onClick={() => void handleExport()}
+          type="button"
+        >
+          导出 PRD
+        </button>
+      </div>
 
       <div className="mt-6 space-y-3">
         {sessions.map((session) => (

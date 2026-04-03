@@ -10,6 +10,32 @@ export interface AuthResponse {
   access_token: string;
 }
 
+export interface SessionResponse {
+  id: string;
+  user_id: string;
+  title: string;
+  initial_idea: string;
+}
+
+export interface StateSnapshotResponse {
+  [key: string]: unknown;
+  idea?: string;
+  stage_hint?: string;
+}
+
+export interface SessionSnapshotResponse {
+  session: SessionResponse;
+  state: StateSnapshotResponse;
+  prd_snapshot: {
+    sections: Record<string, Record<string, unknown>>;
+  };
+}
+
+export interface ExportResponse {
+  file_name: string;
+  content: string;
+}
+
 export interface NextAction {
   action: string;
   reason: string;
