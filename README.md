@@ -1,83 +1,110 @@
 # AI Co-founder V1
 
-AI Co-founder 是一个通过持续对话引导用户挖掘想法、收敛关键决策，并实时沉淀 PRD 的智能体工作台。
+AI Co-founder 是一个通过持续对话帮助用户挖掘想法、收敛方向，并逐步沉淀为 PRD 的产品工作台。
 
-当前仓库为 monorepo：
+当前仓库是一个 monorepo，主要包含：
 
 - `apps/web`：Next.js 15 + React 19 前端
-- `apps/api`：FastAPI 后端与智能体运行时
-- `docs/superpowers/specs`：产品与技术设计文档
-- `docs/superpowers/plans`：实现计划与任务拆解
+- `apps/api`：FastAPI 后端
+- `docs/startup.md`：本地启动文档
+- `docs/superpowers/specs`：设计文档
+- `docs/superpowers/plans`：实现计划
 
-## 当前已实现
+## 快速启动
 
-- 账号注册、登录、`/me` 鉴权接口
-- 用户绑定的项目会话创建与读取
-- 智能体消息流式返回（SSE）
-- 工作台三栏布局：会话侧栏、对话区、PRD 面板
-- 登录态 token 持久化与基础用户信息缓存
-- 会话恢复到当前工作台状态
-- PRD Markdown 导出
+如果你只是想尽快把项目跑起来，先看：
 
-## 产品边界
+- [启动文档](D:/AI/chat-prd/docs/startup.md)
 
-当前 V1 的核心不是固定工作流，而是一个状态驱动的智能体：
+如果你已经创建好 `.venv` 并装好依赖，可以直接用一键脚本：
 
-- AI 会根据当前状态持续追问和引导用户补充想法
-- 如果用户的想法还没有被充分挖掘，系统会继续跟进而不是机械跳步骤
-- 对话过程中会持续更新结构化状态和 PRD 草稿
-
-## 本地启动
-
-### 1. 安装依赖
-
-```bash
-pnpm install
-pip install -e "apps/api[dev]"
+```powershell
+Set-Location D:\AI\chat-prd
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 ```
 
-### 2. 启动数据库
+如果这次不想跑数据库迁移：
 
-```bash
-docker compose up -d
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -SkipMigrate
 ```
 
-默认会启动本地 Postgres：
+## 环境变量
 
-- 数据库：`ai_cofounder`
-- 用户名：`postgres`
-- 密码：`postgres`
+当前项目主要使用两份环境变量文件：
 
-### 3. 启动前后端
+- [`.env`](D:/AI/chat-prd/.env)
+- [`apps/web/.env.local`](D:/AI/chat-prd/apps/web/.env.local)
 
-前端：
+当前最关键的变量有：
 
-```bash
-pnpm dev:web
+```env
+DATABASE_URL=postgresql+psycopg://aimovie:xtCGcStxwnJS3T6R@111.228.37.74:5432/aimovie
+AUTH_SECRET_KEY=ai-cofounder-local-dev-secret-change-me
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-后端：
+说明：
 
-```bash
-python -m uvicorn app.main:app --reload --app-dir apps/api
-```
+- 后端现在会从根目录 `.env` 读取 `DATABASE_URL`
+- 前端会从 `apps/web/.env.local` 读取 `NEXT_PUBLIC_API_BASE_URL`
 
 ## 常用命令
 
-```bash
+### 前端开发
+
+```powershell
+pnpm dev:web
+```
+
+### 后端开发
+
+```powershell
+python -m uvicorn app.main:app --reload --app-dir apps/api
+```
+
+### 前端测试
+
+```powershell
 pnpm --filter web test
+```
+
+### 前端构建
+
+```powershell
 pnpm --filter web build
+```
+
+### 后端测试
+
+```powershell
 python -m pytest apps/api/tests -q
 ```
 
-## 当前默认行为说明
+### 数据库迁移
 
-- 工作台默认使用 `NEXT_PUBLIC_DEFAULT_SESSION_ID`，未设置时回退为 `demo-session`
-- 前端使用 Zustand 持久化 token 和基础用户信息
-- 会话恢复与导出入口位于左侧 `SessionSidebar`
+```powershell
+Set-Location .\apps\api
+alembic upgrade head
+Set-Location ..\..
+```
 
-## 后续建议
+## 当前能力
 
-- 补齐数据库迁移执行与初始化说明
-- 将默认单会话切换为真实用户多会话列表
-- 继续增强智能体的状态推进、追问策略和 PRD 结构化填充
+V1 当前已经包含这些核心能力：
+
+- 用户注册 / 登录
+- token 持久化
+- 会话创建、切换、重命名、删除
+- 工作台消息流式返回
+- 停止生成 / 重新生成
+- PRD 面板实时更新
+- 全局 toast 反馈
+
+## 建议阅读顺序
+
+如果你是第一次接手这个项目，建议按这个顺序看：
+
+1. [启动文档](D:/AI/chat-prd/docs/startup.md)
+2. [设计文档](D:/AI/chat-prd/docs/superpowers/specs/2026-04-01-ai-cofounder-v1-design.md)
+3. [实现计划](D:/AI/chat-prd/docs/superpowers/plans/2026-04-01-ai-cofounder-v1-implementation.md)
