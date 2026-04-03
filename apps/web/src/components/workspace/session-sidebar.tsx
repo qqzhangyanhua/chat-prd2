@@ -51,6 +51,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const [titleDraft, setTitleDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +85,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
     setTitleDraft(activeSession?.title ?? "");
     setRenameError(null);
     setDeleteError(null);
+    setIsDeleting(false);
   }, [activeSession]);
 
   async function handleExport() {
@@ -133,6 +135,10 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   }
 
   async function handleDelete() {
+    if (isDeleting) {
+      return;
+    }
+
     if (
       typeof window !== "undefined" &&
       !window.confirm("确认删除当前会话？此操作不可恢复。")
@@ -142,10 +148,12 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
     try {
       setDeleteError(null);
+      setIsDeleting(true);
       await deleteSession(sessionId, accessToken);
       router.push("/workspace");
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "删除失败，请稍后再试");
+      setIsDeleting(false);
     }
   }
 
@@ -204,11 +212,12 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           导出 PRD
         </button>
         <button
-          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isDeleting}
           onClick={() => void handleDelete()}
           type="button"
         >
-          删除会话
+          {isDeleting ? "删除中..." : "删除会话"}
         </button>
         {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
       </div>

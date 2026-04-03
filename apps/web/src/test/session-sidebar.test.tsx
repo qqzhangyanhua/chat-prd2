@@ -205,4 +205,30 @@ describe("SessionSidebar", () => {
     expect(await screen.findByText("删除失败")).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
   });
+
+  it("disables delete button and shows loading while deleting", async () => {
+    let resolveDelete: (() => void) | null = null;
+    deleteSessionMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDelete = resolve;
+        }),
+    );
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+
+    const deletingButton = await screen.findByRole("button", { name: "删除中..." });
+    expect(deletingButton).toBeDisabled();
+    expect(deleteSessionMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(deletingButton);
+    expect(deleteSessionMock).toHaveBeenCalledTimes(1);
+
+    resolveDelete?.();
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/workspace");
+    });
+  });
 });
