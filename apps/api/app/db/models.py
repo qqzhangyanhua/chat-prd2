@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -14,6 +16,10 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
+
+    sessions: Mapped[list[ProjectSession]] = relationship(
+        back_populates="user", cascade="all, delete-orphan",
+    )
 
 
 class ProjectSession(Base):
@@ -32,6 +38,17 @@ class ProjectSession(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+    user: Mapped[User] = relationship(back_populates="sessions")
+    state_versions: Mapped[list[ProjectStateVersion]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+    )
+    prd_snapshots: Mapped[list[PrdSnapshot]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+    )
+    messages: Mapped[list[ConversationMessage]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+    )
+
 
 class ProjectStateVersion(Base):
     __tablename__ = "project_state_versions"
@@ -44,6 +61,8 @@ class ProjectStateVersion(Base):
     version: Mapped[int] = mapped_column(Integer)
     state_json: Mapped[dict] = mapped_column(JSON)
 
+    session: Mapped[ProjectSession] = relationship(back_populates="state_versions")
+
 
 class PrdSnapshot(Base):
     __tablename__ = "prd_snapshots"
@@ -55,6 +74,8 @@ class PrdSnapshot(Base):
     )
     version: Mapped[int] = mapped_column(Integer)
     sections: Mapped[dict] = mapped_column(JSON)
+
+    session: Mapped[ProjectSession] = relationship(back_populates="prd_snapshots")
 
 
 class ConversationMessage(Base):
@@ -69,3 +90,9 @@ class ConversationMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     message_type: Mapped[str] = mapped_column(String, default="chat")
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    session: Mapped[ProjectSession] = relationship(back_populates="messages")

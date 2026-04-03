@@ -6,6 +6,17 @@ from sqlalchemy.orm import Session
 from app.db.models import ProjectStateVersion
 
 
+def get_latest_state(db: Session, session_id: str) -> dict:
+    statement = (
+        select(ProjectStateVersion.state_json)
+        .where(ProjectStateVersion.session_id == session_id)
+        .order_by(ProjectStateVersion.version.desc())
+        .limit(1)
+    )
+    state = db.execute(statement).scalar_one_or_none()
+    return state or {}
+
+
 def create_state_version(
     db: Session,
     session_id: str,

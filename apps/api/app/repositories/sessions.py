@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ProjectSession
@@ -55,7 +55,3 @@ def update_session_title(db: Session, session: ProjectSession, title: str) -> Pr
     db.add(session)
     db.flush()
     return session
-
-
-def delete_session(db: Session, session: ProjectSession) -> None:
-    db.execute(delete(ProjectSession).where(ProjectSession.id == session.id))

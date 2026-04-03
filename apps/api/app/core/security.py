@@ -1,5 +1,6 @@
 import os
 import secrets
+import warnings
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -11,7 +12,13 @@ from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = settings.auth_secret_key or os.getenv("AUTH_SECRET_KEY") or secrets.token_urlsafe(32)
+_explicit_key = settings.auth_secret_key or os.getenv("AUTH_SECRET_KEY")
+if not _explicit_key:
+    warnings.warn(
+        "AUTH_SECRET_KEY not set; using random key — tokens will not survive restarts",
+        stacklevel=1,
+    )
+SECRET_KEY = _explicit_key or secrets.token_urlsafe(32)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

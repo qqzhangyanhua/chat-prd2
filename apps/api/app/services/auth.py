@@ -19,11 +19,17 @@ def register(db: Session, email: str, password: str) -> User:
             detail="Email already registered",
         )
 
-    user = auth_repository.create_user(
-        db=db,
-        email=email,
-        password_hash=hash_password(password),
-    )
+    try:
+        user = auth_repository.create_user(
+            db=db,
+            email=email,
+            password_hash=hash_password(password),
+        )
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        raise
     return user
 
 

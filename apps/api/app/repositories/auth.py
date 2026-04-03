@@ -19,6 +19,5 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
 def create_user(db: Session, email: str, password_hash: str) -> User:
     user = User(id=str(uuid4()), email=email, password_hash=password_hash)
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    db.flush()
     return user

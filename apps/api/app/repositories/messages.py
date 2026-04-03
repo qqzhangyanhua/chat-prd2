@@ -1,36 +1,9 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ConversationMessage, ProjectSession, ProjectStateVersion
-
-
-def get_session_for_user(
-    db: Session,
-    session_id: str,
-    user_id: str,
-) -> ProjectSession | None:
-    statement = select(ProjectSession).where(
-        ProjectSession.id == session_id,
-        ProjectSession.user_id == user_id,
-    )
-    return db.execute(statement).scalar_one_or_none()
-
-
-def get_latest_state(
-    db: Session,
-    session_id: str,
-) -> dict:
-    statement = (
-        select(ProjectStateVersion.state_json)
-        .where(ProjectStateVersion.session_id == session_id)
-        .order_by(ProjectStateVersion.version.desc())
-        .limit(1)
-    )
-    state = db.execute(statement).scalar_one_or_none()
-    return state or {}
+from app.db.models import ConversationMessage, ProjectSession
 
 
 def create_message(

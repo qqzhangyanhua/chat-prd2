@@ -1,7 +1,6 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.repositories import messages_cleanup as messages_cleanup_repository
 from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
@@ -152,10 +151,7 @@ def delete_session(db: Session, session_id: str, user_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     try:
-        messages_cleanup_repository.delete_messages(db, session_id)
-        state_repository.delete_state_versions(db, session_id)
-        prd_repository.delete_prd_snapshots(db, session_id)
-        sessions_repository.delete_session(db, session)
+        db.delete(session)
         db.commit()
     except Exception:
         db.rollback()
