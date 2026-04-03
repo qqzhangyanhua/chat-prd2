@@ -1,18 +1,18 @@
 "use client";
 
-import { useAuthStore } from "../../store/auth-store";
-import { parseEventStream } from "../../lib/sse";
 import { sendMessage } from "../../lib/api";
+import { parseEventStream } from "../../lib/sse";
+import { useAuthStore } from "../../store/auth-store";
+import { useToastStore } from "../../store/toast-store";
 import { useWorkspaceStore, workspaceStore } from "../../store/workspace-store";
-
 
 interface ComposerProps {
   sessionId: string;
 }
 
-
 export function Composer({ sessionId }: ComposerProps) {
   const accessToken = useAuthStore((state) => state.accessToken);
+  const showToast = useToastStore((state) => state.showToast);
   const errorMessage = useWorkspaceStore((state) => state.errorMessage);
   const inputValue = useWorkspaceStore((state) => state.inputValue);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
@@ -36,9 +36,13 @@ export function Composer({ sessionId }: ComposerProps) {
         workspaceStore.getState().setStreaming(false);
       }
     } catch (error) {
-      workspaceStore
-        .getState()
-        .failRequest(error instanceof Error ? error.message : "消息发送失败");
+      const message = error instanceof Error ? error.message : "消息发送失败";
+      workspaceStore.getState().failRequest(message);
+      showToast({
+        id: `send-message-${sessionId}`,
+        message,
+        tone: "error",
+      });
     }
   }
 
@@ -67,9 +71,7 @@ export function Composer({ sessionId }: ComposerProps) {
           <p className="text-sm text-stone-500">
             优先用选择推进，必要时再补自由输入。
           </p>
-          {errorMessage ? (
-            <p className="text-sm text-red-600">{errorMessage}</p>
-          ) : null}
+          {errorMessage ? <p className="text-sm text-red-600">{errorMessage}</p> : null}
         </div>
         <button
           className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-stone-400"

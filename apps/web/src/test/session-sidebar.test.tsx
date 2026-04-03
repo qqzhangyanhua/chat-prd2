@@ -331,6 +331,8 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
+    await screen.findByRole("button", { name: "打开会话 产品调研" });
+
     fireEvent.click(screen.getByRole("button", { name: "恢复会话" }));
 
     await waitFor(() => {
@@ -369,6 +371,8 @@ describe("SessionSidebar", () => {
     );
 
     render(<SessionSidebar sessionId="session-1" />);
+
+    await screen.findByRole("button", { name: "打开会话 产品调研" });
 
     fireEvent.click(screen.getByRole("button", { name: "导出 PRD" }));
 

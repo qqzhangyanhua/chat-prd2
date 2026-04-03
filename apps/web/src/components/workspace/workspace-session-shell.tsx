@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { getSession } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 import { ConversationPanel } from "./conversation-panel";
 import { PrdPanel } from "./prd-panel";
@@ -16,6 +17,7 @@ interface WorkspaceSessionShellProps {
 
 export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps) {
   const accessToken = useAuthStore((state) => state.accessToken);
+  const showToast = useToastStore((state) => state.showToast);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,8 +28,14 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
         if (!cancelled) {
           workspaceStore.getState().hydrateSession(snapshot);
         }
-      } catch {
-        // 当前壳层先不拦截错误提示，避免覆盖工作台已有状态。
+      } catch (error) {
+        if (!cancelled) {
+          showToast({
+            id: `load-session-${sessionId}`,
+            message: error instanceof Error ? error.message : "会话加载失败",
+            tone: "error",
+          });
+        }
       }
     }
 
@@ -36,7 +44,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
     return () => {
       cancelled = true;
     };
-  }, [accessToken, sessionId]);
+  }, [accessToken, sessionId, showToast]);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_#f5f5f4_0%,_#fafaf9_48%,_#f5f5f4_100%)] px-4 py-4 md:px-6 md:py-6">
