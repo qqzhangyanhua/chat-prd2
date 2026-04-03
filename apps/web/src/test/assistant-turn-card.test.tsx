@@ -8,7 +8,7 @@ describe("AssistantTurnCard", () => {
     render(
       <AssistantTurnCard
         currentAction={null}
-        latestAssistantMessage="先讲讲他们在定义 MVP 时最常卡住的地方。"
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
         showInterruptedMarker
       />,
     );
@@ -23,7 +23,7 @@ describe("AssistantTurnCard", () => {
       <AssistantTurnCard
         canRegenerate
         currentAction={null}
-        latestAssistantMessage="先讲讲他们在定义 MVP 时最常卡住的地方。"
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
         onRegenerate={onRegenerate}
       />,
     );
@@ -31,5 +31,18 @@ describe("AssistantTurnCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
 
     expect(onRegenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows loading text and disabled state while regenerating", () => {
+    render(
+      <AssistantTurnCard
+        canRegenerate
+        currentAction={null}
+        isRegenerating
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "重新生成中..." })).toBeDisabled();
   });
 });

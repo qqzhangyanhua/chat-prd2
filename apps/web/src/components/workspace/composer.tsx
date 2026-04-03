@@ -48,6 +48,7 @@ export function Composer({ sessionId }: ComposerProps) {
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+
     if (!skipStartRequest) {
       workspaceStore.getState().startRequest(normalizedContent);
     }
@@ -59,9 +60,11 @@ export function Composer({ sessionId }: ComposerProps) {
         accessToken,
         abortController.signal,
       );
+
       for await (const event of parseEventStream(stream)) {
         workspaceStore.getState().applyEvent(event);
       }
+
       if (workspaceStore.getState().isStreaming) {
         workspaceStore.getState().setStreaming(false);
       }
@@ -69,11 +72,13 @@ export function Composer({ sessionId }: ComposerProps) {
       if (isAbortError(error)) {
         const { markInterrupted, resetError, setStreaming, streamPhase } =
           workspaceStore.getState();
+
         if (streamPhase === "streaming") {
           markInterrupted();
         } else {
           setStreaming(false);
         }
+
         resetError();
         showToast({
           id: `cancel-generation-${sessionId}`,
@@ -121,10 +126,10 @@ export function Composer({ sessionId }: ComposerProps) {
 
   const statusMessage =
     streamPhase === "waiting"
-      ? "正在等待智能体回应..."
+      ? "等待回应..."
       : streamPhase === "streaming"
         ? "正在生成回复..."
-        : "优先用选择推进，必要时再补自由输入。";
+        : "准备好继续，补充你的想法。";
 
   return (
     <form
@@ -133,7 +138,7 @@ export function Composer({ sessionId }: ComposerProps) {
     >
       <label className="block">
         <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
-          当前输入
+          继续补充
         </span>
         <textarea
           className="mt-3 min-h-32 w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-800 outline-none transition focus:border-stone-900"
@@ -141,7 +146,7 @@ export function Composer({ sessionId }: ComposerProps) {
             resetError();
             setInputValue(event.target.value);
           }}
-          placeholder="补充你的目标用户、真实场景、当前做法，或者直接回答上一轮问题。"
+          placeholder="把你现在的想法、顾虑或选择继续告诉我。我会基于已有上下文继续追问和收敛。"
           value={inputValue}
         />
       </label>

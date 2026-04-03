@@ -2,7 +2,6 @@ interface ActionOptionsProps {
   options: string[];
 }
 
-
 export function ActionOptions({ options }: ActionOptionsProps) {
   return (
     <div className="grid gap-3 sm:grid-cols-3">
@@ -13,7 +12,7 @@ export function ActionOptions({ options }: ActionOptionsProps) {
           type="button"
         >
           <span className="block text-xs uppercase tracking-[0.24em] text-stone-500">
-            选项 {String.fromCharCode(65 + index)}
+            方案 {String.fromCharCode(65 + index)}
           </span>
           <span className="mt-3 block leading-6">{option}</span>
         </button>

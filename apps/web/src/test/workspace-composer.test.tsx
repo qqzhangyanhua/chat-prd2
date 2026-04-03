@@ -16,7 +16,7 @@ describe("Composer", () => {
     vi.mocked(sendMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
-    workspaceStore.getState().setInputValue("我想先服务独立开发者，让他们更快梳理产品方向。");
+    workspaceStore.getState().setInputValue("请帮我梳理目标用户。");
   });
 
   it("releases the streaming lock when the sse stream ends without assistant.done", async () => {
@@ -27,7 +27,7 @@ describe("Composer", () => {
           controller.enqueue(
             encoder.encode(
               'event: message.accepted\ndata: {"message_id":"user-1"}\n\n' +
-                'event: assistant.delta\ndata: {"delta":"先把目标用户再缩窄一层。"}\n\n',
+                'event: assistant.delta\ndata: {"delta":"先收敛 MVP。"}\n\n',
             ),
           );
           controller.close();
@@ -63,10 +63,10 @@ describe("Composer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
-    expect(await screen.findByText("正在等待智能体回应...")).toBeInTheDocument();
+    expect(await screen.findByText("等待回应...")).toBeInTheDocument();
 
     controllerRef?.enqueue(
-      encoder.encode('event: assistant.delta\ndata: {"delta":"先讲讲你最想解决的真实场景。"}\n\n'),
+      encoder.encode('event: assistant.delta\ndata: {"delta":"继续展开这个想法。"}\n\n'),
     );
     controllerRef?.close();
 
@@ -97,7 +97,7 @@ describe("Composer", () => {
     });
 
     expect(capturedSignal?.aborted).toBe(true);
-    expect(screen.getByText("优先用选择推进，必要时再补自由输入。")).toBeInTheDocument();
+    expect(screen.getByText("准备好继续，补充你的想法。")).toBeInTheDocument();
   });
 
   it("shows an info toast when the user cancels generation", async () => {
@@ -153,6 +153,7 @@ describe("Composer", () => {
     await waitFor(() => {
       expect(useToastStore.getState().toast?.message).toBe("消息发送失败");
     });
+
     expect(await screen.findByText("消息发送失败")).toBeInTheDocument();
   });
 });
@@ -176,7 +177,7 @@ describe("ConversationPanel regenerate", () => {
             controller.enqueue(
               encoder.encode(
                 'event: message.accepted\ndata: {"message_id":"user-1"}\n\n' +
-                  'event: assistant.delta\ndata: {"delta":"第一版回复。"}\n\n',
+                  'event: assistant.delta\ndata: {"delta":"先把问题范围说清楚。"}\n\n',
               ),
             );
             controller.close();
@@ -199,22 +200,27 @@ describe("ConversationPanel regenerate", () => {
 
     render(<ConversationPanel sessionId="demo-session" />);
     fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "我想先服务独立开发者" },
+      target: { value: "请帮我梳理目标用户。" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     await waitFor(() => {
-      expect(workspaceStore.getState().lastSubmittedInput).toBe("我想先服务独立开发者");
+      expect(workspaceStore.getState().lastSubmittedInput).toBe("请帮我梳理目标用户。");
     });
 
+    expect(screen.getByRole("button", { name: "重新生成" })).not.toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+
+    expect(screen.getByRole("button", { name: "重新生成中..." })).toBeDisabled();
 
     await waitFor(() => {
       expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(2);
     });
 
-    expect(workspaceStore.getState().messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(
+      workspaceStore.getState().messages.filter((message) => message.role === "user"),
+    ).toHaveLength(1);
     expect(workspaceStore.getState().messages.at(-1)?.content).toContain("重新生成后的回复");
   });
 });

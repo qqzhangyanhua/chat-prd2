@@ -13,6 +13,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const lastInterrupted = useWorkspaceStore((state) => state.lastInterrupted);
   const lastSubmittedInput = useWorkspaceStore((state) => state.lastSubmittedInput);
+  const pendingRequestMode = useWorkspaceStore((state) => state.pendingRequestMode);
   const messages = useWorkspaceStore((state) => state.messages);
   const latestAssistantMessage =
     [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
@@ -20,10 +21,14 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   return (
     <section className="flex flex-col gap-5">
       <AssistantTurnCard
-        canRegenerate={!isStreaming && Boolean(lastSubmittedInput)}
+        canRegenerate={Boolean(lastSubmittedInput)}
         currentAction={currentAction}
+        isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
         latestAssistantMessage={latestAssistantMessage}
         onRegenerate={() => {
+          if (isStreaming) {
+            return;
+          }
           workspaceStore.getState().startRegenerate();
         }}
         showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
