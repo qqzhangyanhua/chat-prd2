@@ -69,6 +69,31 @@ def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
     assert "sections" in data["prd_snapshot"]
 
 
+def test_get_session_marks_session_as_recently_active(auth_client):
+    first_response = auth_client.post(
+        "/api/sessions",
+        json={"title": "First Session", "initial_idea": "idea one"},
+    )
+    assert first_response.status_code == 200
+
+    second_response = auth_client.post(
+        "/api/sessions",
+        json={"title": "Second Session", "initial_idea": "idea two"},
+    )
+    assert second_response.status_code == 200
+
+    response = auth_client.get(f"/api/sessions/{first_response.json()['session']['id']}")
+    assert response.status_code == 200
+
+    sessions_response = auth_client.get("/api/sessions")
+    assert sessions_response.status_code == 200
+    data = sessions_response.json()
+    assert [session["title"] for session in data["sessions"]] == [
+        "First Session",
+        "Second Session",
+    ]
+
+
 def test_list_sessions_returns_only_current_user_sessions(client):
     first_user = client.post(
         "/api/auth/register",

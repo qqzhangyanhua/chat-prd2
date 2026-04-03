@@ -79,6 +79,14 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
+    try:
+        sessions_repository.touch_session(db, session)
+        db.commit()
+        db.refresh(session)
+    except Exception:
+        db.rollback()
+        raise
+
     state_version = state_repository.get_latest_state_version(db, session_id)
     prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
 
