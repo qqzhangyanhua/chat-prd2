@@ -15,7 +15,7 @@ export function WorkspaceToastViewport() {
   const clearToast = useToastStore((state) => state.clearToast);
 
   useEffect(() => {
-    if (!toast || toast.tone === "info") {
+    if (!toast) {
       return;
     }
 

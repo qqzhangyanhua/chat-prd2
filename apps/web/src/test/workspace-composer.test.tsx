@@ -89,8 +89,6 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     const stopButton = await screen.findByRole("button", { name: "停止生成" });
-    expect(stopButton).toBeInTheDocument();
-
     fireEvent.click(stopButton);
 
     await waitFor(() => {
@@ -99,6 +97,27 @@ describe("Composer", () => {
 
     expect(capturedSignal?.aborted).toBe(true);
     expect(screen.getByText("优先用选择推进，必要时再补自由输入。")).toBeInTheDocument();
+  });
+
+  it("shows an info toast when the user cancels generation", async () => {
+    vi.mocked(sendMessage).mockImplementation(async (_sessionId, _content, _token, signal) => {
+      return new Promise<ReadableStream<Uint8Array>>((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    fireEvent.click(await screen.findByRole("button", { name: "停止生成" }));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("已停止本轮生成");
+    });
+
+    expect(useToastStore.getState().toast?.tone).toBe("info");
   });
 
   it("does not show an error toast when the user cancels generation", async () => {
@@ -119,7 +138,7 @@ describe("Composer", () => {
       expect(screen.getByRole("button", { name: "发送消息" })).not.toBeDisabled();
     });
 
-    expect(useToastStore.getState().toast).toBeNull();
+    expect(useToastStore.getState().toast?.tone).not.toBe("error");
     expect(screen.queryByText("消息发送失败")).not.toBeInTheDocument();
   });
 

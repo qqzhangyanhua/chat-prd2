@@ -63,6 +63,11 @@ export function Composer({ sessionId }: ComposerProps) {
       if (isAbortError(error)) {
         workspaceStore.getState().setStreaming(false);
         workspaceStore.getState().resetError();
+        showToast({
+          id: `cancel-generation-${sessionId}`,
+          message: "已停止本轮生成",
+          tone: "info",
+        });
         return;
       }
 
