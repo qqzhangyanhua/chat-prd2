@@ -10,6 +10,7 @@ import type {
 } from "../lib/types";
 
 type StreamPhase = "idle" | "waiting" | "streaming";
+type RequestMode = "new" | "regenerate";
 
 interface WorkspaceState {
   currentAction: NextAction | null;
@@ -17,9 +18,12 @@ interface WorkspaceState {
   inputValue: string;
   isStreaming: boolean;
   lastInterrupted: boolean;
+  lastSubmittedInput: string | null;
   messages: WorkspaceMessage[];
   pendingUserInput: string | null;
+  pendingRequestMode: RequestMode | null;
   prd: PrdState;
+  regenerateRequestId: number;
   streamPhase: StreamPhase;
   applyEvent: (event: WorkspaceEvent) => void;
   failRequest: (message: string) => void;
@@ -28,7 +32,8 @@ interface WorkspaceState {
   resetError: () => void;
   setInputValue: (value: string) => void;
   setStreaming: (value: boolean) => void;
-  startRequest: (content: string) => void;
+  startRegenerate: () => boolean;
+  startRequest: (content: string, mode?: RequestMode) => void;
 }
 
 const initialPrdSections: PrdState["sections"] = {
@@ -82,6 +87,7 @@ function createInitialState(): Omit<
   | "resetError"
   | "setInputValue"
   | "setStreaming"
+  | "startRegenerate"
   | "startRequest"
 > {
   return {
@@ -94,6 +100,7 @@ function createInitialState(): Omit<
     inputValue: "先说说你现在脑子里最想解决的是谁的什么问题。",
     isStreaming: false,
     lastInterrupted: false,
+    lastSubmittedInput: null,
     messages: [
       {
         role: "assistant",
@@ -101,15 +108,17 @@ function createInitialState(): Omit<
       },
     ],
     pendingUserInput: null,
+    pendingRequestMode: null,
     prd: {
       sections: initialPrdSections,
     },
+    regenerateRequestId: 0,
     streamPhase: "idle",
   };
 }
 
 export function createWorkspaceStore() {
-  return createStore<WorkspaceState>()((set) => ({
+  return createStore<WorkspaceState>()((set, get) => ({
     ...createInitialState(),
     applyEvent: (event) =>
       set((state) => {
@@ -117,17 +126,20 @@ export function createWorkspaceStore() {
           case "message.accepted":
             return {
               ...state,
-              messages: state.pendingUserInput
-                ? [
-                    ...state.messages,
-                    {
-                      id: event.data.message_id,
-                      role: "user",
-                      content: state.pendingUserInput,
-                    },
-                  ]
-                : state.messages,
+              lastSubmittedInput: state.pendingUserInput ?? state.lastSubmittedInput,
+              messages:
+                state.pendingRequestMode === "regenerate" || !state.pendingUserInput
+                  ? state.messages
+                  : [
+                      ...state.messages,
+                      {
+                        id: event.data.message_id,
+                        role: "user",
+                        content: state.pendingUserInput,
+                      },
+                    ],
               pendingUserInput: null,
+              pendingRequestMode: null,
             };
           case "action.decided":
             return {
@@ -210,6 +222,7 @@ export function createWorkspaceStore() {
         errorMessage: message,
         isStreaming: false,
         lastInterrupted: false,
+        pendingRequestMode: null,
         pendingUserInput: null,
         streamPhase: "idle",
       })),
@@ -222,7 +235,9 @@ export function createWorkspaceStore() {
           typeof snapshot.state.idea === "string" ? snapshot.state.idea : state.inputValue,
         isStreaming: false,
         lastInterrupted: false,
+        lastSubmittedInput: null,
         messages: [],
+        pendingRequestMode: null,
         pendingUserInput: null,
         prd: {
           sections:
@@ -230,6 +245,7 @@ export function createWorkspaceStore() {
               ? normalizePrdSections(snapshot.prd_snapshot.sections)
               : state.prd.sections,
         },
+        regenerateRequestId: 0,
         streamPhase: "idle",
       })),
     markInterrupted: () =>
@@ -237,6 +253,7 @@ export function createWorkspaceStore() {
         ...state,
         isStreaming: false,
         lastInterrupted: true,
+        pendingRequestMode: null,
         streamPhase: "idle",
       })),
     resetError: () =>
@@ -254,15 +271,41 @@ export function createWorkspaceStore() {
         ...state,
         isStreaming: value,
         lastInterrupted: value ? false : state.lastInterrupted,
+        pendingRequestMode: value ? state.pendingRequestMode : null,
         streamPhase: value ? state.streamPhase : "idle",
       })),
-    startRequest: (content) =>
+    startRegenerate: () => {
+      const { lastSubmittedInput } = get();
+      if (!lastSubmittedInput) {
+        return false;
+      }
+
+      set((state) => {
+        const lastMessage = state.messages.at(-1);
+        return {
+          ...state,
+          errorMessage: null,
+          isStreaming: true,
+          lastInterrupted: false,
+          messages:
+            lastMessage?.role === "assistant" ? state.messages.slice(0, -1) : state.messages,
+          pendingRequestMode: "regenerate",
+          pendingUserInput: lastSubmittedInput,
+          streamPhase: "waiting",
+          regenerateRequestId: state.regenerateRequestId + 1,
+        };
+      });
+
+      return true;
+    },
+    startRequest: (content, mode = "new") =>
       set((state) => ({
         ...state,
         errorMessage: null,
         inputValue: content,
         isStreaming: true,
         lastInterrupted: false,
+        pendingRequestMode: mode,
         pendingUserInput: content,
         streamPhase: "waiting",
       })),

@@ -2,8 +2,10 @@ import type { NextAction } from "../../lib/types";
 import { ActionOptions } from "./action-options";
 
 interface AssistantTurnCardProps {
+  canRegenerate?: boolean;
   currentAction: NextAction | null;
   latestAssistantMessage: string;
+  onRegenerate?: () => void;
   showInterruptedMarker?: boolean;
 }
 
@@ -14,8 +16,10 @@ const defaultOptions = [
 ];
 
 export function AssistantTurnCard({
+  canRegenerate = false,
   currentAction,
   latestAssistantMessage,
+  onRegenerate,
   showInterruptedMarker = false,
 }: AssistantTurnCardProps) {
   const nextQuestion =
@@ -32,8 +36,19 @@ export function AssistantTurnCard({
           </p>
           <h3 className="mt-2 text-2xl font-semibold text-stone-950">对话推进</h3>
         </div>
-        <div className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-          当前阶段：验证需求
+        <div className="flex items-center gap-3">
+          {canRegenerate ? (
+            <button
+              className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-950"
+              onClick={onRegenerate}
+              type="button"
+            >
+              重新生成
+            </button>
+          ) : null}
+          <div className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+            当前阶段：验证需求
+          </div>
         </div>
       </div>
 

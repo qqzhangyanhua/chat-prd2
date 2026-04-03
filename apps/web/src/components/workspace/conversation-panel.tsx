@@ -1,6 +1,6 @@
 "use client";
 
-import { useWorkspaceStore } from "../../store/workspace-store";
+import { workspaceStore, useWorkspaceStore } from "../../store/workspace-store";
 import { AssistantTurnCard } from "./assistant-turn-card";
 import { Composer } from "./composer";
 
@@ -10,7 +10,9 @@ interface ConversationPanelProps {
 
 export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const currentAction = useWorkspaceStore((state) => state.currentAction);
+  const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const lastInterrupted = useWorkspaceStore((state) => state.lastInterrupted);
+  const lastSubmittedInput = useWorkspaceStore((state) => state.lastSubmittedInput);
   const messages = useWorkspaceStore((state) => state.messages);
   const latestAssistantMessage =
     [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
@@ -18,8 +20,12 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   return (
     <section className="flex flex-col gap-5">
       <AssistantTurnCard
+        canRegenerate={!isStreaming && Boolean(lastSubmittedInput)}
         currentAction={currentAction}
         latestAssistantMessage={latestAssistantMessage}
+        onRegenerate={() => {
+          workspaceStore.getState().startRegenerate();
+        }}
         showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
       />
       <Composer sessionId={sessionId} />

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ConversationPanel } from "../components/workspace/conversation-panel";
 import { Composer } from "../components/workspace/composer";
 import { sendMessage } from "../lib/api";
 import { useToastStore } from "../store/toast-store";
@@ -153,5 +154,67 @@ describe("Composer", () => {
       expect(useToastStore.getState().toast?.message).toBe("消息发送失败");
     });
     expect(await screen.findByText("消息发送失败")).toBeInTheDocument();
+  });
+});
+
+describe("ConversationPanel regenerate", () => {
+  beforeEach(() => {
+    vi.mocked(sendMessage).mockReset();
+    useToastStore.getState().clearToast();
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
+  });
+
+  it("replays the latest accepted input without adding a duplicate user message", async () => {
+    const encoder = new TextEncoder();
+    let callCount = 0;
+
+    vi.mocked(sendMessage).mockImplementation(async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                'event: message.accepted\ndata: {"message_id":"user-1"}\n\n' +
+                  'event: assistant.delta\ndata: {"delta":"第一版回复。"}\n\n',
+              ),
+            );
+            controller.close();
+          },
+        });
+      }
+
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'event: message.accepted\ndata: {"message_id":"user-2"}\n\n' +
+                'event: assistant.delta\ndata: {"delta":"重新生成后的回复。"}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+    });
+
+    render(<ConversationPanel sessionId="demo-session" />);
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "我想先服务独立开发者" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().lastSubmittedInput).toBe("我想先服务独立开发者");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(2);
+    });
+
+    expect(workspaceStore.getState().messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(workspaceStore.getState().messages.at(-1)?.content).toContain("重新生成后的回复");
   });
 });

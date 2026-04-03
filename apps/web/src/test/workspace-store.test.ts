@@ -48,6 +48,20 @@ describe("workspace store", () => {
     expect(store.getState().messages.at(-1)?.role).toBe("assistant");
   });
 
+  it("records the latest accepted user input for regeneration", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想先服务独立开发者");
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: {
+        message_id: "user-1",
+      },
+    });
+
+    expect(store.getState().lastSubmittedInput).toBe("我想先服务独立开发者");
+  });
+
   it("marks the latest assistant draft as interrupted after manual cancel", () => {
     const store = createWorkspaceStore();
 
@@ -61,6 +75,35 @@ describe("workspace store", () => {
     store.getState().markInterrupted();
 
     expect(store.getState().lastInterrupted).toBe(true);
+  });
+
+  it("replays the last accepted user input without duplicating the user message", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想先服务独立开发者");
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: {
+        message_id: "user-1",
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        delta: "先讲讲他们在定义 MVP 时最常卡住的地方。",
+      },
+    });
+    const regenerateInput = store.getState().startRegenerate();
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: {
+        message_id: "user-2",
+      },
+    });
+
+    expect(regenerateInput).toBe(true);
+    expect(store.getState().messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(store.getState().messages.at(-1)?.role).toBe("user");
   });
 
   it("clears the interrupted marker when a new request starts", () => {
@@ -120,6 +163,7 @@ describe("workspace store", () => {
     expect(store.getState().isStreaming).toBe(false);
     expect(store.getState().pendingUserInput).toBeNull();
     expect(store.getState().lastInterrupted).toBe(false);
+    expect(store.getState().lastSubmittedInput).toBeNull();
     expect(store.getState().prd.sections.target_user?.content).toBe("独立开发者");
   });
 });

@@ -20,11 +20,15 @@ function isAbortError(error: unknown): boolean {
 
 export function Composer({ sessionId }: ComposerProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastHandledRegenerateIdRef = useRef(0);
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const errorMessage = useWorkspaceStore((state) => state.errorMessage);
   const inputValue = useWorkspaceStore((state) => state.inputValue);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
+  const pendingRequestMode = useWorkspaceStore((state) => state.pendingRequestMode);
+  const pendingUserInput = useWorkspaceStore((state) => state.pendingUserInput);
+  const regenerateRequestId = useWorkspaceStore((state) => state.regenerateRequestId);
   const streamPhase = useWorkspaceStore((state) => state.streamPhase);
   const resetError = useWorkspaceStore((state) => state.resetError);
   const setInputValue = useWorkspaceStore((state) => state.setInputValue);
@@ -36,20 +40,22 @@ export function Composer({ sessionId }: ComposerProps) {
     };
   }, []);
 
-  async function handleSend() {
-    const content = inputValue.trim();
-    if (!content || isStreaming) {
+  async function dispatchMessage(content: string, skipStartRequest = false) {
+    const normalizedContent = content.trim();
+    if (!normalizedContent || (isStreaming && !skipStartRequest)) {
       return;
     }
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-    workspaceStore.getState().startRequest(content);
+    if (!skipStartRequest) {
+      workspaceStore.getState().startRequest(normalizedContent);
+    }
 
     try {
       const stream = await sendMessage(
         sessionId,
-        content,
+        normalizedContent,
         accessToken,
         abortController.signal,
       );
@@ -91,9 +97,27 @@ export function Composer({ sessionId }: ComposerProps) {
     }
   }
 
+  async function handleSend() {
+    await dispatchMessage(inputValue);
+  }
+
   function handleCancel() {
     abortControllerRef.current?.abort();
   }
+
+  useEffect(() => {
+    if (
+      regenerateRequestId === 0 ||
+      regenerateRequestId === lastHandledRegenerateIdRef.current ||
+      pendingRequestMode !== "regenerate" ||
+      !pendingUserInput
+    ) {
+      return;
+    }
+
+    lastHandledRegenerateIdRef.current = regenerateRequestId;
+    void dispatchMessage(pendingUserInput, true);
+  }, [pendingRequestMode, pendingUserInput, regenerateRequestId]);
 
   const statusMessage =
     streamPhase === "waiting"
