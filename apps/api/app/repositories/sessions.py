@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -17,6 +18,7 @@ def create_session(
         user_id=user_id,
         title=title,
         initial_idea=initial_idea,
+        updated_at=datetime.now(timezone.utc),
     )
     db.add(session)
     db.flush()
@@ -35,6 +37,13 @@ def list_sessions_for_user(db: Session, user_id: str) -> list[ProjectSession]:
     statement = (
         select(ProjectSession)
         .where(ProjectSession.user_id == user_id)
-        .order_by(ProjectSession.created_at.desc())
+        .order_by(ProjectSession.updated_at.desc())
     )
     return list(db.execute(statement).scalars().all())
+
+
+def touch_session(db: Session, session: ProjectSession) -> ProjectSession:
+    session.updated_at = datetime.now(timezone.utc)
+    db.add(session)
+    db.flush()
+    return session

@@ -109,7 +109,7 @@ def test_list_sessions_returns_only_current_user_sessions(client):
     assert data["sessions"][0]["title"] == "First Session"
 
 
-def test_list_sessions_returns_latest_session_first(auth_client):
+def test_list_sessions_returns_most_recently_active_session_first(auth_client):
     first_response = auth_client.post(
         "/api/sessions",
         json={"title": "Old Session", "initial_idea": "idea one"},
@@ -122,11 +122,19 @@ def test_list_sessions_returns_latest_session_first(auth_client):
     )
     assert second_response.status_code == 200
 
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{first_response.json()['session']['id']}/messages",
+        json={"content": "make this active again"},
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
     response = auth_client.get("/api/sessions")
 
     assert response.status_code == 200
     data = response.json()
     assert [session["title"] for session in data["sessions"]] == [
-        "New Session",
         "Old Session",
+        "New Session",
     ]

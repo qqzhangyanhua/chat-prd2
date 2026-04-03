@@ -70,10 +70,16 @@ describe("WorkspaceEntry", () => {
     listSessionsMock.mockResolvedValue({
       sessions: [
         {
+          id: "session-3",
+          user_id: "user-1",
+          title: "最近活跃项目",
+          initial_idea: "idea",
+        },
+        {
           id: "session-2",
           user_id: "user-1",
-          title: "已有项目",
-          initial_idea: "idea",
+          title: "较旧项目",
+          initial_idea: "older idea",
         },
       ],
     });
@@ -81,9 +87,9 @@ describe("WorkspaceEntry", () => {
     render(<WorkspaceEntry />);
 
     await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
+      expect(pushMock).toHaveBeenCalledWith("/workspace/session-3");
     });
 
-    expect(screen.queryByText("已有项目")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近活跃项目")).not.toBeInTheDocument();
   });
 });

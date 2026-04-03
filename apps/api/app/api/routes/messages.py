@@ -35,6 +35,7 @@ def create_message(
                 role="user",
                 content=payload.content,
             )
+            messages_repository.touch_session_activity(db, session)
             db.commit()
             yield {
                 "event": "message.accepted",
@@ -50,6 +51,7 @@ def create_message(
                 content=agent_result.reply,
                 meta={"action": asdict(agent_result.action)},
             )
+            messages_repository.touch_session_activity(db, session)
             db.commit()
 
             yield {

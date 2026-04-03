@@ -40,13 +40,13 @@ describe("WorkspacePage", () => {
     listSessionsMock.mockResolvedValue({
       sessions: [
         {
-          id: "session-2",
+          id: "session-1",
           user_id: "user-1",
-          title: "最近项目",
-          initial_idea: "latest idea",
+          title: "最近活跃项目",
+          initial_idea: "most recent activity",
         },
         {
-          id: "session-1",
+          id: "session-2",
           user_id: "user-1",
           title: "旧项目",
           initial_idea: "older idea",
@@ -57,6 +57,6 @@ describe("WorkspacePage", () => {
     render(<WorkspacePage />);
 
     await screen.findByText("继续已有项目");
-    expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
+    expect(pushMock).toHaveBeenCalledWith("/workspace/session-1");
   });
 });

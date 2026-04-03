@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -51,3 +52,10 @@ def create_message(
     db.add(message)
     db.flush()
     return message
+
+
+def touch_session_activity(db: Session, session: ProjectSession) -> ProjectSession:
+    session.updated_at = datetime.now(timezone.utc)
+    db.add(session)
+    db.flush()
+    return session
