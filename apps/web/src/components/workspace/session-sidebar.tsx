@@ -8,11 +8,9 @@ import type { SessionResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { workspaceStore } from "../../store/workspace-store";
 
-
 interface SessionSidebarProps {
   sessionId: string;
 }
-
 
 function formatRecentActivity(value: string): string {
   const date = new Date(value);
@@ -20,14 +18,25 @@ function formatRecentActivity(value: string): string {
     return "最近活跃时间未知";
   }
 
-  return `最近活跃 ${date.toLocaleString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-  })}`;
-}
+  const diffMs = Math.max(Date.now() - date.getTime(), 0);
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
 
+  if (diffMinutes < 1) {
+    return "最近活跃 刚刚";
+  }
+
+  if (diffMinutes < 60) {
+    return `最近活跃 ${diffMinutes} 分钟前`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `最近活跃 ${diffHours} 小时前`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `最近活跃 ${diffDays} 天前`;
+}
 
 export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const router = useRouter();
@@ -194,7 +203,9 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
           Active Session
         </p>
-        <p className="mt-2 text-lg font-semibold text-stone-900">{activeSession?.title ?? sessionId}</p>
+        <p className="mt-2 text-lg font-semibold text-stone-900">
+          {activeSession?.title ?? sessionId}
+        </p>
         <p className="mt-2 text-sm leading-6 text-stone-600">
           {activeSession ? formatRecentActivity(activeSession.updated_at) : "最近活跃时间未知"}
         </p>

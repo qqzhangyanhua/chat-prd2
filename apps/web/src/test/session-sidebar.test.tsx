@@ -1,8 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionSidebar } from "../components/workspace/session-sidebar";
-
 
 const exportSessionMock = vi.fn();
 const getSessionMock = vi.fn();
@@ -23,14 +22,16 @@ vi.mock("../lib/api", () => ({
   updateSession: (...args: unknown[]) => updateSessionMock(...args),
 }));
 
-
 describe("SessionSidebar", () => {
   beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-04-03T12:45:00Z").getTime());
+
     exportSessionMock.mockReset();
     getSessionMock.mockReset();
     listSessionsMock.mockReset();
     updateSessionMock.mockReset();
     pushMock.mockReset();
+
     listSessionsMock.mockResolvedValue({
       sessions: [
         {
@@ -51,6 +52,10 @@ describe("SessionSidebar", () => {
         },
       ],
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("calls export when clicking export prd", async () => {
@@ -78,7 +83,7 @@ describe("SessionSidebar", () => {
       },
       state: {
         idea: "idea",
-        stage_hint: "理解问题",
+        stage_hint: "澄清问题",
       },
       prd_snapshot: {
         sections: {},
@@ -127,11 +132,13 @@ describe("SessionSidebar", () => {
     });
   });
 
-  it("shows recent activity timestamps", async () => {
+  it("shows recent activity as relative time", async () => {
     render(<SessionSidebar sessionId="session-1" />);
 
-    expect(await screen.findByText(/最近活跃/)).toBeInTheDocument();
+    expect((await screen.findAllByText("最近活跃 15 分钟前")).length).toBeGreaterThan(0);
+    expect(screen.getByText("最近活跃 1 小时前")).toBeInTheDocument();
   });
+
   it("does not submit rename when title is empty after trimming", async () => {
     render(<SessionSidebar sessionId="session-1" />);
 
@@ -147,15 +154,15 @@ describe("SessionSidebar", () => {
   });
 
   it("shows rename error when update request fails", async () => {
-    updateSessionMock.mockRejectedValue(new Error("é‡å‘½åå¤±è´¥"));
+    updateSessionMock.mockRejectedValue(new Error("重命名失败"));
 
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.change(await screen.findByLabelText("会话标题"), {
-      target: { value: "æ–°æ ‡é¢˜" },
+      target: { value: "新标题" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
-    expect(await screen.findByText("é‡å‘½åå¤±è´¥")).toBeInTheDocument();
+    expect(await screen.findByText("重命名失败")).toBeInTheDocument();
   });
 });
