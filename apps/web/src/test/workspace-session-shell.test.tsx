@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceSessionShell } from "../components/workspace/workspace-session-shell";
@@ -55,6 +55,38 @@ describe("WorkspaceSessionShell", () => {
     await waitFor(() => {
       expect(useToastStore.getState().toast?.message).toBe("会话加载失败");
     });
-    expect(await screen.findByText("会话加载失败")).toBeInTheDocument();
+
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveTextContent("会话加载失败");
+    expect(await screen.findByRole("button", { name: "重试加载" })).toBeInTheDocument();
+  });
+
+  it("renders a retry action after session loading fails", async () => {
+    getSessionMock
+      .mockRejectedValueOnce(new Error("会话加载失败"))
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-1",
+          user_id: "user-1",
+          title: "AI Co-founder",
+          initial_idea: "idea",
+        },
+        state: {
+          idea: "idea",
+          stage_hint: "明确问题",
+        },
+        prd_snapshot: {
+          sections: {},
+        },
+      });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    const retryButton = await screen.findByRole("button", { name: "重试加载" });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+    });
   });
 });

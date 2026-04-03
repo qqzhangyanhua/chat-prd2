@@ -9,6 +9,7 @@ import type {
   WorkspaceMessage,
 } from "../lib/types";
 
+type StreamPhase = "idle" | "waiting" | "streaming";
 
 interface WorkspaceState {
   currentAction: NextAction | null;
@@ -18,6 +19,7 @@ interface WorkspaceState {
   messages: WorkspaceMessage[];
   pendingUserInput: string | null;
   prd: PrdState;
+  streamPhase: StreamPhase;
   applyEvent: (event: WorkspaceEvent) => void;
   resetError: () => void;
   setInputValue: (value: string) => void;
@@ -27,52 +29,47 @@ interface WorkspaceState {
   hydrateSession: (snapshot: SessionSnapshotResponse) => void;
 }
 
-
 const initialPrdSections: PrdState["sections"] = {
   target_user: {
     title: "目标用户",
-    content: "已经聚焦到方向模糊、需要被追问和收敛的独立开发者。",
+    content: "还需要继续明确谁会最频繁、最迫切地使用这个产品。",
     status: "confirmed",
   },
   problem: {
     title: "核心问题",
-    content: "他们能描述很多想法，但说不清核心问题、用户和优先级。",
+    content: "当前只知道用户有想法，但具体痛点、触发场景和替代方案还不够清楚。",
     status: "inferred",
   },
   solution: {
     title: "解决方案",
-    content: "通过结构化提问、挑战和选项推进，把模糊想法收敛成可执行 PRD。",
+    content: "系统会通过连续追问、挑战假设和收敛选项，帮助用户把模糊想法变成可执行 PRD。",
     status: "inferred",
   },
   mvp_scope: {
     title: "MVP 范围",
-    content: "还没有正式框定 MVP，需要继续通过对话收敛。",
+    content: "需要进一步确认首版最小闭环，包括会话、追问、决策沉淀和 PRD 输出。",
     status: "missing",
   },
 };
 
-
 function normalizePrdSections(
   sections: SessionSnapshotResponse["prd_snapshot"]["sections"],
 ): PrdState["sections"] {
-  const normalizedEntries = Object.entries(sections)
-    .map(([key, value]) => {
-      const content = typeof value.content === "string" ? value.content : "";
-      const title =
-        typeof value.title === "string" && value.title ? value.title : key;
-      const status =
-        value.status === "confirmed" ||
-        value.status === "inferred" ||
-        value.status === "missing"
-          ? value.status
-          : "missing";
+  const normalizedEntries = Object.entries(sections).map(([key, value]) => {
+    const content = typeof value.content === "string" ? value.content : "";
+    const title = typeof value.title === "string" && value.title ? value.title : key;
+    const status =
+      value.status === "confirmed" ||
+      value.status === "inferred" ||
+      value.status === "missing"
+        ? value.status
+        : "missing";
 
-      return [key, { content, title, status }] as const;
-    });
+    return [key, { content, title, status }] as const;
+  });
 
   return Object.fromEntries(normalizedEntries);
 }
-
 
 function createInitialState(): Omit<
   WorkspaceState,
@@ -88,24 +85,24 @@ function createInitialState(): Omit<
     currentAction: {
       action: "probe_deeper",
       target: "target_user",
-      reason: "当前还不清楚目标用户是谁，需要继续追问。",
+      reason: "先把最核心的目标用户讲清楚，后续问题、价值和 MVP 才能持续收敛。",
     },
     errorMessage: null,
-    inputValue: "我想先聚焦那些已经开始做产品，但一直说不清目标用户是谁的独立开发者。",
+    inputValue: "先说说你现在脑子里最想解决的是谁的什么问题。",
     isStreaming: false,
     messages: [
       {
         role: "assistant",
-        content: "你现在想做的是一个能陪用户反复梳理产品方向的智能体，而不是一次性写完文档的 PRD 生成器。",
+        content: "我先不急着写方案。你先告诉我，最想服务的第一类用户是谁？",
       },
     ],
     pendingUserInput: null,
     prd: {
       sections: initialPrdSections,
     },
+    streamPhase: "idle",
   };
 }
-
 
 export function createWorkspaceStore() {
   return createStore<WorkspaceState>()((set) => ({
@@ -145,6 +142,7 @@ export function createWorkspaceStore() {
                     content: `${lastMessage.content}${event.data.delta}`,
                   },
                 ],
+                streamPhase: "streaming",
               };
             }
 
@@ -157,6 +155,7 @@ export function createWorkspaceStore() {
                   content: event.data.delta,
                 },
               ],
+              streamPhase: "streaming",
             };
           }
           case "assistant.done": {
@@ -165,12 +164,14 @@ export function createWorkspaceStore() {
               return {
                 ...state,
                 isStreaming: false,
+                streamPhase: "idle",
               };
             }
 
             return {
               ...state,
               isStreaming: false,
+              streamPhase: "idle",
               messages: [
                 ...state.messages.slice(0, -1),
                 {
@@ -201,6 +202,7 @@ export function createWorkspaceStore() {
         errorMessage: message,
         isStreaming: false,
         pendingUserInput: null,
+        streamPhase: "idle",
       })),
     hydrateSession: (snapshot) =>
       set((state) => ({
@@ -218,6 +220,7 @@ export function createWorkspaceStore() {
               ? normalizePrdSections(snapshot.prd_snapshot.sections)
               : state.prd.sections,
         },
+        streamPhase: "idle",
       })),
     resetError: () =>
       set((state) => ({
@@ -233,6 +236,7 @@ export function createWorkspaceStore() {
       set((state) => ({
         ...state,
         isStreaming: value,
+        streamPhase: value ? state.streamPhase : "idle",
       })),
     startRequest: (content) =>
       set((state) => ({
@@ -241,13 +245,12 @@ export function createWorkspaceStore() {
         inputValue: content,
         isStreaming: true,
         pendingUserInput: content,
+        streamPhase: "waiting",
       })),
   }));
 }
 
-
 export const workspaceStore = createWorkspaceStore();
-
 
 export function useWorkspaceStore<T>(selector: (state: WorkspaceState) => T): T {
   return useStore(workspaceStore, selector);

@@ -16,6 +16,7 @@ export function Composer({ sessionId }: ComposerProps) {
   const errorMessage = useWorkspaceStore((state) => state.errorMessage);
   const inputValue = useWorkspaceStore((state) => state.inputValue);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
+  const streamPhase = useWorkspaceStore((state) => state.streamPhase);
   const resetError = useWorkspaceStore((state) => state.resetError);
   const setInputValue = useWorkspaceStore((state) => state.setInputValue);
 
@@ -46,6 +47,13 @@ export function Composer({ sessionId }: ComposerProps) {
     }
   }
 
+  const statusMessage =
+    streamPhase === "waiting"
+      ? "正在等待智能体回应..."
+      : streamPhase === "streaming"
+        ? "正在生成回复..."
+        : "优先用选择推进，必要时再补自由输入。";
+
   return (
     <form
       className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm"
@@ -61,16 +69,14 @@ export function Composer({ sessionId }: ComposerProps) {
             resetError();
             setInputValue(event.target.value);
           }}
-          placeholder="继续补充你的想法，或者直接选择一个方向。"
+          placeholder="补充你的目标用户、真实场景、当前做法，或者直接回答上一轮问题。"
           value={inputValue}
         />
       </label>
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-sm text-stone-500">
-            优先用选择推进，必要时再补自由输入。
-          </p>
+          <p className="text-sm text-stone-500">{statusMessage}</p>
           {errorMessage ? <p className="text-sm text-red-600">{errorMessage}</p> : null}
         </div>
         <button
@@ -79,7 +85,7 @@ export function Composer({ sessionId }: ComposerProps) {
           onClick={() => void handleSend()}
           type="button"
         >
-          {isStreaming ? "正在推进..." : "继续推进"}
+          {isStreaming ? "发送中..." : "发送消息"}
         </button>
       </div>
     </form>
