@@ -29,3 +29,8 @@ def get_session_for_user(db: Session, session_id: str, user_id: str) -> ProjectS
         ProjectSession.user_id == user_id,
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def list_sessions_for_user(db: Session, user_id: str) -> list[ProjectSession]:
+    statement = select(ProjectSession).where(ProjectSession.user_id == user_id)
+    return list(db.execute(statement).scalars().all())

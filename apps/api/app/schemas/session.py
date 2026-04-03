@@ -22,3 +22,7 @@ class SessionCreateResponse(BaseModel):
     session: SessionResponse
     state: StateSnapshot
     prd_snapshot: PrdSnapshotResponse
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionResponse]

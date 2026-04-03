@@ -1,6 +1,8 @@
 import type {
   AuthResponse,
   ExportResponse,
+  SessionCreateRequest,
+  SessionListResponse,
   SessionSnapshotResponse,
 } from "./types";
 
@@ -108,5 +110,31 @@ export function getSession(
     headers: {
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
+  });
+}
+
+
+export function listSessions(
+  accessToken?: string | null,
+): Promise<SessionListResponse> {
+  return requestJson<SessionListResponse>("/api/sessions", {
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+}
+
+
+export function createSession(
+  payload: SessionCreateRequest,
+  accessToken?: string | null,
+): Promise<SessionSnapshotResponse> {
+  return requestJson<SessionSnapshotResponse>("/api/sessions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
   });
 }

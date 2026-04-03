@@ -1,6 +1,10 @@
 "use client";
 
-import { getSession, exportSession } from "../../lib/api";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { exportSession, getSession, listSessions } from "../../lib/api";
+import type { SessionResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { workspaceStore } from "../../store/workspace-store";
 
@@ -11,13 +15,32 @@ interface SessionSidebarProps {
 
 
 export function SessionSidebar({ sessionId }: SessionSidebarProps) {
+  const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const [sessions, setSessions] = useState<SessionResponse[]>([]);
 
-  const sessions = [
-    { title: "AI 产品陪跑助手", stage: "理解问题", active: true },
-    { title: "独立开发者 PRD 生成器", stage: "定义 MVP", active: false },
-    { title: "出海工具导航", stage: "验证需求", active: false },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSessions() {
+      try {
+        const response = await listSessions(accessToken);
+        if (!cancelled) {
+          setSessions(response.sessions);
+        }
+      } catch {
+        if (!cancelled) {
+          setSessions([]);
+        }
+      }
+    }
+
+    void loadSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, sessionId]);
 
   async function handleExport() {
     const exported = await exportSession(sessionId, accessToken);
@@ -49,17 +72,18 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">
           Project Board
         </p>
-        <h2 className="text-2xl font-semibold text-stone-950">项目面板</h2>
+        <h2 className="text-2xl font-semibold text-stone-950">会话工作台</h2>
         <p className="text-sm leading-6 text-stone-600">
-          把每次讨论放在清晰上下文里，而不是散落在聊天历史里。
+          这里展示当前用户的真实会话，你可以恢复当前状态、导出 PRD，或者切到其他项目继续推进。
         </p>
       </div>
 
       <button
         className="mt-5 rounded-2xl border border-stone-900 bg-stone-950 px-4 py-3 text-sm font-medium text-white"
+        onClick={() => router.push("/workspace")}
         type="button"
       >
-        新建项目
+        新建会话
       </button>
 
       <div className="mt-3 grid gap-3">
@@ -81,29 +105,29 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
       <div className="mt-6 space-y-3">
         {sessions.map((session) => (
-          <article
-            key={session.title}
-            className={`rounded-2xl border px-4 py-4 transition ${
-              session.active
+          <button
+            key={session.id}
+            className={`block w-full rounded-2xl border px-4 py-4 text-left transition ${
+              session.id === sessionId
                 ? "border-stone-900 bg-white shadow-sm"
                 : "border-stone-200 bg-white/70"
             }`}
+            onClick={() => router.push(`/workspace/${session.id}`)}
+            type="button"
           >
             <p className="text-sm font-semibold text-stone-900">{session.title}</p>
-            <p className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-500">
-              {session.stage}
-            </p>
-          </article>
+            <p className="mt-2 text-xs leading-5 text-stone-500">{session.initial_idea}</p>
+          </button>
         ))}
       </div>
 
       <div className="mt-auto rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-4">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
-          Stage
+          Active Session
         </p>
-        <p className="mt-2 text-lg font-semibold text-stone-900">收敛方案</p>
+        <p className="mt-2 text-lg font-semibold text-stone-900">{sessionId}</p>
         <p className="mt-2 text-sm leading-6 text-stone-600">
-          目标是让用户在每一轮都做出更接近 PRD 的决策。
+          当前工作台已绑定真实 sessionId，不再依赖固定的 demo 会话。
         </p>
       </div>
     </aside>

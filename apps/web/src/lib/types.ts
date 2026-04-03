@@ -17,6 +17,15 @@ export interface SessionResponse {
   initial_idea: string;
 }
 
+export interface SessionCreateRequest {
+  title: string;
+  initial_idea: string;
+}
+
+export interface SessionListResponse {
+  sessions: SessionResponse[];
+}
+
 export interface StateSnapshotResponse {
   [key: string]: unknown;
   idea?: string;

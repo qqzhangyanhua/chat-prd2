@@ -5,7 +5,12 @@ from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 from app.schemas.prd import PrdSnapshotResponse
-from app.schemas.session import SessionCreateRequest, SessionCreateResponse, SessionResponse
+from app.schemas.session import (
+    SessionCreateRequest,
+    SessionCreateResponse,
+    SessionListResponse,
+    SessionResponse,
+)
 from app.schemas.state import StateSnapshot
 
 
@@ -87,4 +92,11 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(state_version.state_json),
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+    )
+
+
+def list_sessions(db: Session, user_id: str) -> SessionListResponse:
+    sessions = sessions_repository.list_sessions_for_user(db, user_id)
+    return SessionListResponse(
+        sessions=[SessionResponse.model_validate(session) for session in sessions],
     )

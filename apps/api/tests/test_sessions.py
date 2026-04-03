@@ -67,3 +67,43 @@ def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
     assert data["session"]["id"] == seeded_session
     assert data["state"]["idea"]
     assert "sections" in data["prd_snapshot"]
+
+
+def test_list_sessions_returns_only_current_user_sessions(client):
+    first_user = client.post(
+        "/api/auth/register",
+        json={"email": "first@example.com", "password": "secret123"},
+    )
+    assert first_user.status_code == 200
+    first_token = first_user.json()["access_token"]
+
+    second_user = client.post(
+        "/api/auth/register",
+        json={"email": "second@example.com", "password": "secret123"},
+    )
+    assert second_user.status_code == 200
+    second_token = second_user.json()["access_token"]
+
+    first_session = client.post(
+        "/api/sessions",
+        headers={"Authorization": f"Bearer {first_token}"},
+        json={"title": "First Session", "initial_idea": "idea one"},
+    )
+    assert first_session.status_code == 200
+
+    second_session = client.post(
+        "/api/sessions",
+        headers={"Authorization": f"Bearer {second_token}"},
+        json={"title": "Second Session", "initial_idea": "idea two"},
+    )
+    assert second_session.status_code == 200
+
+    response = client.get(
+        "/api/sessions",
+        headers={"Authorization": f"Bearer {first_token}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["sessions"]) == 1
+    assert data["sessions"][0]["title"] == "First Session"
