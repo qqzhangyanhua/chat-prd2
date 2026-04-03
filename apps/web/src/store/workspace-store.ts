@@ -1,5 +1,5 @@
-import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
 
 import type {
   NextAction,
@@ -16,17 +16,19 @@ interface WorkspaceState {
   errorMessage: string | null;
   inputValue: string;
   isStreaming: boolean;
+  lastInterrupted: boolean;
   messages: WorkspaceMessage[];
   pendingUserInput: string | null;
   prd: PrdState;
   streamPhase: StreamPhase;
   applyEvent: (event: WorkspaceEvent) => void;
+  failRequest: (message: string) => void;
+  hydrateSession: (snapshot: SessionSnapshotResponse) => void;
+  markInterrupted: () => void;
   resetError: () => void;
   setInputValue: (value: string) => void;
   setStreaming: (value: boolean) => void;
   startRequest: (content: string) => void;
-  failRequest: (message: string) => void;
-  hydrateSession: (snapshot: SessionSnapshotResponse) => void;
 }
 
 const initialPrdSections: PrdState["sections"] = {
@@ -75,11 +77,12 @@ function createInitialState(): Omit<
   WorkspaceState,
   | "applyEvent"
   | "failRequest"
+  | "hydrateSession"
+  | "markInterrupted"
   | "resetError"
   | "setInputValue"
   | "setStreaming"
   | "startRequest"
-  | "hydrateSession"
 > {
   return {
     currentAction: {
@@ -90,6 +93,7 @@ function createInitialState(): Omit<
     errorMessage: null,
     inputValue: "先说说你现在脑子里最想解决的是谁的什么问题。",
     isStreaming: false,
+    lastInterrupted: false,
     messages: [
       {
         role: "assistant",
@@ -142,6 +146,7 @@ export function createWorkspaceStore() {
                     content: `${lastMessage.content}${event.data.delta}`,
                   },
                 ],
+                lastInterrupted: false,
                 streamPhase: "streaming",
               };
             }
@@ -155,6 +160,7 @@ export function createWorkspaceStore() {
                   content: event.data.delta,
                 },
               ],
+              lastInterrupted: false,
               streamPhase: "streaming",
             };
           }
@@ -164,6 +170,7 @@ export function createWorkspaceStore() {
               return {
                 ...state,
                 isStreaming: false,
+                lastInterrupted: false,
                 streamPhase: "idle",
               };
             }
@@ -171,6 +178,7 @@ export function createWorkspaceStore() {
             return {
               ...state,
               isStreaming: false,
+              lastInterrupted: false,
               streamPhase: "idle",
               messages: [
                 ...state.messages.slice(0, -1),
@@ -201,6 +209,7 @@ export function createWorkspaceStore() {
         ...state,
         errorMessage: message,
         isStreaming: false,
+        lastInterrupted: false,
         pendingUserInput: null,
         streamPhase: "idle",
       })),
@@ -212,6 +221,7 @@ export function createWorkspaceStore() {
         inputValue:
           typeof snapshot.state.idea === "string" ? snapshot.state.idea : state.inputValue,
         isStreaming: false,
+        lastInterrupted: false,
         messages: [],
         pendingUserInput: null,
         prd: {
@@ -220,6 +230,13 @@ export function createWorkspaceStore() {
               ? normalizePrdSections(snapshot.prd_snapshot.sections)
               : state.prd.sections,
         },
+        streamPhase: "idle",
+      })),
+    markInterrupted: () =>
+      set((state) => ({
+        ...state,
+        isStreaming: false,
+        lastInterrupted: true,
         streamPhase: "idle",
       })),
     resetError: () =>
@@ -236,6 +253,7 @@ export function createWorkspaceStore() {
       set((state) => ({
         ...state,
         isStreaming: value,
+        lastInterrupted: value ? false : state.lastInterrupted,
         streamPhase: value ? state.streamPhase : "idle",
       })),
     startRequest: (content) =>
@@ -244,6 +262,7 @@ export function createWorkspaceStore() {
         errorMessage: null,
         inputValue: content,
         isStreaming: true,
+        lastInterrupted: false,
         pendingUserInput: content,
         streamPhase: "waiting",
       })),

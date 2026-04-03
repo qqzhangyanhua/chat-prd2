@@ -61,8 +61,14 @@ export function Composer({ sessionId }: ComposerProps) {
       }
     } catch (error) {
       if (isAbortError(error)) {
-        workspaceStore.getState().setStreaming(false);
-        workspaceStore.getState().resetError();
+        const { markInterrupted, resetError, setStreaming, streamPhase } =
+          workspaceStore.getState();
+        if (streamPhase === "streaming") {
+          markInterrupted();
+        } else {
+          setStreaming(false);
+        }
+        resetError();
         showToast({
           id: `cancel-generation-${sessionId}`,
           message: "已停止本轮生成",

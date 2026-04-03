@@ -1,12 +1,11 @@
 import type { NextAction } from "../../lib/types";
 import { ActionOptions } from "./action-options";
 
-
 interface AssistantTurnCardProps {
   currentAction: NextAction | null;
   latestAssistantMessage: string;
+  showInterruptedMarker?: boolean;
 }
-
 
 const defaultOptions = [
   "继续追问早期创业者",
@@ -14,14 +13,14 @@ const defaultOptions = [
   "直接定义第一个 MVP 人群",
 ];
 
-
 export function AssistantTurnCard({
   currentAction,
   latestAssistantMessage,
+  showInterruptedMarker = false,
 }: AssistantTurnCardProps) {
   const nextQuestion =
     currentAction?.target === "target_user"
-      ? "你最想先服务的是哪一类人: 第一次做产品的创业者，还是已经在做产品但方向模糊的独立开发者？"
+      ? "这一轮先把目标用户收窄一层：是刚开始做产品的独立开发者，还是已经有用户但增长停滞的团队？"
       : "你希望这一轮先推进用户画像、问题定义，还是 MVP 范围？";
 
   return (
@@ -44,9 +43,13 @@ export function AssistantTurnCard({
             理解
           </p>
           <p className="mt-3 text-sm leading-7 text-stone-700">
-            {latestAssistantMessage ||
-              "先把目标用户讲清楚，再往下定义问题和 MVP。"}
+            {latestAssistantMessage || "先把目标用户讲清楚，再继续往下收敛 MVP。"}
           </p>
+          {showInterruptedMarker ? (
+            <div className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+              本轮已手动中断
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-2xl bg-stone-50 p-4">
@@ -54,8 +57,7 @@ export function AssistantTurnCard({
             判断
           </p>
           <p className="mt-3 text-sm leading-7 text-stone-700">
-            {currentAction?.reason ??
-              "当前还需要继续追问，先避免把范围扩到过大的用户群。"}
+            {currentAction?.reason ?? "当前还需要继续追问，先避免把范围扩到过大的用户群。"}
           </p>
         </section>
 
