@@ -7,6 +7,7 @@ from app.schemas.session import (
     SessionCreateRequest,
     SessionCreateResponse,
     SessionListResponse,
+    SessionUpdateRequest,
 )
 from app.services import sessions as session_service
 
@@ -38,3 +39,13 @@ def get_session(
     db: Session = Depends(get_db),
 ) -> SessionCreateResponse:
     return session_service.get_session_snapshot(db, session_id, current_user.id)
+
+
+@router.patch("/{session_id}", response_model=SessionCreateResponse)
+def update_session(
+    session_id: str,
+    payload: SessionUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SessionCreateResponse:
+    return session_service.update_session(db, session_id, current_user.id, payload)

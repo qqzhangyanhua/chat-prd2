@@ -47,3 +47,11 @@ def touch_session(db: Session, session: ProjectSession) -> ProjectSession:
     db.add(session)
     db.flush()
     return session
+
+
+def update_session_title(db: Session, session: ProjectSession, title: str) -> ProjectSession:
+    session.title = title
+    session.updated_at = datetime.now(timezone.utc)
+    db.add(session)
+    db.flush()
+    return session

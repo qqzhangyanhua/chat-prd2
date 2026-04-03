@@ -9,6 +9,10 @@ class SessionCreateRequest(BaseModel):
     initial_idea: str
 
 
+class SessionUpdateRequest(BaseModel):
+    title: str
+
+
 class SessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -16,6 +20,8 @@ class SessionResponse(BaseModel):
     user_id: str
     title: str
     initial_idea: str
+    created_at: object
+    updated_at: object
 
 
 class SessionCreateResponse(BaseModel):

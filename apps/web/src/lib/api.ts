@@ -4,6 +4,7 @@ import type {
   SessionCreateRequest,
   SessionListResponse,
   SessionSnapshotResponse,
+  SessionUpdateRequest,
 } from "./types";
 
 
@@ -131,6 +132,22 @@ export function createSession(
 ): Promise<SessionSnapshotResponse> {
   return requestJson<SessionSnapshotResponse>("/api/sessions", {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+
+export function updateSession(
+  sessionId: string,
+  payload: SessionUpdateRequest,
+  accessToken?: string | null,
+): Promise<SessionSnapshotResponse> {
+  return requestJson<SessionSnapshotResponse>(`/api/sessions/${sessionId}`, {
+    method: "PATCH",
     headers: {
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),

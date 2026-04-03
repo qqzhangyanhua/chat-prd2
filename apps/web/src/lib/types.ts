@@ -15,11 +15,17 @@ export interface SessionResponse {
   user_id: string;
   title: string;
   initial_idea: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SessionCreateRequest {
   title: string;
   initial_idea: string;
+}
+
+export interface SessionUpdateRequest {
+  title: string;
 }
 
 export interface SessionListResponse {

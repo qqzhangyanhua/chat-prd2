@@ -163,3 +163,15 @@ def test_list_sessions_returns_most_recently_active_session_first(auth_client):
         "Old Session",
         "New Session",
     ]
+
+
+def test_update_session_title_renames_owned_session(auth_client, seeded_session):
+    response = auth_client.patch(
+        f"/api/sessions/{seeded_session}",
+        json={"title": "Renamed Session"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session"]["id"] == seeded_session
+    assert data["session"]["title"] == "Renamed Session"
