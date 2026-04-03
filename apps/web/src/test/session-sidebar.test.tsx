@@ -263,4 +263,127 @@ describe("SessionSidebar", () => {
       expect(useToastStore.getState().toast?.message).toBe("会话已删除");
     });
   });
+
+  it("shows rename success toast and disables rename button while saving", async () => {
+    let resolveRename: ((value: { session: { id: string; user_id: string; title: string; initial_idea: string; created_at: string; updated_at: string } }) => void) | null = null;
+    updateSessionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRename = resolve;
+        }),
+    );
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.change(await screen.findByLabelText("会话标题"), {
+      target: { value: "访谈提纲" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("正在保存标题...");
+    });
+    expect(screen.getByRole("button", { name: "保存中..." })).toBeDisabled();
+
+    resolveRename?.({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "访谈提纲",
+        initial_idea: "idea",
+        created_at: "2026-04-03T12:00:00Z",
+        updated_at: "2026-04-03T12:40:00Z",
+      },
+    });
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("标题已更新");
+    });
+  });
+
+  it("shows rename failure toast when update request fails", async () => {
+    updateSessionMock.mockRejectedValue(new Error("重命名失败"));
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.change(await screen.findByLabelText("会话标题"), {
+      target: { value: "访谈提纲" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("重命名失败");
+    });
+  });
+
+  it("shows recover toast and disables recover button while recovering", async () => {
+    let resolveRecover: ((value: {
+      session: { id: string; user_id: string; title: string; initial_idea: string };
+      state: { idea: string; stage_hint: string };
+      prd_snapshot: { sections: Record<string, never> };
+    }) => void) | null = null;
+    getSessionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRecover = resolve;
+        }),
+    );
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复会话" }));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("正在恢复会话...");
+    });
+    expect(screen.getByRole("button", { name: "恢复中..." })).toBeDisabled();
+
+    resolveRecover?.({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确目标用户",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+    });
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("会话已恢复");
+    });
+  });
+
+  it("shows export toast and disables export button while exporting", async () => {
+    let resolveExport: ((value: { file_name: string; content: string }) => void) | null = null;
+    exportSessionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveExport = resolve;
+        }),
+    );
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "导出 PRD" }));
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("正在导出 PRD...");
+    });
+    expect(screen.getByRole("button", { name: "导出中..." })).toBeDisabled();
+
+    resolveExport?.({
+      file_name: "ai-cofounder-prd.md",
+      content: "# PRD",
+    });
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toast?.message).toBe("PRD 已导出");
+    });
+  });
 });

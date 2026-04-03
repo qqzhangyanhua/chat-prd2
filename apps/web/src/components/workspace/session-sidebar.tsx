@@ -54,6 +54,9 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,33 +91,92 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
     setRenameError(null);
     setDeleteError(null);
     setIsDeleting(false);
+    setIsRecovering(false);
+    setIsExporting(false);
+    setIsRenaming(false);
   }, [activeSession]);
 
   async function handleExport() {
-    const exported = await exportSession(sessionId, accessToken);
-    if (
-      typeof document === "undefined" ||
-      typeof URL.createObjectURL !== "function" ||
-      typeof URL.revokeObjectURL !== "function"
-    ) {
+    if (isExporting) {
       return;
     }
 
-    const blob = new Blob([exported.content], { type: "text/markdown;charset=utf-8" });
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = exported.file_name;
-    link.click();
-    URL.revokeObjectURL(downloadUrl);
+    try {
+      setIsExporting(true);
+      showToast({
+        id: `export-session-${sessionId}`,
+        message: "正在导出 PRD...",
+        tone: "info",
+      });
+
+      const exported = await exportSession(sessionId, accessToken);
+      if (
+        typeof document !== "undefined" &&
+        typeof URL.createObjectURL === "function" &&
+        typeof URL.revokeObjectURL === "function"
+      ) {
+        const blob = new Blob([exported.content], { type: "text/markdown;charset=utf-8" });
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = exported.file_name;
+        link.click();
+        URL.revokeObjectURL(downloadUrl);
+      }
+
+      showToast({
+        id: `export-session-${sessionId}`,
+        message: "PRD 已导出",
+        tone: "success",
+      });
+    } catch (error) {
+      showToast({
+        id: `export-session-${sessionId}`,
+        message: error instanceof Error ? error.message : "导出失败，请稍后再试",
+        tone: "error",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   async function handleRecover() {
-    const snapshot = await getSession(sessionId, accessToken);
-    workspaceStore.getState().hydrateSession(snapshot);
+    if (isRecovering) {
+      return;
+    }
+
+    try {
+      setIsRecovering(true);
+      showToast({
+        id: `recover-session-${sessionId}`,
+        message: "正在恢复会话...",
+        tone: "info",
+      });
+
+      const snapshot = await getSession(sessionId, accessToken);
+      workspaceStore.getState().hydrateSession(snapshot);
+
+      showToast({
+        id: `recover-session-${sessionId}`,
+        message: "会话已恢复",
+        tone: "success",
+      });
+    } catch (error) {
+      showToast({
+        id: `recover-session-${sessionId}`,
+        message: error instanceof Error ? error.message : "恢复失败，请稍后再试",
+        tone: "error",
+      });
+    } finally {
+      setIsRecovering(false);
+    }
   }
 
   async function handleRename() {
+    if (isRenaming) {
+      return;
+    }
+
     const normalizedTitle = titleDraft.trim();
 
     if (!normalizedTitle) {
@@ -124,6 +186,13 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
     try {
       setRenameError(null);
+      setIsRenaming(true);
+      showToast({
+        id: `rename-session-${sessionId}`,
+        message: "正在保存标题...",
+        tone: "info",
+      });
+
       const snapshot = await updateSession(sessionId, { title: normalizedTitle }, accessToken);
       setTitleDraft(snapshot.session.title);
       setSessions((current) =>
@@ -131,8 +200,22 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           session.id === sessionId ? { ...session, ...snapshot.session } : session,
         ),
       );
+
+      showToast({
+        id: `rename-session-${sessionId}`,
+        message: "标题已更新",
+        tone: "success",
+      });
     } catch (error) {
-      setRenameError(error instanceof Error ? error.message : "重命名失败，请稍后再试");
+      const message = error instanceof Error ? error.message : "重命名失败，请稍后再试";
+      setRenameError(message);
+      showToast({
+        id: `rename-session-${sessionId}`,
+        message,
+        tone: "error",
+      });
+    } finally {
+      setIsRenaming(false);
     }
   }
 
@@ -197,11 +280,12 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           />
         </label>
         <button
-          className="mt-3 rounded-2xl border border-stone-900 bg-stone-950 px-4 py-2 text-sm font-medium text-white"
+          className="mt-3 rounded-2xl border border-stone-900 bg-stone-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-stone-400"
+          disabled={isRenaming}
           onClick={() => void handleRename()}
           type="button"
         >
-          保存标题
+          {isRenaming ? "保存中..." : "保存标题"}
         </button>
         {renameError ? <p className="mt-3 text-sm text-red-600">{renameError}</p> : null}
       </div>
@@ -216,18 +300,20 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
       <div className="mt-3 grid gap-3">
         <button
-          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900"
+          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isRecovering}
           onClick={() => void handleRecover()}
           type="button"
         >
-          恢复会话
+          {isRecovering ? "恢复中..." : "恢复会话"}
         </button>
         <button
-          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900"
+          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isExporting}
           onClick={() => void handleExport()}
           type="button"
         >
-          导出 PRD
+          {isExporting ? "导出中..." : "导出 PRD"}
         </button>
         <button
           className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -251,9 +337,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
               aria-label={`打开会话 ${session.title}`}
               className={`block w-full rounded-2xl border px-4 py-4 text-left transition ${
                 isActive ? "border-stone-900 bg-white shadow-sm" : "border-stone-200 bg-white/70"
-              } ${
-                isDeletingCurrentSession ? "cursor-not-allowed opacity-60" : ""
-              }`}
+              } ${isDeletingCurrentSession ? "cursor-not-allowed opacity-60" : ""}`}
               disabled={isDeletingCurrentSession}
               onClick={() => router.push(`/workspace/${session.id}`)}
               type="button"
