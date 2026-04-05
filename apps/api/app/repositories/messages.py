@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ConversationMessage, ProjectSession
@@ -32,3 +33,12 @@ def touch_session_activity(db: Session, session: ProjectSession) -> ProjectSessi
     db.add(session)
     db.flush()
     return session
+
+
+def get_messages_for_session(db: Session, session_id: str) -> list[ConversationMessage]:
+    statement = (
+        select(ConversationMessage)
+        .where(ConversationMessage.session_id == session_id)
+        .order_by(ConversationMessage.created_at.asc())
+    )
+    return list(db.execute(statement).scalars().all())

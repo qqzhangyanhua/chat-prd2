@@ -40,21 +40,27 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "发送消息" })).not.toBeDisabled();
+      expect(workspaceStore.getState().isStreaming).toBe(false);
     });
+    expect(screen.getByText("准备好继续，补充你的想法")).toBeInTheDocument();
   });
 
   it("shows waiting and generating statuses while sending", async () => {
     const encoder = new TextEncoder();
-    let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const controllerActions: Array<() => void> = [];
 
     vi.mocked(sendMessage).mockResolvedValue(
       new ReadableStream<Uint8Array>({
         start(controller) {
-          controllerRef = controller;
           controller.enqueue(
             encoder.encode('event: message.accepted\ndata: {"message_id":"user-1"}\n\n'),
           );
+          controllerActions.push(() => {
+            controller.enqueue(
+              encoder.encode('event: assistant.delta\ndata: {"delta":"继续展开这个想法。"}\n\n'),
+            );
+            controller.close();
+          });
         },
       }),
     );
@@ -65,10 +71,8 @@ describe("Composer", () => {
 
     expect(await screen.findByText("等待回应...")).toBeInTheDocument();
 
-    controllerRef?.enqueue(
-      encoder.encode('event: assistant.delta\ndata: {"delta":"继续展开这个想法。"}\n\n'),
-    );
-    controllerRef?.close();
+    expect(controllerActions).toHaveLength(1);
+    controllerActions[0]!();
 
     expect(await screen.findByText("正在生成回复...")).toBeInTheDocument();
   });
@@ -93,11 +97,11 @@ describe("Composer", () => {
     fireEvent.click(stopButton);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "发送消息" })).not.toBeDisabled();
+      expect(workspaceStore.getState().isStreaming).toBe(false);
     });
 
     expect(capturedSignal?.aborted).toBe(true);
-    expect(screen.getByText("准备好继续，补充你的想法。")).toBeInTheDocument();
+    expect(screen.getByText("准备好继续，补充你的想法")).toBeInTheDocument();
   });
 
   it("shows an info toast when the user cancels generation", async () => {
@@ -136,7 +140,7 @@ describe("Composer", () => {
     fireEvent.click(await screen.findByRole("button", { name: "停止生成" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "发送消息" })).not.toBeDisabled();
+      expect(workspaceStore.getState().isStreaming).toBe(false);
     });
 
     expect(useToastStore.getState().toast?.tone).not.toBe("error");
@@ -212,7 +216,7 @@ describe("ConversationPanel regenerate", () => {
     expect(screen.getByRole("button", { name: "重新生成" })).not.toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
 
-    expect(screen.getByRole("button", { name: "重新生成中..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "生成中..." })).toBeDisabled();
 
     await waitFor(() => {
       expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(2);

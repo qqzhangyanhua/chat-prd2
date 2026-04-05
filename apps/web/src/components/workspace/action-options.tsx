@@ -1,20 +1,22 @@
 interface ActionOptionsProps {
+  onSelect?: (option: string) => void;
   options: string[];
 }
 
-export function ActionOptions({ options }: ActionOptionsProps) {
+export function ActionOptions({ onSelect, options }: ActionOptionsProps) {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-2 sm:grid-cols-3">
       {options.map((option, index) => (
         <button
           key={option}
-          className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-left text-sm font-medium text-stone-800 transition hover:border-stone-900 hover:bg-white"
+          className="cursor-pointer rounded-xl border border-stone-200 bg-white px-4 py-3.5 text-left text-sm transition-all duration-150 hover:border-stone-400 hover:shadow-sm active:scale-[0.98]"
+          onClick={() => onSelect?.(option)}
           type="button"
         >
-          <span className="block text-xs uppercase tracking-[0.24em] text-stone-500">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.28em] text-stone-400">
             方案 {String.fromCharCode(65 + index)}
           </span>
-          <span className="mt-3 block leading-6">{option}</span>
+          <span className="mt-2 block text-xs leading-5 text-stone-700">{option}</span>
         </button>
       ))}
     </div>

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkspacePage from "../app/workspace/page";
@@ -27,11 +27,11 @@ describe("WorkspacePage", () => {
     listSessionsMock.mockResolvedValue({ sessions: [] });
   });
 
-  it("renders the session entry surface", async () => {
+  it("renders the current session entry surface", async () => {
     render(<WorkspacePage />);
 
-    expect(await screen.findByRole("heading", { name: "创建新会话" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "创建并进入工作台" })).toBeInTheDocument();
+    expect(await screen.findByText("Describe your idea")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start Session" })).toBeInTheDocument();
   });
 
   it("redirects to the latest existing session", async () => {
@@ -42,19 +42,24 @@ describe("WorkspacePage", () => {
           user_id: "user-1",
           title: "最近活跃会话",
           initial_idea: "most recent activity",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
         },
         {
           id: "session-2",
           user_id: "user-1",
           title: "更早的会话",
           initial_idea: "older idea",
+          created_at: "2026-04-04T00:00:00Z",
+          updated_at: "2026-04-04T00:00:00Z",
         },
       ],
     });
 
     render(<WorkspacePage />);
 
-    await screen.findByText("最近活跃");
-    expect(pushMock).toHaveBeenCalledWith("/workspace/session-1");
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/workspace/session-1");
+    });
   });
 });

@@ -38,12 +38,21 @@ export interface StateSnapshotResponse {
   stage_hint?: string;
 }
 
+export interface ConversationMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant";
+  content: string;
+  message_type: string;
+}
+
 export interface SessionSnapshotResponse {
   session: SessionResponse;
   state: StateSnapshotResponse;
   prd_snapshot: {
     sections: Record<string, Record<string, unknown>>;
   };
+  messages: ConversationMessage[];
 }
 
 export interface ExportResponse {

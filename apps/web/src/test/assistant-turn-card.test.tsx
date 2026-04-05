@@ -43,6 +43,6 @@ describe("AssistantTurnCard", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "重新生成中..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "生成中..." })).toBeDisabled();
   });
 });

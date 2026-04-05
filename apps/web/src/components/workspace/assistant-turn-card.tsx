@@ -1,4 +1,6 @@
+import { RefreshCw, AlertTriangle, ChevronRight, Layers } from "lucide-react";
 import type { NextAction } from "../../lib/types";
+import { workspaceStore } from "../../store/workspace-store";
 import { ActionOptions } from "./action-options";
 
 interface AssistantTurnCardProps {
@@ -30,77 +32,98 @@ export function AssistantTurnCard({
       : "如果只能先做一个最小版本，你希望它优先解决哪一个关键问题？";
 
   return (
-    <article className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-4 border-b border-stone-200 pb-4">
+    <article className="rounded-2xl border border-stone-200/80 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.05)]">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 border-b border-stone-100 px-6 py-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-400">
             AI Co-founder
           </p>
-          <h3 className="mt-2 text-2xl font-semibold text-stone-950">当前分析</h3>
+          <h3 className="mt-1 text-base font-semibold text-stone-950">当前分析</h3>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {canRegenerate ? (
             <button
-              className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-stone-700 transition hover:border-stone-900 hover:text-stone-950 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 transition-all duration-150 hover:border-stone-900 hover:text-stone-950 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={isRegenerating}
               onClick={onRegenerate}
               type="button"
             >
-              {isRegenerating ? "重新生成中..." : "重新生成"}
+              <RefreshCw className={`h-3 w-3 ${isRegenerating ? "animate-spin" : ""}`} />
+              {isRegenerating ? "生成中..." : "重新生成"}
             </button>
           ) : null}
-          <div className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+          <div className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             持续引导中
           </div>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4">
-        <section className="rounded-2xl bg-stone-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
-            我当前的理解
-          </p>
+      <div className="flex flex-col gap-px p-5">
+        {/* 我的理解 */}
+        <div className="rounded-xl bg-stone-50 p-4">
+          <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
+            <Layers className="h-3.5 w-3.5 text-stone-400" />
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+              我当前的理解
+            </p>
+          </div>
           <p className="mt-3 text-sm leading-7 text-stone-700">
             {latestAssistantMessage || "我会先根据你刚提供的信息整理理解，再继续追问关键缺口。"}
           </p>
           {showInterruptedMarker ? (
-            <div className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
               本轮已手动中断
             </div>
           ) : null}
-        </section>
+        </div>
 
-        <section className="rounded-2xl bg-stone-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+        {/* 我的判断 */}
+        <div className="mt-2 rounded-xl bg-stone-50 p-4">
+          <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
             我的判断
           </p>
           <p className="mt-3 text-sm leading-7 text-stone-700">
             {currentAction?.reason ?? "我会继续找出还没被说透的前提、目标和决策点。"}
           </p>
-        </section>
+        </div>
 
-        <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-red-600">
-            风险 / 不确定点
-          </p>
+        {/* 风险点 */}
+        <div className="mt-2 rounded-xl border border-red-100 bg-red-50/60 p-4">
+          <div className="flex items-center gap-2 border-b border-red-100 pb-3">
+            <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-red-500">
+              风险 / 不确定点
+            </p>
+          </div>
           <p className="mt-3 text-sm leading-7 text-red-700">
             如果目标用户、核心问题和第一版边界都还模糊，方案很容易看起来完整，但落地时失焦。
           </p>
-        </section>
+        </div>
 
-        <section className="space-y-3 rounded-2xl bg-stone-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+        {/* 可选推进方式 */}
+        <div className="mt-2 rounded-xl bg-stone-50 p-4">
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
             可选推进方式
           </p>
-          <ActionOptions options={defaultOptions} />
-        </section>
+          <ActionOptions
+            onSelect={(option) => workspaceStore.getState().setInputValue(option)}
+            options={defaultOptions}
+          />
+        </div>
 
-        <section className="rounded-2xl border border-stone-200 bg-stone-950 p-4 text-white">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-300">
-            下一步
-          </p>
+        {/* 下一步 */}
+        <div className="mt-2 rounded-xl bg-stone-950 p-4">
+          <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
+            <ChevronRight className="h-3.5 w-3.5 text-stone-400" />
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+              下一步
+            </p>
+          </div>
           <p className="mt-3 text-sm leading-7 text-stone-100">{nextQuestion}</p>
-        </section>
+        </div>
       </div>
     </article>
   );

@@ -186,6 +186,25 @@ def test_update_session_title_rejects_blank_title(auth_client, seeded_session):
     assert response.status_code == 422
 
 
+def test_get_session_includes_messages_in_snapshot(auth_client, seeded_session):
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={"content": "你好"},
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
+    response = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert response.status_code == 200
+    data = response.json()
+    assert "messages" in data
+    assert isinstance(data["messages"], list)
+    assert len(data["messages"]) >= 1
+    assert data["messages"][0]["role"] in ("user", "assistant")
+    assert "content" in data["messages"][0]
+
+
 def test_delete_session_removes_owned_session(auth_client, seeded_session):
     response = auth_client.delete(f"/api/sessions/{seeded_session}")
 

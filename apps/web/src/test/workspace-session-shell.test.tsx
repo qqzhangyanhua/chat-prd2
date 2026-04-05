@@ -28,6 +28,8 @@ describe("WorkspaceSessionShell", () => {
         user_id: "user-1",
         title: "AI Co-founder",
         initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
       },
       state: {
         idea: "idea",
@@ -36,6 +38,7 @@ describe("WorkspaceSessionShell", () => {
       prd_snapshot: {
         sections: {},
       },
+      messages: [],
     });
   });
 
@@ -70,6 +73,8 @@ describe("WorkspaceSessionShell", () => {
           user_id: "user-1",
           title: "AI Co-founder",
           initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
         },
         state: {
           idea: "idea",
@@ -78,6 +83,7 @@ describe("WorkspaceSessionShell", () => {
         prd_snapshot: {
           sections: {},
         },
+        messages: [],
       });
 
     render(<WorkspaceSessionShell sessionId="session-1" />);

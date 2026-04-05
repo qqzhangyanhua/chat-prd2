@@ -2,6 +2,7 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type {
+  ConversationMessage,
   NextAction,
   PrdState,
   SessionSnapshotResponse,
@@ -78,6 +79,16 @@ function normalizePrdSections(
   return Object.fromEntries(normalizedEntries);
 }
 
+function normalizeMessages(messages: ConversationMessage[]): WorkspaceMessage[] {
+  return messages
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+    }));
+}
+
 function createInitialState(): Omit<
   WorkspaceState,
   | "applyEvent"
@@ -97,7 +108,7 @@ function createInitialState(): Omit<
       reason: "先把最核心的目标用户讲清楚，后续问题、价值和 MVP 才能持续收敛。",
     },
     errorMessage: null,
-    inputValue: "先说说你现在脑子里最想解决的是谁的什么问题。",
+    inputValue: "",
     isStreaming: false,
     lastInterrupted: false,
     lastSubmittedInput: null,
@@ -231,12 +242,11 @@ export function createWorkspaceStore() {
         ...state,
         currentAction: null,
         errorMessage: null,
-        inputValue:
-          typeof snapshot.state.idea === "string" ? snapshot.state.idea : state.inputValue,
+        inputValue: "",
         isStreaming: false,
         lastInterrupted: false,
         lastSubmittedInput: null,
-        messages: [],
+        messages: normalizeMessages(snapshot.messages),
         pendingRequestMode: null,
         pendingUserInput: null,
         prd: {
@@ -302,7 +312,7 @@ export function createWorkspaceStore() {
       set((state) => ({
         ...state,
         errorMessage: null,
-        inputValue: content,
+        inputValue: "",
         isStreaming: true,
         lastInterrupted: false,
         pendingRequestMode: mode,

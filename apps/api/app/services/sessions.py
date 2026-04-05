@@ -1,9 +1,11 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.repositories import messages as messages_repository
 from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
+from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
 from app.schemas.session import (
     SessionCreateRequest,
@@ -72,6 +74,7 @@ def create_session(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(initial_state),
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+        messages=[],
     )
 
 
@@ -97,10 +100,13 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
             detail="Session snapshot not found",
         )
 
+    raw_messages = messages_repository.get_messages_for_session(db, session_id)
+
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(state_version.state_json),
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+        messages=[ConversationMessageResponse.model_validate(message) for message in raw_messages],
     )
 
 
@@ -138,10 +144,13 @@ def update_session(
         db.rollback()
         raise
 
+    raw_messages = messages_repository.get_messages_for_session(db, session_id)
+
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(state_version.state_json),
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+        messages=[ConversationMessageResponse.model_validate(message) for message in raw_messages],
     )
 
 

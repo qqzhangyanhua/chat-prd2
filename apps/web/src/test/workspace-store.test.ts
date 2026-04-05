@@ -123,7 +123,15 @@ describe("workspace store", () => {
     expect(store.getState().lastInterrupted).toBe(false);
   });
 
-  it("hydrates a recovered session as a consistent fresh snapshot", () => {
+  it("clears inputValue immediately when a request is started", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想服务独立开发者");
+
+    expect(store.getState().inputValue).toBe("");
+  });
+
+  it("hydrates a recovered session and loads messages from snapshot", () => {
     const store = createWorkspaceStore();
 
     store.getState().startRequest("继续追问");
@@ -141,6 +149,8 @@ describe("workspace store", () => {
         user_id: "user-1",
         title: "AI Co-founder",
         initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
       },
       state: {
         idea: "idea",
@@ -155,10 +165,31 @@ describe("workspace store", () => {
           },
         },
       },
+      messages: [
+        {
+          id: "m1",
+          session_id: "session-1",
+          role: "user",
+          content: "你好",
+          message_type: "chat",
+        },
+        {
+          id: "m2",
+          session_id: "session-1",
+          role: "assistant",
+          content: "你好，请问你的想法是？",
+          message_type: "chat",
+        },
+      ],
     });
 
-    expect(store.getState().inputValue).toBe("idea");
-    expect(store.getState().messages).toEqual([]);
+    expect(store.getState().inputValue).toBe("");
+    expect(store.getState().messages).toHaveLength(2);
+    expect(store.getState().messages[0]).toMatchObject({ role: "user", content: "你好" });
+    expect(store.getState().messages[1]).toMatchObject({
+      role: "assistant",
+      content: "你好，请问你的想法是？",
+    });
     expect(store.getState().currentAction).toBeNull();
     expect(store.getState().isStreaming).toBe(false);
     expect(store.getState().pendingUserInput).toBeNull();

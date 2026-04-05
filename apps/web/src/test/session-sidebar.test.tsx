@@ -87,6 +87,8 @@ describe("SessionSidebar", () => {
         user_id: "user-1",
         title: "AI Co-founder",
         initial_idea: "idea",
+        created_at: "2026-04-03T12:00:00Z",
+        updated_at: "2026-04-03T12:30:00Z",
       },
       state: {
         idea: "idea",
@@ -95,6 +97,7 @@ describe("SessionSidebar", () => {
       prd_snapshot: {
         sections: {},
       },
+      messages: [],
     });
 
     render(<SessionSidebar sessionId="session-1" />);
@@ -129,7 +132,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("会话标题"), {
+    fireEvent.change(await screen.findByLabelText("重命名"), {
       target: { value: "竞品分析" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -153,7 +156,7 @@ describe("SessionSidebar", () => {
   it("does not submit rename when title is empty after trimming", async () => {
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("会话标题"), {
+    fireEvent.change(await screen.findByLabelText("重命名"), {
       target: { value: "   " },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -169,7 +172,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("会话标题"), {
+    fireEvent.change(await screen.findByLabelText("重命名"), {
       target: { value: "访谈提纲" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -182,7 +185,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
 
     expect(deleteSessionMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
@@ -193,7 +196,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
 
     expect(window.confirm).toHaveBeenCalledWith("确认删除当前会话？此操作不可恢复。");
     await waitFor(() => {
@@ -207,14 +210,14 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
 
     expect(await screen.findByText("删除失败")).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("disables delete button and shows loading while deleting", async () => {
-    let resolveDelete: (() => void) | null = null;
+    let resolveDelete: (() => void) | undefined;
     deleteSessionMock.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
@@ -224,7 +227,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
 
     const deletingButton = await screen.findByRole("button", { name: "删除中..." });
     expect(deletingButton).toBeDisabled();
@@ -240,7 +243,7 @@ describe("SessionSidebar", () => {
   });
 
   it("shows deleting toast and disables the active session card while deleting", async () => {
-    let resolveDelete: (() => void) | null = null;
+    let resolveDelete: (() => void) | undefined;
     deleteSessionMock.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
@@ -250,7 +253,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "删除会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
 
     await waitFor(() => {
       expect(useToastStore.getState().toast?.message).toBe("正在删除会话...");
@@ -265,17 +268,27 @@ describe("SessionSidebar", () => {
   });
 
   it("shows rename success toast and disables rename button while saving", async () => {
-    let resolveRename: ((value: { session: { id: string; user_id: string; title: string; initial_idea: string; created_at: string; updated_at: string } }) => void) | null = null;
+    type RenameResponse = {
+      session: {
+        id: string;
+        user_id: string;
+        title: string;
+        initial_idea: string;
+        created_at: string;
+        updated_at: string;
+      };
+    };
+    let resolveRename: ((value: RenameResponse) => void) | undefined;
     updateSessionMock.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<RenameResponse>((resolve) => {
           resolveRename = resolve;
         }),
     );
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("会话标题"), {
+    fireEvent.change(await screen.findByLabelText("重命名"), {
       target: { value: "访谈提纲" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -306,7 +319,7 @@ describe("SessionSidebar", () => {
 
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("会话标题"), {
+    fireEvent.change(await screen.findByLabelText("重命名"), {
       target: { value: "访谈提纲" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -317,14 +330,23 @@ describe("SessionSidebar", () => {
   });
 
   it("shows recover toast and disables recover button while recovering", async () => {
-    let resolveRecover: ((value: {
-      session: { id: string; user_id: string; title: string; initial_idea: string };
+    type RecoverResponse = {
+      session: {
+        id: string;
+        user_id: string;
+        title: string;
+        initial_idea: string;
+        created_at: string;
+        updated_at: string;
+      };
       state: { idea: string; stage_hint: string };
       prd_snapshot: { sections: Record<string, never> };
-    }) => void) | null = null;
+      messages: [];
+    };
+    let resolveRecover: ((value: RecoverResponse) => void) | undefined;
     getSessionMock.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<RecoverResponse>((resolve) => {
           resolveRecover = resolve;
         }),
     );
@@ -346,6 +368,8 @@ describe("SessionSidebar", () => {
         user_id: "user-1",
         title: "AI Co-founder",
         initial_idea: "idea",
+        created_at: "2026-04-03T12:00:00Z",
+        updated_at: "2026-04-03T12:30:00Z",
       },
       state: {
         idea: "idea",
@@ -354,6 +378,7 @@ describe("SessionSidebar", () => {
       prd_snapshot: {
         sections: {},
       },
+      messages: [],
     });
 
     await waitFor(() => {
@@ -362,10 +387,10 @@ describe("SessionSidebar", () => {
   });
 
   it("shows export toast and disables export button while exporting", async () => {
-    let resolveExport: ((value: { file_name: string; content: string }) => void) | null = null;
+    let resolveExport: ((value: { file_name: string; content: string }) => void) | undefined;
     exportSessionMock.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<{ file_name: string; content: string }>((resolve) => {
           resolveExport = resolve;
         }),
     );
