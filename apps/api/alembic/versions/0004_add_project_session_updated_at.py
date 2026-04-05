@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0004_add_project_session_updated_at"
-down_revision: Union[str, None] = "0003_add_project_session_created_at"
+revision: str = "0004_session_updated_at"
+down_revision: Union[str, None] = "0003_session_created_at"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

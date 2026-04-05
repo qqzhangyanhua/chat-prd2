@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0002_add_project_state_and_prd_snapshot"
+revision: str = "0002_state_prd"
 down_revision: Union[str, None] = "0001_initial"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

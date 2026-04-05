@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "0003_add_conversation_messages"
-down_revision: Union[str, None] = "0002_add_project_state_and_prd_snapshot"
+down_revision: Union[str, None] = "0002_state_prd"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
