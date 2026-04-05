@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthForm } from "../components/auth/auth-form";
 import { useAuthStore } from "../store/auth-store";
 
-
 const pushMock = vi.fn();
 const loginMock = vi.fn();
 const registerMock = vi.fn();
@@ -20,7 +19,6 @@ vi.mock("../lib/api", () => ({
   register: (...args: unknown[]) => registerMock(...args),
 }));
 
-
 describe("AuthForm", () => {
   beforeEach(() => {
     pushMock.mockReset();
@@ -30,11 +28,12 @@ describe("AuthForm", () => {
     window.localStorage.clear();
   });
 
-  it("renders email and password inputs", () => {
+  it("renders the current email and password inputs", () => {
     render(<AuthForm mode="login" />);
 
-    expect(screen.getByLabelText("邮箱")).toBeInTheDocument();
-    expect(screen.getByLabelText("密码")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Business email*")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Password*")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
   });
 
   it("persists auth state and redirects after login succeeds", async () => {
@@ -45,13 +44,13 @@ describe("AuthForm", () => {
 
     render(<AuthForm mode="login" />);
 
-    fireEvent.change(screen.getByLabelText("邮箱"), {
+    fireEvent.change(screen.getByPlaceholderText("Business email*"), {
       target: { value: "user@example.com" },
     });
-    fireEvent.change(screen.getByLabelText("密码"), {
+    fireEvent.change(screen.getByPlaceholderText("Password*"), {
       target: { value: "secret123" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(loginMock).toHaveBeenCalledWith("user@example.com", "secret123");
@@ -69,13 +68,13 @@ describe("AuthForm", () => {
 
     render(<AuthForm mode="register" />);
 
-    fireEvent.change(screen.getByLabelText("邮箱"), {
+    fireEvent.change(screen.getByPlaceholderText("Business email*"), {
       target: { value: "new@example.com" },
     });
-    fireEvent.change(screen.getByLabelText("密码"), {
+    fireEvent.change(screen.getByPlaceholderText("Password*"), {
       target: { value: "secret123" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "注册" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(registerMock).toHaveBeenCalledWith("new@example.com", "secret123");
