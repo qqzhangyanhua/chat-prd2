@@ -1,17 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import HomePage from "../app/page";
 
-const redirectMock = vi.fn();
+const replaceMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  redirect: (...args: unknown[]) => redirectMock(...args),
+  useRouter: () => ({
+    replace: replaceMock,
+  }),
 }));
 
 describe("HomePage", () => {
-  it("redirects root requests to the workspace entry", () => {
-    HomePage();
+  beforeEach(() => {
+    replaceMock.mockReset();
+  });
 
-    expect(redirectMock).toHaveBeenCalledWith("/workspace");
+  it("renders the landing page hero when unauthenticated", () => {
+    render(<HomePage />);
+
+    expect(screen.getByText("AI 联合创始人")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "立即开始使用" })).toBeInTheDocument();
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 });
