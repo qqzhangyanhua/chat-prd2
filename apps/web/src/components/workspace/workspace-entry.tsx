@@ -1,19 +1,37 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Plus,
+  ArrowRight,
+  Home,
+  Bot,
+  LayoutGrid,
+  Calendar,
+  HelpCircle,
+  Download,
+  MoreVertical,
+  MessageSquare
+} from "lucide-react";
 
 import { createSession, listSessions } from "../../lib/api";
-import type { SessionResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { WorkspaceToastViewport } from "./workspace-toast-viewport";
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
 
 export function WorkspaceEntry() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
-  const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -25,10 +43,11 @@ export function WorkspaceEntry() {
         const response = await listSessions(accessToken);
         if (!cancelled) {
           if (response.sessions.length > 0) {
-            router.push(`/workspace/${response.sessions[0].id}`);
-            return;
+            const latest = response.sessions.reduce((a, b) =>
+              new Date(a.created_at) > new Date(b.created_at) ? a : b
+            );
+            router.push(`/workspace/${latest.id}`);
           }
-          setSessions(response.sessions);
         }
       } catch (error) {
         if (!cancelled) {
@@ -42,9 +61,9 @@ export function WorkspaceEntry() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, router]);
+  }, [accessToken]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -52,7 +71,7 @@ export function WorkspaceEntry() {
     try {
       const response = await createSession(
         {
-          title,
+          title: title || "未命名会话",
           initial_idea: idea,
         },
         accessToken,
@@ -65,88 +84,174 @@ export function WorkspaceEntry() {
     }
   }
 
+  const greeting = getGreeting();
+  const email = user?.email || "用户";
+
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.16),_transparent_30%),linear-gradient(180deg,_#f7f3ea_0%,_#f5f5f4_100%)] px-4 py-6 md:px-6">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_#f5f5f4_0%,_#fafaf9_48%,_#f5f5f4_100%)] px-4 py-4 md:px-6 md:py-6">
       <WorkspaceToastViewport />
-      <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,1.2fr)_380px]">
-        <section className="rounded-[32px] border border-stone-200 bg-white/90 p-6 shadow-sm md:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
-            AI Co-founder
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold text-stone-950">创建新会话</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
-            从一个模糊想法开始，进入工作台后由智能体持续追问、挑战和收敛。
-          </p>
-
-          <form className="mt-8 grid gap-5" onSubmit={handleSubmit}>
-            <label className="grid gap-2 text-sm font-medium text-stone-900">
-              会话标题
-              <input
-                className="rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-900"
-                name="title"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm font-medium text-stone-900">
-              初始想法
-              <textarea
-                className="min-h-40 rounded-3xl border border-stone-300 bg-stone-50 px-4 py-4 outline-none transition focus:border-stone-900"
-                name="initial_idea"
-                value={idea}
-                onChange={(event) => setIdea(event.target.value)}
-              />
-            </label>
-
-            {errorMessage ? (
-              <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {errorMessage}
-              </p>
-            ) : null}
-
-            <button
-              className="w-fit rounded-2xl bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-stone-400"
-              disabled={isSubmitting}
-              type="submit"
-            >
-              {isSubmitting ? "创建中..." : "创建并进入工作台"}
-            </button>
-          </form>
-        </section>
-
-        <aside className="rounded-[32px] border border-stone-200 bg-stone-50 p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
-            Recent Sessions
-          </p>
-          <h2 className="mt-3 text-2xl font-semibold text-stone-950">最近活跃</h2>
-          <div className="mt-6 grid gap-3">
-            {sessions.length > 0 ? (
-              sessions.map((session) => (
-                <article
-                  key={session.id}
-                  className="rounded-3xl border border-stone-200 bg-white p-4"
-                >
-                  <p className="text-sm font-semibold text-stone-950">{session.title}</p>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-stone-600">
-                    {session.initial_idea}
-                  </p>
-                  <button
-                    className="mt-4 rounded-2xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-900"
-                    onClick={() => router.push(`/workspace/${session.id}`)}
-                    type="button"
-                  >
-                    进入会话
-                  </button>
-                </article>
-              ))
-            ) : (
-              <div className="rounded-3xl border border-dashed border-stone-300 bg-white px-4 py-6 text-sm leading-7 text-stone-600">
-                还没有可恢复的会话，先创建一个想法开始推进。
-              </div>
-            )}
+      
+      <div className="mx-auto flex max-w-[1600px] gap-4 h-[calc(100vh-2rem)] md:h-[calc(100vh-3rem)]">
+        {/* Sidebar */}
+        <aside className="flex w-[280px] flex-col justify-between rounded-2xl border border-stone-200/80 bg-white/90 p-4 shadow-[0_2px_16px_rgba(0,0,0,0.04)]">
+        <div>
+          {/* Logo */}
+          <div className="mb-6 flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand-primary to-brand-accent text-white shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <span className="text-sm font-bold tracking-tight text-stone-950">AI Co-founder</span>
           </div>
-        </aside>
+
+          {/* Navigation */}
+          <nav className="space-y-1 mb-6">
+            <button className="flex w-full items-center gap-2.5 rounded-lg bg-stone-950 px-3 py-2 text-xs font-semibold text-white transition-all">
+              <Home className="h-3.5 w-3.5" />
+              Home
+            </button>
+            <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-50 hover:text-stone-900">
+              <Plus className="h-3.5 w-3.5" />
+              New Session
+            </button>
+          </nav>
+
+          <div className="space-y-4">
+            <div>
+              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-400">Quick Actions</p>
+              <div className="space-y-0.5">
+                <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-50 hover:text-stone-900">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Product Discovery
+                </button>
+                <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-50 hover:text-stone-900">
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  Feature Planning
+                </button>
+                <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-50 hover:text-stone-900">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Roadmap Review
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          
+          <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-2.5 shadow-sm">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-primary to-brand-accent text-xs font-bold text-white shadow-sm">
+                {email.substring(0, 2).toUpperCase()}
+              </div>
+              <div className="flex flex-col overflow-hidden">
+                <span className="truncate text-xs font-semibold text-stone-900">{email.split("@")[0]}</span>
+                <span className="truncate text-[10px] text-stone-500">Personal</span>
+              </div>
+            </div>
+            <button className="shrink-0 p-1 text-stone-400 hover:text-stone-600 transition-colors">
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <section className="flex-1 flex flex-col justify-center overflow-y-auto">
+        <div className="mx-auto w-full max-w-[760px] flex flex-col px-4">
+          
+          {/* Greeting */}
+          <div className="mb-8 flex items-center justify-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-primary to-brand-accent text-white shadow-lg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <h1 className="font-serif text-3xl sm:text-4xl tracking-wide text-stone-950">
+              {greeting}, {email.split("@")[0]}
+            </h1>
+          </div>
+
+          {/* Input Box */}
+          <div className="relative w-full rounded-2xl border border-stone-200/80 bg-white/90 p-5 shadow-[0_2px_16px_rgba(0,0,0,0.04)]">
+            <form onSubmit={handleSubmit} className="flex flex-col">
+              <label className="block">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-400 mb-2.5 block">
+                  Describe your idea
+                </span>
+                <textarea
+                  className="w-full resize-none rounded-xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-sm leading-7 text-stone-800 placeholder:text-stone-400 outline-none transition-all duration-150 hover:border-stone-300 focus:border-stone-900 focus:bg-white focus:ring-2 focus:ring-stone-900/8 min-h-[120px]"
+                  placeholder="Tell me about your product idea, the problem you're solving, or what you want to build..."
+                  value={idea}
+                  onChange={(e) => setIdea(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (idea.trim() && !isSubmitting) {
+                        e.currentTarget.form?.requestSubmit();
+                      }
+                    }
+                  }}
+                />
+              </label>
+              
+              {errorMessage && (
+                <div className="mt-3 text-sm text-red-600 px-1">{errorMessage}</div>
+              )}
+
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-stone-100">
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="text" 
+                    placeholder="Project name (optional)" 
+                    className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-900 outline-none transition-all duration-150 hover:border-stone-300 focus:border-stone-900 focus:bg-white focus:ring-2 focus:ring-stone-900/8 w-48"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  disabled={!idea.trim() || isSubmitting}
+                  className="flex cursor-pointer items-center gap-2 rounded-xl bg-stone-950 px-4 py-2.5 text-sm font-semibold text-white transition-all duration-150 hover:bg-stone-800 active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                      Start Session
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="mt-6">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-400 mb-3 text-center">
+              or start with a template
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]">
+                <MessageSquare className="h-3.5 w-3.5" /> Product Discovery
+              </button>
+              <button className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]">
+                <Bot className="h-3.5 w-3.5" /> Feature Planning
+              </button>
+              <button className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]">
+                <LayoutGrid className="h-3.5 w-3.5" /> MVP Scope
+              </button>
+            </div>
+          </div>
+          
+        </div>
+      </section>
       </div>
     </main>
   );

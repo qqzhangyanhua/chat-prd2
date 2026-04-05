@@ -5,9 +5,9 @@ import { useEffect } from "react";
 import { useToastStore } from "../../store/toast-store";
 
 const toneStyles = {
-  info: "border-amber-200 bg-amber-50 text-amber-900",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  error: "border-red-200 bg-red-50 text-red-900",
+  info: "border-amber-200/80 bg-amber-50 text-amber-900 shadow-amber-100",
+  success: "border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-emerald-100",
+  error: "border-red-200/80 bg-red-50 text-red-900 shadow-red-100",
 } as const;
 
 export function WorkspaceToastViewport() {
@@ -37,7 +37,7 @@ export function WorkspaceToastViewport() {
       <div
         aria-atomic="true"
         aria-live="polite"
-        className={`min-w-[240px] max-w-sm rounded-2xl border px-4 py-3 text-sm font-medium shadow-lg backdrop-blur ${toneStyles[toast.tone]}`}
+        className={`min-w-[240px] max-w-sm rounded-xl border px-4 py-3 text-sm font-medium shadow-lg shadow-stone-200/60 backdrop-blur-sm ${toneStyles[toast.tone]}`}
         role="status"
       >
         {toast.message}

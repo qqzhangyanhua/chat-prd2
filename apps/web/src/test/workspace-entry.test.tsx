@@ -35,6 +35,8 @@ describe("WorkspaceEntry", () => {
         user_id: "user-1",
         title: "产品访谈助手",
         initial_idea: "帮我把零散需求整理成 PRD",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
       },
       state: {
         idea: "帮我把零散需求整理成 PRD",
@@ -42,17 +44,23 @@ describe("WorkspaceEntry", () => {
       prd_snapshot: {
         sections: {},
       },
+      messages: [],
     });
 
     render(<WorkspaceEntry />);
 
-    fireEvent.change(screen.getByLabelText("会话标题"), {
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Tell me about your product idea, the problem you're solving, or what you want to build...",
+      ),
+      {
+        target: { value: "帮我把零散需求整理成 PRD" },
+      },
+    );
+    fireEvent.change(screen.getByPlaceholderText("Project name (optional)"), {
       target: { value: "产品访谈助手" },
     });
-    fireEvent.change(screen.getByLabelText("初始想法"), {
-      target: { value: "帮我把零散需求整理成 PRD" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "创建并进入工作台" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
 
     await waitFor(() => {
       expect(createSessionMock).toHaveBeenCalledWith(
@@ -74,12 +82,16 @@ describe("WorkspaceEntry", () => {
           user_id: "user-1",
           title: "最近活跃会话",
           initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
         },
         {
           id: "session-2",
           user_id: "user-1",
           title: "更早的会话",
           initial_idea: "older idea",
+          created_at: "2026-04-04T00:00:00Z",
+          updated_at: "2026-04-04T00:00:00Z",
         },
       ],
     });

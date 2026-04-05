@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Send, Square, Loader } from "lucide-react";
 
 import { sendMessage } from "../../lib/api";
 import { parseEventStream } from "../../lib/sse";
@@ -129,47 +130,76 @@ export function Composer({ sessionId }: ComposerProps) {
       ? "等待回应..."
       : streamPhase === "streaming"
         ? "正在生成回复..."
-        : "准备好继续，补充你的想法。";
+        : "准备好继续，补充你的想法";
+
+  const isWaiting = streamPhase === "waiting";
 
   return (
-    <form
-      className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm"
-      onSubmit={(event) => event.preventDefault()}
-    >
-      <label className="block">
-        <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
-          继续补充
-        </span>
-        <textarea
-          className="mt-3 min-h-32 w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm leading-7 text-stone-800 outline-none transition focus:border-stone-900"
-          onChange={(event) => {
-            resetError();
-            setInputValue(event.target.value);
-          }}
-          placeholder="把你现在的想法、顾虑或选择继续告诉我。我会基于已有上下文继续追问和收敛。"
-          value={inputValue}
-        />
-      </label>
-
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <div className="space-y-1">
-          <p className="text-sm text-stone-500">{statusMessage}</p>
-          {errorMessage ? <p className="text-sm text-red-600">{errorMessage}</p> : null}
+    <div className="rounded-2xl border border-stone-200/80 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+      <form onSubmit={(event) => event.preventDefault()}>
+        <div className="px-5 pt-5">
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-400">
+              继续补充
+            </span>
+            <textarea
+              className="mt-2.5 min-h-28 w-full resize-none rounded-xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-sm leading-7 text-stone-800 placeholder:text-stone-400 outline-none transition-all duration-150 hover:border-stone-300 focus:border-stone-900 focus:bg-white focus:ring-2 focus:ring-stone-900/8 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isStreaming}
+              onChange={(event) => {
+                resetError();
+                setInputValue(event.target.value);
+              }}
+              placeholder="把你现在的想法、顾虑或选择告诉我，AI 会基于上下文继续追问和收敛..."
+              value={inputValue}
+            />
+          </label>
         </div>
-        <button
-          className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-stone-400"
-          onClick={() => {
-            if (isStreaming) {
-              handleCancel();
-              return;
-            }
-            void handleSend();
-          }}
-          type="button"
-        >
-          {isStreaming ? "停止生成" : "发送消息"}
-        </button>
-      </div>
-    </form>
+
+        <div className="flex items-center justify-between gap-4 border-t border-stone-100 px-5 py-3.5">
+          <div className="flex flex-col gap-0.5">
+            <p className={`flex items-center gap-1.5 text-xs ${isWaiting || isStreaming ? "text-amber-600" : "text-stone-400"}`}>
+              {isWaiting ? (
+                <Loader className="h-3 w-3 animate-spin" />
+              ) : isStreaming ? (
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              ) : null}
+              {statusMessage}
+            </p>
+            {errorMessage ? (
+              <p className="text-xs text-red-600">{errorMessage}</p>
+            ) : null}
+          </div>
+
+          <button
+            className={`flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed ${
+              isStreaming
+                ? "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                : "bg-stone-950 text-white hover:bg-stone-800 disabled:bg-stone-300 disabled:text-stone-500"
+            }`}
+            disabled={!isStreaming && !inputValue.trim()}
+            onClick={() => {
+              if (isStreaming) {
+                handleCancel();
+                return;
+              }
+              void handleSend();
+            }}
+            type="button"
+          >
+            {isStreaming ? (
+              <>
+                <Square className="h-3.5 w-3.5 fill-current" />
+                停止生成
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" />
+                发送消息
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
