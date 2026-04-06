@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/ai_cofounder"
+DEFAULT_AUTH_ACCESS_TOKEN_EXPIRE_MINUTES = 7 * 24 * 60
 ENV_FILE_PATH = Path(__file__).resolve().parents[4] / ".env"
 
 
@@ -40,6 +41,17 @@ def parse_admin_emails(raw: str | None) -> tuple[str, ...]:
     return tuple(normalized_emails)
 
 
+def parse_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+
+    value = int(raw_value)
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "AI Co-founder API"
@@ -48,6 +60,12 @@ class Settings:
     )
     auth_secret_key: str | None = field(
         default_factory=lambda: os.getenv("AUTH_SECRET_KEY")
+    )
+    auth_access_token_expire_minutes: int = field(
+        default_factory=lambda: parse_int_env(
+            "AUTH_ACCESS_TOKEN_EXPIRE_MINUTES",
+            DEFAULT_AUTH_ACCESS_TOKEN_EXPIRE_MINUTES,
+        )
     )
     admin_emails: tuple[str, ...] = field(
         default_factory=lambda: parse_admin_emails(os.getenv("ADMIN_EMAILS"))

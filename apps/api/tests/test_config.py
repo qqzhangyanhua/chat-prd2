@@ -70,3 +70,19 @@ def test_settings_parse_admin_emails_to_normalized_tuple(monkeypatch) -> None:
     settings = Settings()
 
     assert settings.admin_emails == ("admin@example.com", "manager@example.com")
+
+
+def test_settings_default_access_token_expire_minutes_is_seven_days(monkeypatch) -> None:
+    monkeypatch.delenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", raising=False)
+
+    settings = Settings()
+
+    assert settings.auth_access_token_expire_minutes == 7 * 24 * 60
+
+
+def test_settings_use_access_token_expire_minutes_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "2880")
+
+    settings = Settings()
+
+    assert settings.auth_access_token_expire_minutes == 2880

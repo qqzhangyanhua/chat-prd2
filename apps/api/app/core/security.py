@@ -17,7 +17,7 @@ if not _explicit_key:
     )
 SECRET_KEY = _explicit_key or secrets.token_urlsafe(32)
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.auth_access_token_expire_minutes
 
 
 def hash_password(password: str) -> str:

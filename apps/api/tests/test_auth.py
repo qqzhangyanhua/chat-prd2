@@ -1,3 +1,8 @@
+from datetime import UTC, datetime, timedelta
+
+from jose import jwt
+
+from app.core.security import ALGORITHM, SECRET_KEY
 from app.core.config import Settings
 
 
@@ -29,6 +34,27 @@ def test_login_returns_token_for_existing_user(client):
     assert data["user"]["email"] == "login-user@example.com"
     assert data["user"]["is_admin"] is False
     assert data["access_token"]
+
+
+def test_login_returns_access_token_that_expires_in_about_seven_days(client):
+    client.post(
+        "/api/auth/register",
+        json={"email": "seven-days@example.com", "password": "secret123"},
+    )
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "seven-days@example.com", "password": "secret123"},
+    )
+
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    claims = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    expires_at = datetime.fromtimestamp(claims["exp"], UTC)
+    remaining = expires_at - datetime.now(UTC)
+
+    assert remaining > timedelta(days=6, hours=23, minutes=50)
+    assert remaining < timedelta(days=7, minutes=5)
 
 
 def test_login_rejects_invalid_password(client):
