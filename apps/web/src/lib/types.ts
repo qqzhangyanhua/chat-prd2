@@ -45,6 +45,34 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
   message_type: string;
+  reply_group_id?: string | null;
+  version_no?: number | null;
+  is_latest?: boolean | null;
+}
+
+export interface AssistantReplyVersion {
+  id: string;
+  reply_group_id: string;
+  session_id: string;
+  user_message_id: string;
+  version_no: number;
+  content: string;
+  action_snapshot: Record<string, unknown>;
+  model_meta: Record<string, unknown>;
+  state_version_id: string | null;
+  prd_snapshot_version: number | null;
+  created_at: string;
+  is_latest?: boolean;
+}
+
+export interface AssistantReplyGroup {
+  id: string;
+  session_id: string;
+  user_message_id: string;
+  latest_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+  versions: AssistantReplyVersion[];
 }
 
 export interface SessionSnapshotResponse {
@@ -54,6 +82,7 @@ export interface SessionSnapshotResponse {
     sections: Record<string, Record<string, unknown>>;
   };
   messages: ConversationMessage[];
+  assistant_reply_groups?: AssistantReplyGroup[];
 }
 
 export interface ExportResponse {
@@ -70,7 +99,10 @@ export interface NextAction {
 export interface WorkspaceMessage {
   content: string;
   id?: string;
+  isLatest?: boolean | null;
+  replyGroupId?: string | null;
   role: "user" | "assistant";
+  versionNo?: number | null;
 }
 
 export interface EnabledModelConfigItem {
@@ -127,8 +159,66 @@ export interface PrdState {
 }
 
 export type WorkspaceEvent =
-  | { type: "message.accepted"; data: { message_id: string } }
+  | { type: "message.accepted"; data: { message_id: string; session_id?: string } }
+  | {
+      type: "reply_group.created";
+      data: {
+        reply_group_id: string;
+        user_message_id: string;
+        session_id: string;
+        is_regeneration: boolean;
+        is_latest: boolean;
+      };
+    }
   | { type: "action.decided"; data: NextAction }
-  | { type: "assistant.delta"; data: { delta: string } }
-  | { type: "assistant.done"; data: { message_id: string } }
+  | {
+      type: "assistant.version.started";
+      data: {
+        session_id: string;
+        user_message_id: string;
+        reply_group_id: string;
+        assistant_version_id: string;
+        version_no: number;
+        assistant_message_id: string | null;
+        model_config_id: string;
+        is_regeneration: boolean;
+        is_latest: boolean;
+      };
+    }
+  | {
+      type: "assistant.delta";
+      data:
+        | { delta: string }
+        | {
+            session_id: string;
+            user_message_id: string;
+            reply_group_id: string;
+            assistant_version_id: string;
+            version_no: number;
+            assistant_message_id: string | null;
+            model_config_id: string;
+            delta: string;
+            is_regeneration: boolean;
+            is_latest: boolean;
+          };
+    }
+  | {
+      type: "assistant.done";
+      data:
+        | { message_id: string }
+        | {
+            session_id: string;
+            user_message_id: string;
+            reply_group_id: string;
+            assistant_version_id: string;
+            version_id: string;
+            version_no: number;
+            assistant_message_id: string;
+            model_config_id: string;
+            prd_snapshot_version: number;
+            is_regeneration: boolean;
+            is_latest: boolean;
+            message_id?: string;
+          };
+    }
   | { type: "prd.updated"; data: { sections: Record<string, PrdSection> } };

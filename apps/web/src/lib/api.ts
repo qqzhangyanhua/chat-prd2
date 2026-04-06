@@ -97,6 +97,40 @@ export async function sendMessage(
   return response.body;
 }
 
+export async function regenerateMessage(
+  sessionId: string,
+  userMessageId: string,
+  accessToken?: string | null,
+  signal?: AbortSignal,
+  modelConfigId?: string,
+): Promise<ReadableStream<Uint8Array>> {
+  if (!modelConfigId) {
+    throw new Error("消息重生成失败");
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/sessions/${sessionId}/messages/${userMessageId}/regenerate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ model_config_id: modelConfigId }),
+      signal,
+    },
+  );
+
+  if (!response.ok || !response.body) {
+    const errorPayload = (await response.json().catch(() => null)) as
+      | { detail?: string }
+      | null;
+    throw new Error(errorPayload?.detail ?? "消息重生成失败");
+  }
+
+  return response.body;
+}
+
 export function exportSession(
   sessionId: string,
   accessToken?: string | null,

@@ -2,6 +2,8 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type {
+  AssistantReplyGroup,
+  AssistantReplyVersion,
   ConversationMessage,
   EnabledModelConfigItem,
   NextAction,
@@ -14,7 +16,26 @@ import type {
 type StreamPhase = "idle" | "waiting" | "streaming";
 type RequestMode = "new" | "regenerate";
 
+interface WorkspaceReplyVersion {
+  assistantMessageId: string | null;
+  content: string;
+  id: string;
+  isLatest: boolean;
+  isRegeneration: boolean;
+  versionNo: number;
+}
+
+interface WorkspaceReplyGroup {
+  id: string;
+  latestVersionId: string | null;
+  sessionId: string;
+  userMessageId: string;
+  versions: WorkspaceReplyVersion[];
+}
+
 interface WorkspaceState {
+  activeAssistantVersionId: string | null;
+  activeReplyGroupId: string | null;
   availableModelConfigs: EnabledModelConfigItem[];
   currentAction: NextAction | null;
   errorMessage: string | null;
@@ -27,7 +48,10 @@ interface WorkspaceState {
   pendingRequestMode: RequestMode | null;
   prd: PrdState;
   regenerateRequestId: number;
+  replyGroups: Record<string, WorkspaceReplyGroup>;
   selectedModelConfigId: string | null;
+  selectedHistoryGroupId: string | null;
+  selectedHistoryVersionId: string | null;
   streamPhase: StreamPhase;
   applyEvent: (event: WorkspaceEvent) => void;
   cancelPendingRequest: () => void;
@@ -92,7 +116,67 @@ function normalizeMessages(messages: ConversationMessage[]): WorkspaceMessage[] 
       id: message.id,
       role: message.role,
       content: message.content,
+      replyGroupId: message.reply_group_id,
+      versionNo: message.version_no,
+      isLatest: message.is_latest,
     }));
+}
+
+function normalizeReplyGroups(groups: AssistantReplyGroup[]): Record<string, WorkspaceReplyGroup> {
+  return Object.fromEntries(
+    groups.map((group) => [
+      group.id,
+      {
+        id: group.id,
+        sessionId: group.session_id,
+        userMessageId: group.user_message_id,
+        latestVersionId: group.latest_version_id,
+        versions: group.versions
+          .slice()
+          .sort((a, b) => a.version_no - b.version_no)
+          .map((version: AssistantReplyVersion) => ({
+            id: version.id,
+            versionNo: version.version_no,
+            content: version.content,
+            assistantMessageId: null,
+            isRegeneration: version.version_no > 1,
+            isLatest: version.is_latest ?? version.id === group.latest_version_id,
+          })),
+      },
+    ]),
+  );
+}
+
+function upsertReplyVersion(
+  group: WorkspaceReplyGroup,
+  version: WorkspaceReplyVersion,
+): WorkspaceReplyGroup {
+  const existingIndex = group.versions.findIndex((item) => item.id === version.id);
+  if (existingIndex === -1) {
+    return {
+      ...group,
+      versions: [...group.versions, version].sort((a, b) => a.versionNo - b.versionNo),
+    };
+  }
+
+  return {
+    ...group,
+    versions: group.versions.map((item, index) =>
+      index === existingIndex ? { ...item, ...version } : item,
+    ),
+  };
+}
+
+function extractAssistantDeltaData(
+  data: WorkspaceEvent["data"],
+): Extract<WorkspaceEvent, { type: "assistant.delta" }>["data"] {
+  return data as Extract<WorkspaceEvent, { type: "assistant.delta" }>["data"];
+}
+
+function extractAssistantDoneData(
+  data: WorkspaceEvent["data"],
+): Extract<WorkspaceEvent, { type: "assistant.done" }>["data"] {
+  return data as Extract<WorkspaceEvent, { type: "assistant.done" }>["data"];
 }
 
 function createInitialState(): Omit<
@@ -111,6 +195,8 @@ function createInitialState(): Omit<
   | "startRequest"
 > {
   return {
+    activeAssistantVersionId: null,
+    activeReplyGroupId: null,
     availableModelConfigs: [],
     currentAction: {
       action: "probe_deeper",
@@ -134,7 +220,10 @@ function createInitialState(): Omit<
       sections: initialPrdSections,
     },
     regenerateRequestId: 0,
+    replyGroups: {},
     selectedModelConfigId: null,
+    selectedHistoryGroupId: null,
+    selectedHistoryVersionId: null,
     streamPhase: "idle",
   };
 }
@@ -158,17 +247,138 @@ export function createWorkspaceStore() {
                         id: event.data.message_id,
                         role: "user",
                         content: state.pendingUserInput,
+                        replyGroupId: null,
+                        versionNo: null,
+                        isLatest: null,
                       },
                     ],
               pendingUserInput: null,
-              pendingRequestMode: null,
+              pendingRequestMode: state.pendingRequestMode === "new" ? null : state.pendingRequestMode,
             };
+          case "reply_group.created": {
+            const existingGroup = state.replyGroups[event.data.reply_group_id];
+            return {
+              ...state,
+              replyGroups: {
+                ...state.replyGroups,
+                [event.data.reply_group_id]: {
+                  id: event.data.reply_group_id,
+                  sessionId: event.data.session_id,
+                  userMessageId: event.data.user_message_id,
+                  latestVersionId: existingGroup?.latestVersionId ?? null,
+                  versions: existingGroup?.versions ?? [],
+                },
+              },
+              selectedHistoryGroupId:
+                state.selectedHistoryGroupId ?? event.data.reply_group_id,
+            };
+          }
           case "action.decided":
             return {
               ...state,
               currentAction: event.data,
             };
+          case "assistant.version.started": {
+            const existingGroup = state.replyGroups[event.data.reply_group_id] ?? {
+              id: event.data.reply_group_id,
+              sessionId: event.data.session_id,
+              userMessageId: event.data.user_message_id,
+              latestVersionId: null,
+              versions: [],
+            };
+            const nextGroup = upsertReplyVersion(existingGroup, {
+              id: event.data.assistant_version_id,
+              versionNo: event.data.version_no,
+              content:
+                existingGroup.versions.find((item) => item.id === event.data.assistant_version_id)
+                  ?.content ?? "",
+              assistantMessageId: event.data.assistant_message_id,
+              isRegeneration: event.data.is_regeneration,
+              isLatest: false,
+            });
+            return {
+              ...state,
+              activeAssistantVersionId: event.data.assistant_version_id,
+              activeReplyGroupId: event.data.reply_group_id,
+              replyGroups: {
+                ...state.replyGroups,
+                [event.data.reply_group_id]: nextGroup,
+              },
+              selectedHistoryGroupId: event.data.reply_group_id,
+              selectedHistoryVersionId: event.data.assistant_version_id,
+            };
+          }
           case "assistant.delta": {
+            const deltaData = extractAssistantDeltaData(event.data);
+            if ("assistant_version_id" in deltaData) {
+              const group = state.replyGroups[deltaData.reply_group_id];
+              const existingGroup: WorkspaceReplyGroup = group ?? {
+                id: deltaData.reply_group_id,
+                sessionId: deltaData.session_id,
+                userMessageId: deltaData.user_message_id,
+                latestVersionId: null,
+                versions: [],
+              };
+              const existingVersion = existingGroup.versions.find(
+                (item) => item.id === deltaData.assistant_version_id,
+              );
+              const nextGroup = upsertReplyVersion(existingGroup, {
+                id: deltaData.assistant_version_id,
+                versionNo: deltaData.version_no,
+                content: `${existingVersion?.content ?? ""}${deltaData.delta}`,
+                assistantMessageId: deltaData.assistant_message_id,
+                isRegeneration: deltaData.is_regeneration,
+                isLatest: false,
+              });
+
+              if (deltaData.is_regeneration) {
+                return {
+                  ...state,
+                  lastInterrupted: false,
+                  streamPhase: "streaming",
+                  replyGroups: {
+                    ...state.replyGroups,
+                    [deltaData.reply_group_id]: nextGroup,
+                  },
+                };
+              }
+
+              const lastMessage = state.messages.at(-1);
+              const messages =
+                lastMessage?.role === "assistant"
+                  ? [
+                      ...state.messages.slice(0, -1),
+                      {
+                        ...lastMessage,
+                        content: `${lastMessage.content}${deltaData.delta}`,
+                        replyGroupId: deltaData.reply_group_id,
+                        versionNo: deltaData.version_no,
+                        isLatest: false,
+                      },
+                    ]
+                  : [
+                      ...state.messages,
+                      {
+                        role: "assistant",
+                        content: deltaData.delta,
+                        replyGroupId: deltaData.reply_group_id,
+                        versionNo: deltaData.version_no,
+                        isLatest: false,
+                      },
+                    ];
+
+              return {
+                ...state,
+                messages,
+                lastInterrupted: false,
+                streamPhase: "streaming",
+                replyGroups: {
+                  ...state.replyGroups,
+                  [deltaData.reply_group_id]: nextGroup,
+                },
+              };
+            }
+
             const lastMessage = state.messages.at(-1);
             if (lastMessage?.role === "assistant") {
               return {
@@ -177,7 +387,7 @@ export function createWorkspaceStore() {
                   ...state.messages.slice(0, -1),
                   {
                     ...lastMessage,
-                    content: `${lastMessage.content}${event.data.delta}`,
+                    content: `${lastMessage.content}${deltaData.delta}`,
                   },
                 ],
                 lastInterrupted: false,
@@ -191,7 +401,7 @@ export function createWorkspaceStore() {
                 ...state.messages,
                 {
                   role: "assistant",
-                  content: event.data.delta,
+                  content: deltaData.delta,
                 },
               ],
               lastInterrupted: false,
@@ -199,12 +409,121 @@ export function createWorkspaceStore() {
             };
           }
           case "assistant.done": {
+            const doneData = extractAssistantDoneData(event.data);
+            if ("assistant_version_id" in doneData) {
+              if (
+                state.activeAssistantVersionId &&
+                state.activeAssistantVersionId !== doneData.assistant_version_id
+              ) {
+                return state;
+              }
+              const group = state.replyGroups[doneData.reply_group_id];
+              const existingGroup: WorkspaceReplyGroup = group ?? {
+                id: doneData.reply_group_id,
+                sessionId: doneData.session_id,
+                userMessageId: doneData.user_message_id,
+                latestVersionId: null,
+                versions: [],
+              };
+              const latestContent =
+                existingGroup.versions.find((item) => item.id === doneData.assistant_version_id)
+                  ?.content ?? "";
+              const nextGroup = {
+                ...existingGroup,
+                latestVersionId: doneData.assistant_version_id,
+                versions: existingGroup.versions.map((item) =>
+                  item.id === doneData.assistant_version_id
+                    ? {
+                        ...item,
+                        assistantMessageId: doneData.assistant_message_id,
+                        isLatest: true,
+                      }
+                    : { ...item, isLatest: false },
+                ),
+              };
+
+              const assistantMessageId = doneData.assistant_message_id ?? doneData.message_id;
+              let messages = state.messages;
+              if (assistantMessageId) {
+                const targetIndex = messages.findIndex(
+                  (message) =>
+                    message.role === "assistant" &&
+                    (message.id === assistantMessageId ||
+                      message.id === doneData.assistant_version_id ||
+                      message.replyGroupId === doneData.reply_group_id),
+                );
+                if (targetIndex >= 0) {
+                  messages = messages.map((message, index) =>
+                    index === targetIndex
+                      ? {
+                          ...message,
+                          id: doneData.assistant_version_id,
+                          content: latestContent,
+                          replyGroupId: doneData.reply_group_id,
+                          versionNo: doneData.version_no,
+                          isLatest: true,
+                        }
+                      : message.replyGroupId === doneData.reply_group_id
+                        ? { ...message, isLatest: false }
+                        : message,
+                  );
+                } else if (!doneData.is_regeneration) {
+                  const lastMessage = messages.at(-1);
+                  if (lastMessage?.role === "assistant" && !lastMessage.id) {
+                    messages = [
+                      ...messages.slice(0, -1),
+                      {
+                        ...lastMessage,
+                        id: doneData.assistant_version_id,
+                        content: latestContent,
+                        replyGroupId: doneData.reply_group_id,
+                        versionNo: doneData.version_no,
+                        isLatest: true,
+                      },
+                    ];
+                  } else {
+                    messages = [
+                      ...messages,
+                      {
+                        id: doneData.assistant_version_id,
+                        role: "assistant",
+                        content: latestContent,
+                        replyGroupId: doneData.reply_group_id,
+                        versionNo: doneData.version_no,
+                        isLatest: true,
+                      },
+                    ];
+                  }
+                }
+              }
+
+              return {
+                ...state,
+                activeAssistantVersionId: null,
+                activeReplyGroupId: null,
+                isStreaming: false,
+                lastInterrupted: false,
+                pendingRequestMode: null,
+                pendingUserInput: null,
+                streamPhase: "idle",
+                messages,
+                replyGroups: {
+                  ...state.replyGroups,
+                  [doneData.reply_group_id]: nextGroup,
+                },
+                selectedHistoryGroupId: doneData.reply_group_id,
+                selectedHistoryVersionId: doneData.assistant_version_id,
+              };
+            }
+
             const lastMessage = state.messages.at(-1);
             if (lastMessage?.role !== "assistant") {
               return {
                 ...state,
                 isStreaming: false,
                 lastInterrupted: false,
+                pendingRequestMode: null,
+                pendingUserInput: null,
                 streamPhase: "idle",
               };
             }
@@ -213,12 +532,14 @@ export function createWorkspaceStore() {
               ...state,
               isStreaming: false,
               lastInterrupted: false,
+              pendingRequestMode: null,
+              pendingUserInput: null,
               streamPhase: "idle",
               messages: [
                 ...state.messages.slice(0, -1),
                 {
                   ...lastMessage,
-                  id: event.data.message_id,
+                  id: doneData.message_id,
                 },
               ],
             };
@@ -241,6 +562,8 @@ export function createWorkspaceStore() {
     cancelPendingRequest: () =>
       set((state) => ({
         ...state,
+        activeAssistantVersionId: null,
+        activeReplyGroupId: null,
         isStreaming: false,
         pendingRequestMode: null,
         pendingUserInput: null,
@@ -249,6 +572,8 @@ export function createWorkspaceStore() {
     failRequest: (message) =>
       set((state) => ({
         ...state,
+        activeAssistantVersionId: null,
+        activeReplyGroupId: null,
         errorMessage: message,
         isStreaming: false,
         lastInterrupted: false,
@@ -259,6 +584,8 @@ export function createWorkspaceStore() {
     hydrateSession: (snapshot) =>
       set((state) => ({
         ...state,
+        activeAssistantVersionId: null,
+        activeReplyGroupId: null,
         currentAction: null,
         errorMessage: null,
         inputValue: "",
@@ -275,11 +602,16 @@ export function createWorkspaceStore() {
               : state.prd.sections,
         },
         regenerateRequestId: 0,
+        replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),
+        selectedHistoryGroupId: null,
+        selectedHistoryVersionId: null,
         streamPhase: "idle",
       })),
     markInterrupted: () =>
       set((state) => ({
         ...state,
+        activeAssistantVersionId: null,
+        activeReplyGroupId: null,
         isStreaming: false,
         lastInterrupted: true,
         pendingRequestMode: null,
@@ -330,14 +662,11 @@ export function createWorkspaceStore() {
       }
 
       set((state) => {
-        const lastMessage = state.messages.at(-1);
         return {
           ...state,
           errorMessage: null,
           isStreaming: true,
           lastInterrupted: false,
-          messages:
-            lastMessage?.role === "assistant" ? state.messages.slice(0, -1) : state.messages,
           pendingRequestMode: "regenerate",
           pendingUserInput: lastSubmittedInput,
           streamPhase: "waiting",
@@ -350,6 +679,8 @@ export function createWorkspaceStore() {
     startRequest: (content, mode = "new") =>
       set((state) => ({
         ...state,
+        activeAssistantVersionId: null,
+        activeReplyGroupId: null,
         errorMessage: null,
         inputValue: "",
         isStreaming: true,

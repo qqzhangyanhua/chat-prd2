@@ -33,12 +33,46 @@ describe("workspace store", () => {
       type: "message.accepted",
       data: {
         message_id: "user-1",
+        session_id: "session-1",
+      },
+    });
+    store.getState().applyEvent({
+      type: "reply_group.created",
+      data: {
+        reply_group_id: "group-1",
+        user_message_id: "user-1",
+        session_id: "session-1",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        is_regeneration: false,
+        is_latest: false,
       },
     });
     store.getState().applyEvent({
       type: "assistant.delta",
       data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
         delta: "先继续明确他们最痛的一次产品决策卡点。",
+        is_regeneration: false,
+        is_latest: false,
       },
     });
 
@@ -56,6 +90,7 @@ describe("workspace store", () => {
       type: "message.accepted",
       data: {
         message_id: "user-1",
+        session_id: "session-1",
       },
     });
 
@@ -69,7 +104,16 @@ describe("workspace store", () => {
     store.getState().applyEvent({
       type: "assistant.delta",
       data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
         delta: "先讲讲他们在定义 MVP 时最常卡住的地方。",
+        is_regeneration: false,
+        is_latest: false,
       },
     });
     store.getState().markInterrupted();
@@ -77,7 +121,7 @@ describe("workspace store", () => {
     expect(store.getState().lastInterrupted).toBe(true);
   });
 
-  it("replays the last accepted user input without duplicating the user message", () => {
+  it("starts regenerate without removing the last assistant message", () => {
     const store = createWorkspaceStore();
     store.getState().setAvailableModelConfigs([
       {
@@ -92,25 +136,70 @@ describe("workspace store", () => {
       type: "message.accepted",
       data: {
         message_id: "user-1",
+        session_id: "session-1",
+      },
+    });
+    store.getState().applyEvent({
+      type: "reply_group.created",
+      data: {
+        reply_group_id: "group-1",
+        user_message_id: "user-1",
+        session_id: "session-1",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        is_regeneration: false,
+        is_latest: false,
       },
     });
     store.getState().applyEvent({
       type: "assistant.delta",
       data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
         delta: "先讲讲他们在定义 MVP 时最常卡住的地方。",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.done",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        prd_snapshot_version: 2,
+        is_regeneration: false,
+        is_latest: true,
+        message_id: "assistant-1",
       },
     });
     const regenerateInput = store.getState().startRegenerate();
-    store.getState().applyEvent({
-      type: "message.accepted",
-      data: {
-        message_id: "user-2",
-      },
-    });
 
     expect(regenerateInput).toBe(true);
     expect(store.getState().messages.filter((message) => message.role === "user")).toHaveLength(1);
-    expect(store.getState().messages.at(-1)?.role).toBe("user");
+    expect(store.getState().messages.at(-1)?.role).toBe("assistant");
   });
 
   it("clears the interrupted marker when a new request starts", () => {
@@ -120,7 +209,16 @@ describe("workspace store", () => {
     store.getState().applyEvent({
       type: "assistant.delta",
       data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
         delta: "先讲讲他们在定义 MVP 时最常卡住的地方。",
+        is_regeneration: false,
+        is_latest: false,
       },
     });
     store.getState().markInterrupted();
@@ -145,7 +243,16 @@ describe("workspace store", () => {
     store.getState().applyEvent({
       type: "assistant.delta",
       data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
         delta: "继续往下收敛。",
+        is_regeneration: false,
+        is_latest: false,
       },
     });
     store.getState().markInterrupted();
@@ -188,6 +295,7 @@ describe("workspace store", () => {
           message_type: "chat",
         },
       ],
+      assistant_reply_groups: [],
     });
 
     expect(store.getState().inputValue).toBe("");
@@ -197,12 +305,347 @@ describe("workspace store", () => {
       role: "assistant",
       content: "你好，请问你的想法是？",
     });
+    expect(store.getState().replyGroups).toEqual({});
+    expect(store.getState().selectedHistoryGroupId).toBeNull();
+    expect(store.getState().selectedHistoryVersionId).toBeNull();
     expect(store.getState().currentAction).toBeNull();
     expect(store.getState().isStreaming).toBe(false);
     expect(store.getState().pendingUserInput).toBeNull();
     expect(store.getState().lastInterrupted).toBe(false);
     expect(store.getState().lastSubmittedInput).toBeNull();
     expect(store.getState().prd.sections.target_user?.content).toBe("独立开发者");
+  });
+
+  it("hydrates legacy snapshot when assistant_reply_groups is missing", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "session-1",
+          role: "user",
+          content: "你好",
+          message_type: "chat",
+        },
+      ],
+    });
+
+    expect(store.getState().messages).toHaveLength(1);
+    expect(store.getState().replyGroups).toEqual({});
+  });
+
+  it("stores reply groups and keeps old versions when regenerate completes", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想先服务独立开发者");
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: { message_id: "user-1", session_id: "session-1" },
+    });
+    store.getState().applyEvent({
+      type: "reply_group.created",
+      data: {
+        reply_group_id: "group-1",
+        user_message_id: "user-1",
+        session_id: "session-1",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        delta: "第一版",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.done",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        prd_snapshot_version: 2,
+        is_regeneration: false,
+        is_latest: true,
+        message_id: "assistant-1",
+      },
+    });
+
+    store.getState().startRegenerate();
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        is_regeneration: true,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        delta: "第二版",
+        is_regeneration: true,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.done",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        prd_snapshot_version: 3,
+        is_regeneration: true,
+        is_latest: true,
+      },
+    });
+
+    const group = store.getState().replyGroups["group-1"];
+    expect(group).toBeDefined();
+    expect(group.latestVersionId).toBe("version-2");
+    expect(group.versions.map((version) => version.id)).toEqual(["version-1", "version-2"]);
+    expect(group.versions[0].isLatest).toBe(false);
+    expect(group.versions[1].isLatest).toBe(true);
+    expect(store.getState().selectedHistoryGroupId).toBe("group-1");
+    expect(store.getState().selectedHistoryVersionId).toBe("version-2");
+    expect(store.getState().messages.at(-1)?.content).toBe("第二版");
+  });
+
+  it("updates the visible assistant card after regenerate on a hydrated session", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "session-1",
+          role: "user",
+          content: "你好",
+          message_type: "chat",
+        },
+        {
+          id: "version-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "第一版",
+          message_type: "chat",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "session-1",
+          user_message_id: "user-1",
+          latest_version_id: "version-1",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "session-1",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "第一版",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: "state-1",
+              prd_snapshot_version: 1,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    store.getState().startRegenerate();
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-mirror-1",
+        model_config_id: "model-openai",
+        is_regeneration: true,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-mirror-1",
+        model_config_id: "model-openai",
+        delta: "第二版",
+        is_regeneration: true,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.done",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-mirror-1",
+        model_config_id: "model-openai",
+        prd_snapshot_version: 2,
+        is_regeneration: true,
+        is_latest: true,
+      },
+    });
+
+    expect(store.getState().messages.at(-1)).toMatchObject({
+      id: "version-2",
+      content: "第二版",
+      replyGroupId: "group-1",
+      versionNo: 2,
+      isLatest: true,
+    });
+  });
+
+  it("ignores stale assistant.done events for an older active version", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想先服务独立开发者");
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: { message_id: "user-1", session_id: "session-1" },
+    });
+    store.getState().applyEvent({
+      type: "reply_group.created",
+      data: {
+        reply_group_id: "group-1",
+        user_message_id: "user-1",
+        session_id: "session-1",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-2",
+        version_no: 2,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        is_regeneration: true,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.done",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        prd_snapshot_version: 2,
+        is_regeneration: true,
+        is_latest: true,
+      },
+    });
+
+    expect(store.getState().activeAssistantVersionId).toBe("version-2");
+    expect(store.getState().replyGroups["group-1"]?.latestVersionId).not.toBe("version-1");
   });
 });
 
