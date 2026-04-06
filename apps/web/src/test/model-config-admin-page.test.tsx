@@ -231,6 +231,11 @@ describe("AdminModelsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建模型配置" }));
 
     const creatingButton = await screen.findByRole("button", { name: "创建中..." });
+    expect(screen.getByLabelText("新配置名称")).toBeDisabled();
+    expect(screen.getByLabelText("新 Base URL")).toBeDisabled();
+    expect(screen.getByLabelText("新 API Key")).toBeDisabled();
+    expect(screen.getByLabelText("新模型 ID")).toBeDisabled();
+    expect(screen.getByLabelText("新配置启用")).toBeDisabled();
     expect(creatingButton).toBeDisabled();
     expect(createAdminModelConfigMock).toHaveBeenCalledTimes(1);
 
@@ -291,6 +296,11 @@ describe("AdminModelsPage", () => {
 
     const savingButton = await screen.findByRole("button", { name: "保存中..." });
     const deleteButton = screen.getByRole("button", { name: "删除 OpenAI 主线路由" });
+    expect(screen.getByLabelText("配置名称 OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("Base URL OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("API Key OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("模型 ID OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("启用 OpenAI 主线路由")).toBeDisabled();
     expect(savingButton).toBeDisabled();
     expect(deleteButton).toBeDisabled();
     expect(updateAdminModelConfigMock).toHaveBeenCalledTimes(1);
@@ -343,6 +353,11 @@ describe("AdminModelsPage", () => {
 
     const deletingButton = await screen.findByRole("button", { name: "删除中..." });
     const saveButton = screen.getByRole("button", { name: "保存 OpenAI 主线路由" });
+    expect(screen.getByLabelText("配置名称 OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("Base URL OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("API Key OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("模型 ID OpenAI 主线路由")).toBeDisabled();
+    expect(screen.getByLabelText("启用 OpenAI 主线路由")).toBeDisabled();
     expect(deletingButton).toBeDisabled();
     expect(saveButton).toBeDisabled();
     expect(deleteAdminModelConfigMock).toHaveBeenCalledTimes(1);

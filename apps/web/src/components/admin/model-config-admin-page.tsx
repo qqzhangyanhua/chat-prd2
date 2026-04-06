@@ -201,6 +201,7 @@ export function ModelConfigAdminPage() {
             新配置名称
             <input
               className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+              disabled={isCreating}
               onChange={(event) =>
                 setCreateForm((current) => ({ ...current, name: event.target.value }))
               }
@@ -211,6 +212,7 @@ export function ModelConfigAdminPage() {
             新 Base URL
             <input
               className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+              disabled={isCreating}
               onChange={(event) =>
                 setCreateForm((current) => ({ ...current, base_url: event.target.value }))
               }
@@ -221,6 +223,7 @@ export function ModelConfigAdminPage() {
             新 API Key
             <input
               className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+              disabled={isCreating}
               onChange={(event) =>
                 setCreateForm((current) => ({ ...current, api_key: event.target.value }))
               }
@@ -231,6 +234,7 @@ export function ModelConfigAdminPage() {
             新模型 ID
             <input
               className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+              disabled={isCreating}
               onChange={(event) =>
                 setCreateForm((current) => ({ ...current, model: event.target.value }))
               }
@@ -242,6 +246,7 @@ export function ModelConfigAdminPage() {
         <label className="mt-4 flex items-center gap-2 text-sm text-stone-700">
           <input
             checked={createForm.enabled}
+            disabled={isCreating}
             onChange={(event) =>
               setCreateForm((current) => ({ ...current, enabled: event.target.checked }))
             }
@@ -277,6 +282,7 @@ export function ModelConfigAdminPage() {
                   {`配置名称 ${item.name}`}
                   <input
                     className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+                    disabled={isSaving || isDeleting}
                     onChange={(event) =>
                       setEditForms((current) => ({
                         ...current,
@@ -290,6 +296,7 @@ export function ModelConfigAdminPage() {
                   {`Base URL ${item.name}`}
                   <input
                     className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+                    disabled={isSaving || isDeleting}
                     onChange={(event) =>
                       setEditForms((current) => ({
                         ...current,
@@ -303,6 +310,7 @@ export function ModelConfigAdminPage() {
                   {`API Key ${item.name}`}
                   <input
                     className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+                    disabled={isSaving || isDeleting}
                     onChange={(event) =>
                       setEditForms((current) => ({
                         ...current,
@@ -316,6 +324,7 @@ export function ModelConfigAdminPage() {
                   {`模型 ID ${item.name}`}
                   <input
                     className="rounded-xl border border-stone-200 px-3 py-2 text-sm text-stone-950"
+                    disabled={isSaving || isDeleting}
                     onChange={(event) =>
                       setEditForms((current) => ({
                         ...current,
@@ -330,6 +339,7 @@ export function ModelConfigAdminPage() {
               <label className="mt-4 flex items-center gap-2 text-sm text-stone-700">
                 <input
                   checked={draft.enabled}
+                  disabled={isSaving || isDeleting}
                   onChange={(event) =>
                     setEditForms((current) => ({
                       ...current,
