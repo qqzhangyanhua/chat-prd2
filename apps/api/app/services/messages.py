@@ -77,17 +77,17 @@ def handle_user_message(
 ) -> MessageResult:
     model_config = _get_enabled_model_config(db, model_config_id)
     model_meta = _build_model_meta(model_config)
-    user_message = messages_repository.create_message(
-        db=db,
-        session_id=session_id,
-        role="user",
-        content=content,
-        meta=model_meta,
-    )
-    messages_repository.touch_session_activity(db, session)
-    db.commit()
 
     try:
+        user_message = messages_repository.create_message(
+            db=db,
+            session_id=session_id,
+            role="user",
+            content=content,
+            meta=model_meta,
+        )
+        messages_repository.touch_session_activity(db, session)
+
         state = state_repository.get_latest_state(db, session_id)
         agent_result = run_agent(state, content)
         reply = generate_reply(
