@@ -156,7 +156,10 @@ describe("SessionSidebar", () => {
   it("does not submit rename when title is empty after trimming", async () => {
     render(<SessionSidebar sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), {
+    // Wait for sessions to load so the input has the session title value
+    await screen.findByDisplayValue("产品调研");
+
+    fireEvent.change(screen.getByLabelText("重命名"), {
       target: { value: "   " },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -181,11 +184,10 @@ describe("SessionSidebar", () => {
   });
 
   it("does not delete the session when confirmation is cancelled", async () => {
-    vi.mocked(window.confirm).mockReturnValue(false);
-
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: /取消/i }));
 
     expect(deleteSessionMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
@@ -197,8 +199,8 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
 
-    expect(window.confirm).toHaveBeenCalledWith("确认删除当前会话？此操作不可恢复。");
     await waitFor(() => {
       expect(deleteSessionMock).toHaveBeenCalledWith("session-1", null);
     });
@@ -211,6 +213,7 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
 
     expect(await screen.findByText("删除失败")).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
@@ -228,6 +231,7 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
 
     const deletingButton = await screen.findByRole("button", { name: "删除中..." });
     expect(deletingButton).toBeDisabled();
@@ -254,6 +258,7 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
 
     await waitFor(() => {
       expect(useToastStore.getState().toast?.message).toBe("正在删除会话...");
@@ -384,6 +389,28 @@ describe("SessionSidebar", () => {
     await waitFor(() => {
       expect(useToastStore.getState().toast?.message).toBe("会话已恢复");
     });
+  });
+
+  it("shows inline confirm UI instead of window.confirm on delete click", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    render(<SessionSidebar sessionId="session-1" />);
+    await screen.findByRole("button", { name: "打开会话 产品调研" });
+
+    fireEvent.click(screen.getByRole("button", { name: /删除当前会话/i }));
+
+    expect(screen.getByRole("button", { name: /确认删除/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /取消/i })).toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("cancels inline delete when 取消 is clicked", async () => {
+    render(<SessionSidebar sessionId="session-1" />);
+    await screen.findByRole("button", { name: "打开会话 产品调研" });
+
+    fireEvent.click(screen.getByRole("button", { name: /删除当前会话/i }));
+    fireEvent.click(screen.getByRole("button", { name: /取消/i }));
+
+    expect(screen.getByRole("button", { name: /删除当前会话/i })).toBeInTheDocument();
   });
 
   it("shows export toast and disables export button while exporting", async () => {

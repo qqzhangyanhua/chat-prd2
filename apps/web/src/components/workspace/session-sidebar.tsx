@@ -55,6 +55,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -92,6 +93,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
     setRenameError(null);
     setDeleteError(null);
     setIsDeleting(false);
+    setConfirmingDelete(false);
     setIsRecovering(false);
     setIsExporting(false);
     setIsRenaming(false);
@@ -225,13 +227,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
       return;
     }
 
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm("确认删除当前会话？此操作不可恢复。")
-    ) {
-      return;
-    }
-
+    // confirmation handled by UI — no window.confirm
     try {
       setDeleteError(null);
       setIsDeleting(true);
@@ -375,18 +371,38 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
       {/* Danger zone */}
       <div className="mt-auto border-t border-stone-100 pt-3">
-        <button
-          className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 transition-all duration-150 hover:border-red-300 hover:bg-red-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={isDeleting}
-          onClick={() => void handleDelete()}
-          type="button"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {isDeleting ? "删除中..." : "删除当前会话"}
-        </button>
-        {deleteError ? (
-          <p className="mt-2 text-xs text-red-600">{deleteError}</p>
-        ) : null}
+        {confirmingDelete ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-stone-600 text-center">确认删除此会话？此操作不可恢复。</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 active:scale-[0.98]"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-100 active:scale-[0.98] disabled:opacity-50"
+                onClick={() => void handleDelete()}
+              >
+                {isDeleting ? "删除中..." : "确认删除"}
+              </button>
+            </div>
+            {deleteError ? <p className="text-xs text-red-600">{deleteError}</p> : null}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 transition-all duration-150 hover:border-red-300 hover:bg-red-100 active:scale-[0.98]"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            删除当前会话
+          </button>
+        )}
       </div>
     </aside>
   );
