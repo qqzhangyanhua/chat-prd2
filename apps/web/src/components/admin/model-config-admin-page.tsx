@@ -44,6 +44,10 @@ export function ModelConfigAdminPage() {
   const [createForm, setCreateForm] = useState<ModelConfigFormState>(EMPTY_FORM);
   const [editForms, setEditForms] = useState<Record<string, ModelConfigFormState>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [pendingActionById, setPendingActionById] = useState<
+    Record<string, "saving" | "deleting" | null>
+  >({});
 
   useEffect(() => {
     if (!user?.is_admin) {
@@ -91,37 +95,88 @@ export function ModelConfigAdminPage() {
   }
 
   async function handleCreate() {
-    const created = await createAdminModelConfig(createForm, accessToken);
-    setItems((current) => [...current, created]);
-    setEditForms((current) => ({
-      ...current,
-      [created.id]: toFormState(created),
-    }));
-    setCreateForm(EMPTY_FORM);
+    if (isCreating) {
+      return;
+    }
+
+    try {
+      setIsCreating(true);
+      setErrorMessage(null);
+
+      const created = await createAdminModelConfig(createForm, accessToken);
+      setItems((current) => [...current, created]);
+      setEditForms((current) => ({
+        ...current,
+        [created.id]: toFormState(created),
+      }));
+      setCreateForm(EMPTY_FORM);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "创建模型配置失败");
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   async function handleUpdate(itemId: string) {
     const draft = editForms[itemId];
-    if (!draft) {
+    if (!draft || pendingActionById[itemId]) {
       return;
     }
 
-    const updated = await updateAdminModelConfig(itemId, draft, accessToken);
-    setItems((current) => current.map((item) => (item.id === itemId ? updated : item)));
-    setEditForms((current) => ({
-      ...current,
-      [itemId]: toFormState(updated),
-    }));
+    try {
+      setPendingActionById((current) => ({
+        ...current,
+        [itemId]: "saving",
+      }));
+      setErrorMessage(null);
+
+      const updated = await updateAdminModelConfig(itemId, draft, accessToken);
+      setItems((current) => current.map((item) => (item.id === itemId ? updated : item)));
+      setEditForms((current) => ({
+        ...current,
+        [itemId]: toFormState(updated),
+      }));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "更新模型配置失败");
+    } finally {
+      setPendingActionById((current) => ({
+        ...current,
+        [itemId]: null,
+      }));
+    }
   }
 
   async function handleDelete(itemId: string) {
-    await deleteAdminModelConfig(itemId, accessToken);
-    setItems((current) => current.filter((item) => item.id !== itemId));
-    setEditForms((current) => {
-      const next = { ...current };
-      delete next[itemId];
-      return next;
-    });
+    if (pendingActionById[itemId]) {
+      return;
+    }
+
+    try {
+      setPendingActionById((current) => ({
+        ...current,
+        [itemId]: "deleting",
+      }));
+      setErrorMessage(null);
+
+      await deleteAdminModelConfig(itemId, accessToken);
+      setItems((current) => current.filter((item) => item.id !== itemId));
+      setEditForms((current) => {
+        const next = { ...current };
+        delete next[itemId];
+        return next;
+      });
+      setPendingActionById((current) => {
+        const next = { ...current };
+        delete next[itemId];
+        return next;
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "删除模型配置失败");
+      setPendingActionById((current) => ({
+        ...current,
+        [itemId]: null,
+      }));
+    }
   }
 
   return (
@@ -197,16 +252,20 @@ export function ModelConfigAdminPage() {
 
         <button
           className="mt-4 rounded-xl bg-stone-950 px-4 py-2 text-sm font-medium text-white"
+          disabled={isCreating}
           onClick={() => void handleCreate()}
           type="button"
         >
-          创建模型配置
+          {isCreating ? "创建中..." : "创建模型配置"}
         </button>
       </section>
 
       <section className="flex flex-col gap-4">
         {items.map((item) => {
           const draft = editForms[item.id] ?? toFormState(item);
+          const pendingAction = pendingActionById[item.id];
+          const isSaving = pendingAction === "saving";
+          const isDeleting = pendingAction === "deleting";
 
           return (
             <article
@@ -285,17 +344,19 @@ export function ModelConfigAdminPage() {
               <div className="mt-4 flex gap-3">
                 <button
                   className="rounded-xl bg-stone-950 px-4 py-2 text-sm font-medium text-white"
+                  disabled={isSaving || isDeleting}
                   onClick={() => void handleUpdate(item.id)}
                   type="button"
                 >
-                  {`保存 ${item.name}`}
+                  {isSaving ? "保存中..." : `保存 ${item.name}`}
                 </button>
                 <button
                   className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600"
+                  disabled={isSaving || isDeleting}
                   onClick={() => void handleDelete(item.id)}
                   type="button"
                 >
-                  {`删除 ${item.name}`}
+                  {isDeleting ? "删除中..." : `删除 ${item.name}`}
                 </button>
               </div>
             </article>
