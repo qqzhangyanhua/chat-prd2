@@ -39,7 +39,6 @@ class ModelConfigEnabledResponse(BaseModel):
 
     id: str
     name: str
-    base_url: str
     model: str
 
 

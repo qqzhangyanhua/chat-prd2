@@ -60,6 +60,7 @@ def test_enabled_model_configs_returns_enabled_only_and_hides_api_key(client, mo
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "启用模型"
     assert "api_key" not in data["items"][0]
+    assert "base_url" not in data["items"][0]
 
 
 def test_non_admin_cannot_create_update_delete_model_configs(client):
@@ -155,6 +156,7 @@ def test_admin_can_crud_model_configs_and_enabled_endpoint_hides_api_key(client,
     assert len(enabled_data["items"]) == 1
     assert enabled_data["items"][0]["id"] == config_id
     assert "api_key" not in enabled_data["items"][0]
+    assert "base_url" not in enabled_data["items"][0]
 
     delete_response = client.delete(
         f"/api/admin/model-configs/{config_id}",
