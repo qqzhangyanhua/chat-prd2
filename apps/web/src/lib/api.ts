@@ -11,8 +11,38 @@ import type {
   SessionSnapshotResponse,
   SessionUpdateRequest,
 } from "./types";
+import { useAuthStore } from "../store/auth-store";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+async function getErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
+  const errorPayload = (await response.json().catch(() => null)) as
+    | { detail?: string }
+    | null;
+  return errorPayload?.detail ?? fallbackMessage;
+}
+
+function redirectToLogin(): void {
+  useAuthStore.getState().clearAuth();
+
+  if (typeof window !== "undefined") {
+    globalThis.location.assign("/login");
+  }
+}
+
+async function throwApiError(
+  response: Response,
+  fallbackMessage: string,
+  requiresAuth = false,
+): Promise<never> {
+  const message = await getErrorMessage(response, fallbackMessage);
+
+  if (requiresAuth && response.status === 401) {
+    redirectToLogin();
+  }
+
+  throw new Error(message);
+}
 
 async function requestAuth(
   path: "/api/auth/login" | "/api/auth/register",
@@ -28,10 +58,7 @@ async function requestAuth(
   });
 
   if (!response.ok) {
-    const errorPayload = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorPayload?.detail ?? "认证失败");
+    await throwApiError(response, "认证失败");
   }
 
   return (await response.json()) as AuthResponse;
@@ -49,10 +76,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
 
   if (!response.ok) {
-    const errorPayload = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorPayload?.detail ?? "请求失败");
+    await throwApiError(response, "请求失败", true);
   }
 
   return (await response.json()) as T;
@@ -62,10 +86,7 @@ async function requestVoid(path: string, init?: RequestInit): Promise<void> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
 
   if (!response.ok) {
-    const errorPayload = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorPayload?.detail ?? "请求失败");
+    await throwApiError(response, "请求失败", true);
   }
 }
 
@@ -87,11 +108,12 @@ export async function sendMessage(
     signal,
   });
 
-  if (!response.ok || !response.body) {
-    const errorPayload = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorPayload?.detail ?? "消息发送失败");
+  if (!response.ok) {
+    await throwApiError(response, "消息发送失败", true);
+  }
+
+  if (!response.body) {
+    throw new Error("消息发送失败");
   }
 
   return response.body;
@@ -121,11 +143,12 @@ export async function regenerateMessage(
     },
   );
 
-  if (!response.ok || !response.body) {
-    const errorPayload = (await response.json().catch(() => null)) as
-      | { detail?: string }
-      | null;
-    throw new Error(errorPayload?.detail ?? "消息重生成失败");
+  if (!response.ok) {
+    await throwApiError(response, "消息重生成失败", true);
+  }
+
+  if (!response.body) {
+    throw new Error("消息重生成失败");
   }
 
   return response.body;

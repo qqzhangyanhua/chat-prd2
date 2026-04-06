@@ -6,6 +6,7 @@ import { Send, Square, Loader } from "lucide-react";
 import { regenerateMessage } from "../../lib/api";
 import { sendMessage } from "../../lib/api";
 import { parseEventStream } from "../../lib/sse";
+import { handleStreamError } from "../../lib/stream-error";
 import { useAuthStore } from "../../store/auth-store";
 import { useToastStore } from "../../store/toast-store";
 import { useWorkspaceStore, workspaceStore } from "../../store/workspace-store";
@@ -16,11 +17,6 @@ interface ComposerProps {
   sessionId: string;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException
-    ? error.name === "AbortError"
-    : error instanceof Error && error.name === "AbortError";
-}
 
 export function Composer({ sessionId, regenerateUserMessageId = null }: ComposerProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -77,32 +73,14 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
         workspaceStore.getState().setStreaming(false);
       }
     } catch (error) {
-      if (isAbortError(error)) {
-        const { markInterrupted, resetError, setStreaming, streamPhase } =
-          workspaceStore.getState();
-
-        if (streamPhase === "streaming") {
-          markInterrupted();
-        } else {
-          setStreaming(false);
-        }
-
-        resetError();
-        showToast({
-          id: `cancel-generation-${sessionId}`,
-          message: "已停止本轮生成",
-          tone: "info",
-        });
-        return;
-      }
-
-      const message = error instanceof Error ? error.message : "消息发送失败";
-      workspaceStore.getState().failRequest(message);
-      showToast({
-        id: `send-message-${sessionId}`,
-        message,
-        tone: "error",
+      const wasAborted = handleStreamError({
+        error,
+        sessionId,
+        showToast,
+        toastId: `send-message-${sessionId}`,
+        fallbackMessage: "消息发送失败",
       });
+      if (wasAborted) return;
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
@@ -136,32 +114,14 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
         workspaceStore.getState().setStreaming(false);
       }
     } catch (error) {
-      if (isAbortError(error)) {
-        const { markInterrupted, resetError, setStreaming, streamPhase } =
-          workspaceStore.getState();
-
-        if (streamPhase === "streaming") {
-          markInterrupted();
-        } else {
-          setStreaming(false);
-        }
-
-        resetError();
-        showToast({
-          id: `cancel-generation-${sessionId}`,
-          message: "已停止本轮生成",
-          tone: "info",
-        });
-        return;
-      }
-
-      const message = error instanceof Error ? error.message : "消息重生成失败";
-      workspaceStore.getState().failRequest(message);
-      showToast({
-        id: `regenerate-message-${sessionId}`,
-        message,
-        tone: "error",
+      const wasAborted = handleStreamError({
+        error,
+        sessionId,
+        showToast,
+        toastId: `regenerate-message-${sessionId}`,
+        fallbackMessage: "消息重生成失败",
       });
+      if (wasAborted) return;
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
@@ -227,6 +187,14 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
               onChange={(event) => {
                 resetError();
                 setInputValue(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!isStreaming && !sendDisabled) {
+                    void handleSend();
+                  }
+                }
               }}
               placeholder="把你现在的想法、顾虑或选择告诉我，AI 会基于上下文继续追问和收敛..."
               value={inputValue}

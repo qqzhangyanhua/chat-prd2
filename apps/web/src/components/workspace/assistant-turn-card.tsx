@@ -12,6 +12,7 @@ interface AssistantTurnCardProps {
   canRegenerate?: boolean;
   currentAction: NextAction | null;
   isRegenerating?: boolean;
+  isWaiting?: boolean;
   latestAssistantMessage: string;
   onRegenerate?: () => void;
   replyVersions?: AssistantReplyVersionItem[];
@@ -28,12 +29,14 @@ export function AssistantTurnCard({
   canRegenerate = false,
   currentAction,
   isRegenerating = false,
+  isWaiting = false,
   latestAssistantMessage,
   onRegenerate,
   replyVersions = [],
   showInterruptedMarker = false,
 }: AssistantTurnCardProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const latestReplyVersion =
     replyVersions.find((version) => version.isLatest) ??
     replyVersions[replyVersions.length - 1] ??
@@ -93,12 +96,23 @@ export function AssistantTurnCard({
           <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
             <Layers className="h-3.5 w-3.5 text-stone-400" />
             <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-              我当前的理解
+              AI 回复
             </p>
           </div>
-          <p className="mt-3 text-sm leading-7 text-stone-700">
-            {latestAssistantMessage || "我会先根据你刚提供的信息整理理解，再继续追问关键缺口。"}
-          </p>
+          {isWaiting || (!latestAssistantMessage && isRegenerating) ? (
+            <div className="mt-3 flex items-center gap-2 py-1 text-sm text-stone-500">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '0ms' }} />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '150ms' }} />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '300ms' }} />
+              </span>
+              正在深度思考并组织回复...
+            </div>
+          ) : (
+            <p className="mt-3 text-sm leading-7 text-stone-800 whitespace-pre-wrap">
+              {latestAssistantMessage || "正在思考并准备回复..."}
+            </p>
+          )}
           {showInterruptedMarker ? (
             <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
@@ -107,46 +121,64 @@ export function AssistantTurnCard({
           ) : null}
         </div>
 
-        <div className="mt-2 rounded-xl bg-stone-50 p-4">
-          <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-            我的判断
-          </p>
-          <p className="mt-3 text-sm leading-7 text-stone-700">
-            {currentAction?.reason ?? "我会继续找出还没被说透的前提、目标和决策点。"}
-          </p>
-        </div>
+        {showAnalysis ? (
+          <>
+            <div className="mt-2 rounded-xl bg-stone-50 p-4">
+              <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                我的判断
+              </p>
+              <p className="mt-3 text-sm leading-7 text-stone-700">
+                {currentAction?.reason ?? "我会继续找出还没被说透的前提、目标和决策点。"}
+              </p>
+            </div>
 
-        <div className="mt-2 rounded-xl border border-red-100 bg-red-50/60 p-4">
-          <div className="flex items-center gap-2 border-b border-red-100 pb-3">
-            <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-red-500">
-              风险 / 不确定点
-            </p>
-          </div>
-          <p className="mt-3 text-sm leading-7 text-red-700">
-            如果目标用户、核心问题和第一版边界都还模糊，方案很容易看起来完整，但落地时失焦。
-          </p>
-        </div>
+            <div className="mt-2 rounded-xl border border-red-100 bg-red-50/60 p-4">
+              <div className="flex items-center gap-2 border-b border-red-100 pb-3">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-red-500">
+                  风险 / 不确定点
+                </p>
+              </div>
+              <p className="mt-3 text-sm leading-7 text-red-700">
+                如果目标用户、核心问题和第一版边界都还模糊，方案很容易看起来完整，但落地时失焦。
+              </p>
+            </div>
 
-        <div className="mt-2 rounded-xl bg-stone-50 p-4">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-            可选推进方式
-          </p>
-          <ActionOptions
-            onSelect={(option) => workspaceStore.getState().setInputValue(option)}
-            options={defaultOptions}
-          />
-        </div>
+            <div className="mt-2 rounded-xl bg-stone-50 p-4">
+              <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                可选推进方式
+              </p>
+              <ActionOptions
+                onSelect={(option) => workspaceStore.getState().setInputValue(option)}
+                options={defaultOptions}
+              />
+            </div>
 
-        <div className="mt-2 rounded-xl bg-stone-950 p-4">
-          <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
-            <ChevronRight className="h-3.5 w-3.5 text-stone-400" />
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-              下一步
-            </p>
-          </div>
-          <p className="mt-3 text-sm leading-7 text-stone-100">{nextQuestion}</p>
-        </div>
+            <div className="mt-2 rounded-xl bg-stone-950 p-4">
+              <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
+                <ChevronRight className="h-3.5 w-3.5 text-stone-400" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                  下一步
+                </p>
+              </div>
+              <p className="mt-3 text-sm leading-7 text-stone-100">{nextQuestion}</p>
+            </div>
+            
+            <button
+              onClick={() => setShowAnalysis(false)}
+              className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50 py-2.5 text-xs text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800"
+            >
+              收起深度分析
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setShowAnalysis(true)}
+            className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50/50 py-2.5 text-xs text-stone-500 transition-colors hover:bg-stone-50 hover:text-stone-800"
+          >
+            展开 AI 深度分析及推理
+          </button>
+        )}
       </div>
       <AssistantVersionHistoryDialog
         onClose={() => setHistoryOpen(false)}

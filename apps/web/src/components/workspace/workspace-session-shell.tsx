@@ -1,73 +1,63 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { getSession, listEnabledModelConfigs } from "../../lib/api";
+import { consumeNewSessionDraft } from "../../lib/new-session-draft";
 import { useAuthStore } from "../../store/auth-store";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 import { ConversationPanel } from "./conversation-panel";
 import { PrdPanel } from "./prd-panel";
-import { SessionSidebar } from "./session-sidebar";
-import { WorkspaceToastViewport } from "./workspace-toast-viewport";
+import { SkeletonCard } from "./skeleton-card";
+import { WorkspaceLayout } from "./workspace-layout";
 
 interface WorkspaceSessionShellProps {
   sessionId: string;
 }
 
 export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps) {
-  useAuthGuard();
+  const { hydrated } = useAuthGuard();
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!hydrated) return;
+
     let cancelled = false;
 
     async function loadSession() {
       try {
         try {
           const snapshot = await getSession(sessionId, accessToken);
-          if (cancelled) {
-            return;
-          }
-
+          if (cancelled) return;
           setLoadError(null);
           workspaceStore.getState().hydrateSession(snapshot);
+          const pendingDraft = consumeNewSessionDraft(sessionId);
+          if (pendingDraft) workspaceStore.getState().setInputValue(pendingDraft);
         } catch (error) {
           if (!cancelled) {
             const message = error instanceof Error ? error.message : "会话加载失败";
             workspaceStore.setState(workspaceStore.getInitialState(), true);
             setLoadError(message);
-            showToast({
-              id: `load-session-${sessionId}`,
-              message,
-              tone: "error",
-            });
+            showToast({ id: `load-session-${sessionId}`, message, tone: "error" });
           }
           return;
         }
 
         try {
           const enabledModelConfigs = await listEnabledModelConfigs(accessToken);
-          if (!cancelled) {
-            workspaceStore.getState().setAvailableModelConfigs(enabledModelConfigs.items);
-          }
+          if (!cancelled) workspaceStore.getState().setAvailableModelConfigs(enabledModelConfigs.items);
         } catch (error) {
           if (!cancelled) {
             workspaceStore.getState().setAvailableModelConfigs([]);
             const message = error instanceof Error ? error.message : "模型列表加载失败";
-            showToast({
-              id: `load-model-configs-${sessionId}`,
-              message,
-              tone: "error",
-            });
+            showToast({ id: `load-model-configs-${sessionId}`, message, tone: "error" });
           }
         }
       } finally {
@@ -79,69 +69,45 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
     }
 
     void loadSession();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, retryToken, sessionId, showToast]);
+    return () => { cancelled = true; };
+  }, [hydrated, accessToken, retryToken, sessionId, showToast]);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_#f5f5f4_0%,_#fafaf9_48%,_#f5f5f4_100%)] px-4 py-4 md:px-6 md:py-6">
-      <WorkspaceToastViewport />
-      <div className={`mx-auto flex max-w-[1600px] flex-col gap-4 lg:grid transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? "lg:grid-cols-[0px_minmax(0,1fr)_360px]" : "lg:grid-cols-[280px_minmax(0,1fr)_360px]"}`}>
-        <div className={`relative transition-all duration-300 ${sidebarCollapsed ? "lg:overflow-hidden lg:w-0 lg:opacity-0" : "lg:opacity-100"}`}>
-          <SessionSidebar sessionId={sessionId} />
-        </div>
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed((c) => !c)}
-          className="fixed left-2 top-1/2 z-30 -translate-y-1/2 hidden lg:flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white/90 text-stone-500 shadow-md transition-all duration-150 hover:bg-stone-50 hover:text-stone-900 active:scale-95"
-          aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-          style={sidebarCollapsed ? {} : { left: "268px" }}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-        </button>
-        {/* conversation column */}
-        <section className="flex flex-col gap-4">
-          {isLoading ? (
-            <div data-testid="session-loading-skeleton" className="flex flex-col gap-5">
-              <div className="h-64 rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
-              <div className="h-32 rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
-            </div>
-          ) : (
-            <>
-              {loadError ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
-                  <p>{loadError}</p>
-                  <button
-                    className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={isRetrying}
-                    onClick={() => {
-                      setIsRetrying(true);
-                      setRetryToken((current) => current + 1);
-                    }}
-                    type="button"
-                  >
-                    {isRetrying ? "重试中..." : "重试加载"}
-                  </button>
-                </div>
-              ) : (
-                <ConversationPanel sessionId={sessionId} />
-              )}
-            </>
-          )}
-        </section>
-        {/* PRD column */}
+    <WorkspaceLayout sessionId={sessionId}>
+      {/* Conversation column */}
+      <section className="flex flex-1 min-w-0 flex-col gap-4 overflow-y-auto">
         {isLoading ? (
-          <div className="h-full rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
-        ) : !loadError ? (
-          <PrdPanel />
-        ) : (
-          <div className="rounded-2xl border border-dashed border-stone-200/80 bg-white/60 p-6 text-sm text-stone-400 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
-            当前会话加载失败，暂不展示 PRD 快照。
+          <div data-testid="session-loading-skeleton" className="flex flex-col gap-5">
+            <SkeletonCard className="h-64" />
+            <SkeletonCard className="h-32" />
           </div>
+        ) : loadError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
+            <p>{loadError}</p>
+            <button
+              type="button"
+              disabled={isRetrying}
+              className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => { setIsRetrying(true); setRetryToken((n) => n + 1); }}
+            >
+              {isRetrying ? "重试中..." : "重试加载"}
+            </button>
+          </div>
+        ) : (
+          <ConversationPanel sessionId={sessionId} />
         )}
-      </div>
-    </main>
+      </section>
+
+      {/* PRD column */}
+      {isLoading ? (
+        <SkeletonCard className="h-full w-[360px] shrink-0" />
+      ) : !loadError ? (
+        <PrdPanel />
+      ) : (
+        <div className="h-full w-[360px] shrink-0 rounded-2xl border border-dashed border-stone-200/80 bg-white/60 p-6 text-sm text-stone-400 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+          当前会话加载失败，暂不展示 PRD 快照。
+        </div>
+      )}
+    </WorkspaceLayout>
   );
 }

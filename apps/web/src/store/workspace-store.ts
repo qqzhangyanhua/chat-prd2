@@ -61,7 +61,9 @@ interface WorkspaceState {
   resetError: () => void;
   selectModelConfig: (modelConfigId: string) => void;
   setAvailableModelConfigs: (items: EnabledModelConfigItem[]) => void;
+  isLeftNavCollapsed: boolean;
   setInputValue: (value: string) => void;
+  setLeftNavCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   setStreaming: (value: boolean) => void;
   startRegenerate: () => boolean;
   startRequest: (content: string, mode?: RequestMode) => void;
@@ -199,6 +201,7 @@ function createInitialState(): Omit<
   | "selectModelConfig"
   | "setAvailableModelConfigs"
   | "setInputValue"
+  | "setLeftNavCollapsed"
   | "setStreaming"
   | "startRegenerate"
   | "startRequest"
@@ -213,6 +216,7 @@ function createInitialState(): Omit<
       reason: "先把最核心的目标用户讲清楚，后续问题、价值和 MVP 才能持续收敛。",
     },
     errorMessage: null,
+    isLeftNavCollapsed: false,
     inputValue: "",
     isStreaming: false,
     lastInterrupted: false,
@@ -655,6 +659,11 @@ export function createWorkspaceStore() {
       set((state) => ({
         ...state,
         inputValue: value,
+      })),
+    setLeftNavCollapsed: (collapsed) =>
+      set((state) => ({
+        ...state,
+        isLeftNavCollapsed: typeof collapsed === "function" ? collapsed(state.isLeftNavCollapsed) : collapsed,
       })),
     setStreaming: (value) =>
       set((state) => ({

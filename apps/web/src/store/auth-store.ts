@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist, StateStorage } from "zustand/middleware";
 
@@ -59,3 +60,27 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 );
+
+/**
+ * Whether the auth store has finished hydrating from localStorage.
+ * Guards against premature redirect during SSR -> client hydration.
+ */
+export function useAuthHydrated(): boolean {
+  // Lazy initializer: if the store is already hydrated (e.g. after first render
+  // or hot reload), skip the extra re-render cycle caused by useState(false).
+  const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+
+  useEffect(() => {
+    // Guard: already hydrated during initialization, nothing to subscribe to.
+    if (useAuthStore.persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(() => {
+      setHydrated(true);
+    });
+    return unsub;
+  }, []);
+
+  return hydrated;
+}

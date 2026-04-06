@@ -24,7 +24,7 @@ vi.mock("../store/auth-store", () => ({
 }));
 
 vi.mock("../hooks/use-auth-guard", () => ({
-  useAuthGuard: vi.fn(),
+  useAuthGuard: vi.fn(() => ({ hydrated: true })),
 }));
 
 import { useAuthStore } from "../store/auth-store";
@@ -34,6 +34,7 @@ describe("WorkspaceEntry", () => {
     createSessionMock.mockReset();
     listSessionsMock.mockReset();
     pushMock.mockReset();
+    window.sessionStorage.clear();
     useToastStore.getState().clearToast();
     listSessionsMock.mockResolvedValue({ sessions: [] });
     vi.mocked(useAuthStore).mockImplementation((selector) =>
@@ -91,7 +92,10 @@ describe("WorkspaceEntry", () => {
         },
         null,
       );
-      expect(pushMock).toHaveBeenCalledWith("/workspace/session-1");
+      expect(
+        window.sessionStorage.getItem("ai-cofounder:new-session-draft:session-1"),
+      ).toBe("帮我把零散需求整理成 PRD");
+      expect(pushMock).toHaveBeenCalledWith("/workspace?session=session-1");
     });
   });
 
@@ -120,10 +124,8 @@ describe("WorkspaceEntry", () => {
     render(<WorkspaceEntry />);
 
     await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/workspace/session-3");
+      expect(pushMock).toHaveBeenCalledWith("/workspace?session=session-3");
     });
-
-    expect(screen.queryByText("最近活跃会话")).not.toBeInTheDocument();
   });
 
   it("does not redirect to the latest session when auto redirect is disabled", async () => {

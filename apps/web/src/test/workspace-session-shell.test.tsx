@@ -26,6 +26,7 @@ describe("WorkspaceSessionShell", () => {
     getSessionMock.mockReset();
     listEnabledModelConfigsMock.mockReset();
     pushMock.mockReset();
+    window.sessionStorage.clear();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
     getSessionMock.mockResolvedValue({
@@ -81,6 +82,27 @@ describe("WorkspaceSessionShell", () => {
       },
     ]);
     expect(workspaceStore.getState().selectedModelConfigId).toBe("model-openai");
+  });
+
+  it("hydrates a pending new-session draft into the composer input and clears it", async () => {
+    window.sessionStorage.setItem(
+      "ai-cofounder:new-session-draft:session-1",
+      "这是在入口页写好的长文本草稿",
+    );
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().inputValue).toBe("这是在入口页写好的长文本草稿");
+    });
+
+    expect(
+      window.sessionStorage.getItem("ai-cofounder:new-session-draft:session-1"),
+    ).toBeNull();
   });
 
   it("keeps the workspace usable when session loading succeeds but model loading fails", async () => {

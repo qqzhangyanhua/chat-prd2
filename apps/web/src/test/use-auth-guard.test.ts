@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../store/auth-store", () => ({
   useAuthStore: vi.fn(),
+  useAuthHydrated: vi.fn(() => true),
 }));
 
 import { useAuthStore } from "../store/auth-store";

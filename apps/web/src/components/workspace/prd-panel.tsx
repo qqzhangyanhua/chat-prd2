@@ -16,7 +16,7 @@ export function PrdPanel() {
     .filter((s) => s?.status === "confirmed").length;
 
   return (
-    <aside className="flex h-full flex-col rounded-2xl border border-stone-200/80 bg-white/90 p-4 shadow-[0_2px_16px_rgba(0,0,0,0.04)]">
+    <aside className="flex h-full w-[360px] shrink-0 flex-col rounded-2xl border border-stone-200/80 bg-white/90 p-4 shadow-[0_2px_16px_rgba(0,0,0,0.04)]">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-4">
         <div className="flex items-center gap-2.5">

@@ -2,15 +2,18 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "../store/auth-store";
+import { useAuthStore, useAuthHydrated } from "../store/auth-store";
 
-export function useAuthGuard(): void {
+export function useAuthGuard(): { hydrated: boolean } {
   const router = useRouter();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hydrated = useAuthHydrated();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (hydrated && !isAuthenticated) {
       router.push("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [hydrated, isAuthenticated, router]);
+
+  return { hydrated };
 }
