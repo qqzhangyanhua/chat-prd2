@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SessionSidebar } from "../components/workspace/session-sidebar";
+import { WorkspaceLeftNav } from "../components/workspace/workspace-left-nav";
 import { useAuthStore } from "../store/auth-store";
 import { useToastStore } from "../store/toast-store";
 
@@ -26,10 +26,9 @@ vi.mock("../lib/api", () => ({
   updateSession: (...args: unknown[]) => updateSessionMock(...args),
 }));
 
-describe("SessionSidebar", () => {
+describe("WorkspaceLeftNav (session mode)", () => {
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-04-03T12:45:00Z").getTime());
-    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     exportSessionMock.mockReset();
     getSessionMock.mockReset();
@@ -76,7 +75,7 @@ describe("SessionSidebar", () => {
   });
 
   it("shows admin model management entry for admin users", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "模型管理" }));
 
@@ -94,9 +93,9 @@ describe("SessionSidebar", () => {
       },
     });
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    await screen.findByRole("button", { name: "新建会话" });
+    await screen.findByRole("button", { name: "打开会话 产品调研" });
     expect(screen.queryByRole("button", { name: "模型管理" })).not.toBeInTheDocument();
   });
 
@@ -106,7 +105,7 @@ describe("SessionSidebar", () => {
       content: "# PRD",
     });
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "导出 PRD" }));
 
@@ -125,17 +124,12 @@ describe("SessionSidebar", () => {
         created_at: "2026-04-03T12:00:00Z",
         updated_at: "2026-04-03T12:30:00Z",
       },
-      state: {
-        idea: "idea",
-        stage_hint: "明确目标用户",
-      },
-      prd_snapshot: {
-        sections: {},
-      },
+      state: { idea: "idea", stage_hint: "明确目标用户" },
+      prd_snapshot: { sections: {} },
       messages: [],
     });
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "恢复会话" }));
 
@@ -145,20 +139,20 @@ describe("SessionSidebar", () => {
   });
 
   it("loads sessions and switches to the selected session", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "打开会话 定价策略" }));
 
     expect(listSessionsMock).toHaveBeenCalledWith(null);
-    expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
+    expect(pushMock).toHaveBeenCalledWith("/workspace?session=session-2");
   });
 
-  it("navigates to the dedicated new-session page", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+  it("navigates to the new-session page", async () => {
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "新建会话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New Session" }));
 
-    expect(pushMock).toHaveBeenCalledWith("/workspace/new");
+    expect(pushMock).toHaveBeenCalledWith("/workspace?new=1");
   });
 
   it("renames the active session", async () => {
@@ -173,7 +167,7 @@ describe("SessionSidebar", () => {
       },
     });
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.change(await screen.findByLabelText("重命名"), {
       target: { value: "竞品分析" },
@@ -181,30 +175,23 @@ describe("SessionSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
-      expect(updateSessionMock).toHaveBeenCalledWith(
-        "session-1",
-        { title: "竞品分析" },
-        null,
-      );
+      expect(updateSessionMock).toHaveBeenCalledWith("session-1", { title: "竞品分析" }, null);
     });
   });
 
   it("shows recent activity as relative time", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     expect((await screen.findAllByText("15 分钟前")).length).toBeGreaterThan(0);
     expect(screen.getByText("1 小时前")).toBeInTheDocument();
   });
 
   it("does not submit rename when title is empty after trimming", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    // Wait for sessions to load so the input has the session title value
     await screen.findByDisplayValue("产品调研");
 
-    fireEvent.change(screen.getByLabelText("重命名"), {
-      target: { value: "   " },
-    });
+    fireEvent.change(screen.getByLabelText("重命名"), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
@@ -216,30 +203,28 @@ describe("SessionSidebar", () => {
   it("shows rename error when update request fails", async () => {
     updateSessionMock.mockRejectedValue(new Error("重命名失败"));
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), {
-      target: { value: "访谈提纲" },
-    });
+    fireEvent.change(await screen.findByLabelText("重命名"), { target: { value: "访谈提纲" } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     expect(await screen.findByText("重命名失败")).toBeInTheDocument();
   });
 
   it("does not delete the session when confirmation is cancelled", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
     fireEvent.click(screen.getByRole("button", { name: /取消/i }));
 
     expect(deleteSessionMock).not.toHaveBeenCalled();
-    expect(pushMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalledWith("/workspace");
   });
 
   it("deletes the active session after confirmation and returns to workspace entry", async () => {
     deleteSessionMock.mockResolvedValue(undefined);
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
     fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
@@ -253,25 +238,22 @@ describe("SessionSidebar", () => {
   it("shows delete error when request fails", async () => {
     deleteSessionMock.mockRejectedValue(new Error("删除失败"));
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
     fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
 
     expect(await screen.findByText("删除失败")).toBeInTheDocument();
-    expect(pushMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalledWith("/workspace");
   });
 
   it("disables delete button and shows loading while deleting", async () => {
     let resolveDelete: (() => void) | undefined;
     deleteSessionMock.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveDelete = resolve;
-        }),
+      () => new Promise<void>((resolve) => { resolveDelete = resolve; }),
     );
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
     fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
@@ -292,13 +274,10 @@ describe("SessionSidebar", () => {
   it("shows deleting toast and disables the active session card while deleting", async () => {
     let resolveDelete: (() => void) | undefined;
     deleteSessionMock.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveDelete = resolve;
-        }),
+      () => new Promise<void>((resolve) => { resolveDelete = resolve; }),
     );
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除当前会话" }));
     fireEvent.click(screen.getByRole("button", { name: /确认删除/i }));
@@ -318,27 +297,18 @@ describe("SessionSidebar", () => {
   it("shows rename success toast and disables rename button while saving", async () => {
     type RenameResponse = {
       session: {
-        id: string;
-        user_id: string;
-        title: string;
-        initial_idea: string;
-        created_at: string;
-        updated_at: string;
+        id: string; user_id: string; title: string;
+        initial_idea: string; created_at: string; updated_at: string;
       };
     };
     let resolveRename: ((value: RenameResponse) => void) | undefined;
     updateSessionMock.mockImplementation(
-      () =>
-        new Promise<RenameResponse>((resolve) => {
-          resolveRename = resolve;
-        }),
+      () => new Promise<RenameResponse>((resolve) => { resolveRename = resolve; }),
     );
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), {
-      target: { value: "访谈提纲" },
-    });
+    fireEvent.change(await screen.findByLabelText("重命名"), { target: { value: "访谈提纲" } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
@@ -348,12 +318,8 @@ describe("SessionSidebar", () => {
 
     resolveRename?.({
       session: {
-        id: "session-1",
-        user_id: "user-1",
-        title: "访谈提纲",
-        initial_idea: "idea",
-        created_at: "2026-04-03T12:00:00Z",
-        updated_at: "2026-04-03T12:40:00Z",
+        id: "session-1", user_id: "user-1", title: "访谈提纲",
+        initial_idea: "idea", created_at: "2026-04-03T12:00:00Z", updated_at: "2026-04-03T12:40:00Z",
       },
     });
 
@@ -365,11 +331,9 @@ describe("SessionSidebar", () => {
   it("shows rename failure toast when update request fails", async () => {
     updateSessionMock.mockRejectedValue(new Error("重命名失败"));
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), {
-      target: { value: "访谈提纲" },
-    });
+    fireEvent.change(await screen.findByLabelText("重命名"), { target: { value: "访谈提纲" } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
@@ -379,30 +343,19 @@ describe("SessionSidebar", () => {
 
   it("shows recover toast and disables recover button while recovering", async () => {
     type RecoverResponse = {
-      session: {
-        id: string;
-        user_id: string;
-        title: string;
-        initial_idea: string;
-        created_at: string;
-        updated_at: string;
-      };
+      session: { id: string; user_id: string; title: string; initial_idea: string; created_at: string; updated_at: string };
       state: { idea: string; stage_hint: string };
       prd_snapshot: { sections: Record<string, never> };
       messages: [];
     };
     let resolveRecover: ((value: RecoverResponse) => void) | undefined;
     getSessionMock.mockImplementation(
-      () =>
-        new Promise<RecoverResponse>((resolve) => {
-          resolveRecover = resolve;
-        }),
+      () => new Promise<RecoverResponse>((resolve) => { resolveRecover = resolve; }),
     );
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     await screen.findByRole("button", { name: "打开会话 产品调研" });
-
     fireEvent.click(screen.getByRole("button", { name: "恢复会话" }));
 
     await waitFor(() => {
@@ -412,20 +365,11 @@ describe("SessionSidebar", () => {
 
     resolveRecover?.({
       session: {
-        id: "session-1",
-        user_id: "user-1",
-        title: "AI Co-founder",
-        initial_idea: "idea",
-        created_at: "2026-04-03T12:00:00Z",
-        updated_at: "2026-04-03T12:30:00Z",
+        id: "session-1", user_id: "user-1", title: "AI Co-founder",
+        initial_idea: "idea", created_at: "2026-04-03T12:00:00Z", updated_at: "2026-04-03T12:30:00Z",
       },
-      state: {
-        idea: "idea",
-        stage_hint: "明确目标用户",
-      },
-      prd_snapshot: {
-        sections: {},
-      },
+      state: { idea: "idea", stage_hint: "明确目标用户" },
+      prd_snapshot: { sections: {} },
       messages: [],
     });
 
@@ -436,7 +380,7 @@ describe("SessionSidebar", () => {
 
   it("shows inline confirm UI instead of window.confirm on delete click", async () => {
     const confirmSpy = vi.spyOn(window, "confirm");
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
     await screen.findByRole("button", { name: "打开会话 产品调研" });
 
     fireEvent.click(screen.getByRole("button", { name: /删除当前会话/i }));
@@ -447,7 +391,7 @@ describe("SessionSidebar", () => {
   });
 
   it("cancels inline delete when 取消 is clicked", async () => {
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
     await screen.findByRole("button", { name: "打开会话 产品调研" });
 
     fireEvent.click(screen.getByRole("button", { name: /删除当前会话/i }));
@@ -459,16 +403,12 @@ describe("SessionSidebar", () => {
   it("shows export toast and disables export button while exporting", async () => {
     let resolveExport: ((value: { file_name: string; content: string }) => void) | undefined;
     exportSessionMock.mockImplementation(
-      () =>
-        new Promise<{ file_name: string; content: string }>((resolve) => {
-          resolveExport = resolve;
-        }),
+      () => new Promise<{ file_name: string; content: string }>((resolve) => { resolveExport = resolve; }),
     );
 
-    render(<SessionSidebar sessionId="session-1" />);
+    render(<WorkspaceLeftNav sessionId="session-1" />);
 
     await screen.findByRole("button", { name: "打开会话 产品调研" });
-
     fireEvent.click(screen.getByRole("button", { name: "导出 PRD" }));
 
     await waitFor(() => {
@@ -476,10 +416,7 @@ describe("SessionSidebar", () => {
     });
     expect(screen.getByRole("button", { name: "导出中..." })).toBeDisabled();
 
-    resolveExport?.({
-      file_name: "ai-cofounder-prd.md",
-      content: "# PRD",
-    });
+    resolveExport?.({ file_name: "ai-cofounder-prd.md", content: "# PRD" });
 
     await waitFor(() => {
       expect(useToastStore.getState().toast?.message).toBe("PRD 已导出");

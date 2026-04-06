@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import WorkspacePage from "../app/workspace/page";
+import { WorkspaceEntry } from "../components/workspace/workspace-entry";
 
 const listSessionsMock = vi.fn();
 const pushMock = vi.fn();
@@ -20,6 +20,10 @@ vi.mock("../lib/api", async () => {
   };
 });
 
+vi.mock("../hooks/use-auth-guard", () => ({
+  useAuthGuard: vi.fn(() => ({ hydrated: true })),
+}));
+
 describe("WorkspacePage", () => {
   beforeEach(() => {
     listSessionsMock.mockReset();
@@ -27,8 +31,8 @@ describe("WorkspacePage", () => {
     listSessionsMock.mockResolvedValue({ sessions: [] });
   });
 
-  it("renders the current session entry surface", async () => {
-    render(<WorkspacePage />);
+  it("renders the session entry surface", async () => {
+    render(<WorkspaceEntry />);
 
     expect(await screen.findByText("Describe your idea")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start Session" })).toBeInTheDocument();
@@ -56,10 +60,10 @@ describe("WorkspacePage", () => {
       ],
     });
 
-    render(<WorkspacePage />);
+    render(<WorkspaceEntry />);
 
     await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/workspace/session-1");
+      expect(pushMock).toHaveBeenCalledWith("/workspace?session=session-1");
     });
   });
 });
