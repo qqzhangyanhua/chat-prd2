@@ -19,10 +19,10 @@ import { useAuthStore } from "../../store/auth-store";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { WorkspaceToastViewport } from "./workspace-toast-viewport";
 
-const TEMPLATES: { label: string; icon: "discovery" | "planning" | "mvp"; text: string }[] = [
-  { label: "Product Discovery", icon: "discovery", text: "我有一个产品想法，想通过对话挖掘用户需求和核心问题。" },
-  { label: "Feature Planning", icon: "planning", text: "我需要为现有产品规划新功能，梳理优先级和实现路径。" },
-  { label: "MVP Scope", icon: "mvp", text: "我想确定产品的 MVP 范围，找出最小可行闭环。" },
+const TEMPLATES: { label: string; text: string }[] = [
+  { label: "Product Discovery", text: "我有一个产品想法，想通过对话挖掘用户需求和核心问题。" },
+  { label: "Feature Planning", text: "我需要为现有产品规划新功能，梳理优先级和实现路径。" },
+  { label: "MVP Scope", text: "我想确定产品的 MVP 范围，找出最小可行闭环。" },
 ];
 
 function getGreeting() {
