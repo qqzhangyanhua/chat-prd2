@@ -167,3 +167,84 @@ def test_admin_can_crud_model_configs_and_enabled_endpoint_hides_api_key(client,
     after_delete_response = client.get("/api/admin/model-configs", headers=admin_headers)
     assert after_delete_response.status_code == 200
     assert after_delete_response.json() == {"items": []}
+
+
+def test_admin_create_model_config_rejects_blank_fields(client, monkeypatch):
+    _set_admin_whitelist(monkeypatch)
+    admin_token = _login_with_email(client, "admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    response = client.post(
+        "/api/admin/model-configs",
+        headers=admin_headers,
+        json={
+            "name": "   ",
+            "base_url": "   ",
+            "api_key": "   ",
+            "model": "   ",
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_create_model_config_rejects_invalid_base_url(client, monkeypatch):
+    _set_admin_whitelist(monkeypatch)
+    admin_token = _login_with_email(client, "admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    response = client.post(
+        "/api/admin/model-configs",
+        headers=admin_headers,
+        json={
+            "name": "OpenAI",
+            "base_url": "not-a-url",
+            "api_key": "sk-secret",
+            "model": "gpt-4.1-mini",
+            "enabled": True,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_update_model_config_rejects_blank_fields_and_invalid_base_url(
+    client,
+    monkeypatch,
+):
+    _set_admin_whitelist(monkeypatch)
+    admin_token = _login_with_email(client, "admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    create_response = client.post(
+        "/api/admin/model-configs",
+        headers=admin_headers,
+        json={
+            "name": "OpenAI",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-secret",
+            "model": "gpt-4.1-mini",
+            "enabled": True,
+        },
+    )
+    assert create_response.status_code == 200
+    config_id = create_response.json()["id"]
+
+    blank_update_response = client.patch(
+        f"/api/admin/model-configs/{config_id}",
+        headers=admin_headers,
+        json={
+            "name": "  ",
+            "api_key": "   ",
+            "model": "   ",
+        },
+    )
+    assert blank_update_response.status_code == 422
+
+    invalid_url_update_response = client.patch(
+        f"/api/admin/model-configs/{config_id}",
+        headers=admin_headers,
+        json={"base_url": "invalid-url"},
+    )
+    assert invalid_url_update_response.status_code == 422

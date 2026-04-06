@@ -1,20 +1,45 @@
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+
+
+NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+def _validate_base_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Invalid base_url")
+    return value
 
 
 class AdminModelConfigCreateRequest(BaseModel):
-    name: str
-    base_url: str
-    api_key: str
-    model: str
+    name: NonEmptyString
+    base_url: NonEmptyString
+    api_key: NonEmptyString
+    model: NonEmptyString
     enabled: bool = True
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        return _validate_base_url(value)
 
 
 class AdminModelConfigUpdateRequest(BaseModel):
-    name: str | None = None
-    base_url: str | None = None
-    api_key: str | None = None
-    model: str | None = None
+    name: NonEmptyString | None = None
+    base_url: NonEmptyString | None = None
+    api_key: NonEmptyString | None = None
+    model: NonEmptyString | None = None
     enabled: bool | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_base_url(value)
 
 
 class ModelConfigAdminResponse(BaseModel):
