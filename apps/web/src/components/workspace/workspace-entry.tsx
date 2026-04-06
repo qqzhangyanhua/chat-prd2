@@ -19,6 +19,12 @@ import { useAuthStore } from "../../store/auth-store";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { WorkspaceToastViewport } from "./workspace-toast-viewport";
 
+const TEMPLATES: { label: string; icon: "discovery" | "planning" | "mvp"; text: string }[] = [
+  { label: "Product Discovery", icon: "discovery", text: "我有一个产品想法，想通过对话挖掘用户需求和核心问题。" },
+  { label: "Feature Planning", icon: "planning", text: "我需要为现有产品规划新功能，梳理优先级和实现路径。" },
+  { label: "MVP Scope", icon: "mvp", text: "我想确定产品的 MVP 范围，找出最小可行闭环。" },
+];
+
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -115,11 +121,19 @@ export function WorkspaceEntry() {
 
           {/* Navigation */}
           <nav className="space-y-1 mb-6">
-            <button className="flex w-full items-center gap-2.5 rounded-lg bg-stone-950 px-3 py-2 text-xs font-semibold text-white transition-all">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-lg bg-stone-950 px-3 py-2 text-xs font-semibold text-white transition-all"
+              onClick={() => router.push("/workspace")}
+            >
               <Home className="h-3.5 w-3.5" />
               Home
             </button>
-            <button className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-50 hover:text-stone-900">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-50 hover:text-stone-900"
+              onClick={() => router.push("/workspace")}
+            >
               <Plus className="h-3.5 w-3.5" />
               New Session
             </button>
@@ -263,15 +277,19 @@ export function WorkspaceEntry() {
               or start with a template
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <button className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]">
-                <MessageSquare className="h-3.5 w-3.5" /> Product Discovery
-              </button>
-              <button className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]">
-                <Bot className="h-3.5 w-3.5" /> Feature Planning
-              </button>
-              <button className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]">
-                <LayoutGrid className="h-3.5 w-3.5" /> MVP Scope
-              </button>
+              {TEMPLATES.map(({ label, text }) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-all hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]"
+                  onClick={() => setIdea(text)}
+                >
+                  {label === "Product Discovery" && <MessageSquare className="h-3.5 w-3.5" />}
+                  {label === "Feature Planning" && <Bot className="h-3.5 w-3.5" />}
+                  {label === "MVP Scope" && <LayoutGrid className="h-3.5 w-3.5" />}
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
           

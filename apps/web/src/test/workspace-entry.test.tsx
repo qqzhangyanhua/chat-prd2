@@ -131,6 +131,28 @@ describe("WorkspaceEntry", () => {
     expect(await screen.findByText("会话已删除")).toBeInTheDocument();
   });
 
+  it("clicks 'Product Discovery' chip to pre-fill idea textarea", () => {
+    listSessionsMock.mockResolvedValue({ sessions: [] });
+    render(<WorkspaceEntry />);
+
+    const buttons = screen.getAllByRole("button", { name: /product discovery/i });
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    const textarea = screen.getByPlaceholderText(/tell me about your product idea/i);
+    expect(textarea).toHaveValue("我有一个产品想法，想通过对话挖掘用户需求和核心问题。");
+  });
+
+  it("clicks 'Feature Planning' chip to pre-fill idea textarea", () => {
+    listSessionsMock.mockResolvedValue({ sessions: [] });
+    render(<WorkspaceEntry />);
+
+    const buttons = screen.getAllByRole("button", { name: /feature planning/i });
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    const textarea = screen.getByPlaceholderText(/tell me about your product idea/i);
+    expect(textarea).toHaveValue("我需要为现有产品规划新功能，梳理优先级和实现路径。");
+  });
+
   it("logs out when logout button is clicked", async () => {
     const clearAuthMock = vi.fn();
     vi.mocked(useAuthStore).mockImplementation((selector) =>
