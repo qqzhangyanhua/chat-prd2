@@ -55,6 +55,18 @@ def test_create_session_returns_initial_state(auth_client):
     assert data["prd_snapshot"]["sections"] == {}
 
 
+def test_create_session_rejects_blank_title_and_initial_idea(auth_client):
+    response = auth_client.post(
+        "/api/sessions",
+        json={
+            "title": "   ",
+            "initial_idea": "   ",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_create_session_rolls_back_all_writes_when_prd_creation_fails(
     db_session,
     monkeypatch,
@@ -128,6 +140,48 @@ def test_get_session_marks_session_as_recently_active(auth_client):
         "First Session",
         "Second Session",
     ]
+
+
+def test_get_session_does_not_touch_activity_when_snapshot_missing(
+    auth_client,
+    testing_session_local,
+):
+    create_response = auth_client.post(
+        "/api/sessions",
+        json={"title": "Broken Session", "initial_idea": "idea one"},
+    )
+    assert create_response.status_code == 200
+    session_id = create_response.json()["session"]["id"]
+    original_updated_at = create_response.json()["session"]["updated_at"]
+
+    db = testing_session_local()
+    try:
+        session = db.execute(
+            select(ProjectSession).where(ProjectSession.id == session_id),
+        ).scalar_one()
+        db.execute(
+            ProjectStateVersion.__table__.delete().where(ProjectStateVersion.session_id == session_id),
+        )
+        db.commit()
+        db.refresh(session)
+        broken_updated_at = session.updated_at
+    finally:
+        db.close()
+
+    assert broken_updated_at.isoformat() == original_updated_at
+
+    response = auth_client.get(f"/api/sessions/{session_id}")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Session snapshot not found"
+
+    db = testing_session_local()
+    try:
+        session = db.execute(
+            select(ProjectSession).where(ProjectSession.id == session_id),
+        ).scalar_one()
+        assert session.updated_at == broken_updated_at
+    finally:
+        db.close()
 
 
 def test_list_sessions_returns_only_current_user_sessions(client):

@@ -9,8 +9,8 @@ from app.schemas.state import StateSnapshot
 
 
 class SessionCreateRequest(BaseModel):
-    title: str
-    initial_idea: str
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    initial_idea: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 NonEmptyTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
