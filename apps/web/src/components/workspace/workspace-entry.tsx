@@ -9,8 +9,6 @@ import {
   Bot,
   LayoutGrid,
   Calendar,
-  HelpCircle,
-  Download,
   MoreVertical,
   MessageSquare,
   LogOut
