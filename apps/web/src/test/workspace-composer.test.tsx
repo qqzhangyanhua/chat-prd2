@@ -210,7 +210,7 @@ describe("Composer", () => {
 
     render(<Composer sessionId="demo-session" />);
 
-    expect(screen.getByText("当前没有可用模型，请先启用至少一个模型配置。")).toBeInTheDocument();
+    expect(screen.getByText("当前暂无可用模型，请联系管理员配置。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   });
 });

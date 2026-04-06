@@ -174,7 +174,7 @@ export function Composer({ sessionId }: ComposerProps) {
               {statusMessage}
             </p>
             {!hasAvailableModels ? (
-              <p className="text-xs text-amber-700">当前没有可用模型，请先启用至少一个模型配置。</p>
+              <p className="text-xs text-amber-700">当前暂无可用模型，请联系管理员配置。</p>
             ) : null}
             {errorMessage ? (
               <p className="text-xs text-red-600">{errorMessage}</p>
