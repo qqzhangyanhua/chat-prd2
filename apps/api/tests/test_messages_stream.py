@@ -2,8 +2,23 @@ import json
 
 from sqlalchemy import select
 
+from app.db.models import AssistantReplyGroup
+from app.db.models import AssistantReplyVersion
 from app.db.models import ConversationMessage
 from app.repositories import model_configs as model_configs_repository
+
+
+def _parse_sse_events(body: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    current_event = None
+    for line in body.splitlines():
+        if line.startswith("event: "):
+            current_event = line.removeprefix("event: ").strip()
+            continue
+        if line.startswith("data: ") and current_event is not None:
+            events.append((current_event, json.loads(line.removeprefix("data: "))))
+            current_event = None
+    return events
 
 
 def test_message_stream_emits_progress_and_persists_messages(
@@ -61,10 +76,21 @@ def test_message_stream_emits_progress_and_persists_messages(
 
     body = "".join(chunks)
     assert "message.accepted" in body
+    assert "reply_group.created" in body
     assert "action.decided" in body
+    assert "assistant.version.started" in body
     assert "assistant.delta" in body
     assert "assistant.done" in body
     assert body.count("event: assistant.delta") == 3
+    parsed_events = _parse_sse_events(body)
+    event_order = [name for name, _ in parsed_events]
+    assert event_order[:4] == [
+        "message.accepted",
+        "reply_group.created",
+        "action.decided",
+        "assistant.version.started",
+    ]
+    assert event_order[-1] == "assistant.done"
 
     db = testing_session_local()
     try:
@@ -95,11 +121,19 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert assistant_message.meta["base_url"] == "https://gateway.example.com/v1"
 
     delta_payloads = [
-        json.loads(line.removeprefix("data: "))
-        for line in body.splitlines()
-        if line.startswith("data: ") and "delta" in line
+        payload
+        for name, payload in parsed_events
+        if name == "assistant.delta"
     ]
     assert [payload["delta"] for payload in delta_payloads] == ["这是", "流式", "回复"]
+    assert all(payload["assistant_version_id"] for payload in delta_payloads)
+    assert all(payload["is_regeneration"] is False for payload in delta_payloads)
+    assert all(payload["is_latest"] is False for payload in delta_payloads)
+    started_payload = next(payload for name, payload in parsed_events if name == "assistant.version.started")
+    done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
+    assert started_payload["assistant_version_id"] == done_payload["assistant_version_id"]
+    assert done_payload["is_regeneration"] is False
+    assert done_payload["is_latest"] is True
     assert assistant_message.content == "这是流式回复"
 
 
@@ -161,3 +195,122 @@ def test_message_stream_rejects_disabled_model_config(
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Model config is disabled"}
+
+
+def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_message(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="重生成流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    class InitialReplyStream:
+        def __iter__(self):
+            yield "初始"
+            yield "回复"
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", lambda **_: InitialReplyStream())
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "请先生成第一版",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
+    db = testing_session_local()
+    try:
+        user_message = db.execute(
+            select(ConversationMessage)
+            .where(ConversationMessage.session_id == seeded_session)
+            .where(ConversationMessage.role == "user")
+        ).scalar_one()
+    finally:
+        db.close()
+
+    class RegenerateReplyStream:
+        def __iter__(self):
+            yield "重生"
+            yield "成"
+            yield "版本"
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", lambda **_: RegenerateReplyStream())
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages/{user_message.id}/regenerate",
+        json={"model_config_id": model_config_id},
+    ) as response:
+        assert response.status_code == 200
+        chunks = list(response.iter_text())
+
+    body = "".join(chunks)
+    assert "regenerate.accepted" not in body
+    assert "action.decided" in body
+    assert "assistant.version.started" in body
+    assert "assistant.delta" in body
+    assert "assistant.done" in body
+    assert "message.accepted" not in body
+    parsed_events = _parse_sse_events(body)
+    event_order = [name for name, _ in parsed_events]
+    assert event_order[:2] == ["action.decided", "assistant.version.started"]
+    assert event_order[-1] == "assistant.done"
+    delta_payloads = [
+        payload
+        for name, payload in parsed_events
+        if name == "assistant.delta"
+    ]
+    assert all(payload["assistant_version_id"] for payload in delta_payloads)
+    assert all(payload["is_regeneration"] is True for payload in delta_payloads)
+    assert all(payload["is_latest"] is False for payload in delta_payloads)
+    done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
+    assert done_payload["assistant_version_id"]
+    assert done_payload["is_regeneration"] is True
+    assert done_payload["is_latest"] is True
+
+    db = testing_session_local()
+    try:
+        messages = db.execute(
+            select(ConversationMessage)
+            .where(ConversationMessage.session_id == seeded_session)
+        ).scalars().all()
+        reply_group = db.execute(
+            select(AssistantReplyGroup)
+            .where(AssistantReplyGroup.session_id == seeded_session)
+            .where(AssistantReplyGroup.user_message_id == user_message.id)
+        ).scalar_one()
+        versions = db.execute(
+            select(AssistantReplyVersion)
+            .where(AssistantReplyVersion.reply_group_id == reply_group.id)
+            .order_by(AssistantReplyVersion.version_no.asc())
+        ).scalars().all()
+    finally:
+        db.close()
+
+    assert len([message for message in messages if message.role == "user"]) == 1
+    assert len([message for message in messages if message.role == "assistant"]) == 1
+    assert len(versions) == 2
+    assert [version.version_no for version in versions] == [1, 2]
+    assert versions[1].content == "重生成版本"

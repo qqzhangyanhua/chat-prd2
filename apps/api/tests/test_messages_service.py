@@ -11,6 +11,7 @@ from app.repositories import model_configs as model_configs_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
+from app.services.messages import stream_regenerate_message_events
 from app.services.messages import stream_user_message_events
 from app.services.model_gateway import ModelGatewayError
 
@@ -293,21 +294,54 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
 
     assert [event.type for event in events] == [
         "message.accepted",
+        "reply_group.created",
         "action.decided",
+        "assistant.version.started",
         "assistant.delta",
         "assistant.delta",
         "assistant.delta",
         "assistant.done",
     ]
-    assert [event.data["delta"] for event in events if event.type == "assistant.delta"] == [
+    accepted_event = next(event for event in events if event.type == "message.accepted")
+    group_event = next(event for event in events if event.type == "reply_group.created")
+    started_event = next(event for event in events if event.type == "assistant.version.started")
+    delta_events = [event for event in events if event.type == "assistant.delta"]
+    done_event = next(event for event in events if event.type == "assistant.done")
+
+    assert accepted_event.data["message_id"]
+    assert group_event.data["reply_group_id"]
+    assert group_event.data["user_message_id"] == accepted_event.data["message_id"]
+    assert started_event.data["assistant_version_id"]
+    assert started_event.data["is_regeneration"] is False
+    assert started_event.data["is_latest"] is False
+    assert started_event.data["version_no"] == 1
+    assert [event.data["delta"] for event in delta_events] == [
         "先把",
         "目标用户",
         "讲清楚。",
     ]
+    assert all(event.data["assistant_version_id"] == started_event.data["assistant_version_id"] for event in delta_events)
+    assert all(event.data["is_regeneration"] is False for event in delta_events)
+    assert all(event.data["is_latest"] is False for event in delta_events)
+    assert done_event.data["assistant_version_id"] == started_event.data["assistant_version_id"]
+    assert done_event.data["is_regeneration"] is False
+    assert done_event.data["is_latest"] is True
 
     persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
     assert len(persisted_messages) == 2
     assert persisted_messages[1].content == "先把目标用户讲清楚。"
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=persisted_messages[0].id,
+    )
+    assert reply_group is not None
+    versions = assistant_reply_versions_repository.list_versions_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+    assert [version.version_no for version in versions] == [1]
+    assert versions[0].content == "先把目标用户讲清楚。"
+    assert reply_group.latest_version_id == versions[0].id
 
 
 def test_reply_version_writes_do_not_create_new_user_messages(db_session, monkeypatch):
@@ -337,35 +371,17 @@ def test_reply_version_writes_do_not_create_new_user_messages(db_session, monkey
 
     persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
     user_message = next(message for message in persisted_messages if message.role == "user")
-    assistant_message = next(message for message in persisted_messages if message.role == "assistant")
-
-    reply_group = assistant_reply_groups_repository.create_reply_group(
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
         db=db_session,
-        session_id=session.id,
         user_message_id=user_message.id,
     )
-    version_1 = assistant_reply_versions_repository.create_reply_version(
+    assert reply_group is not None
+    version_1 = assistant_reply_versions_repository.get_latest_version_for_group(
         db=db_session,
         reply_group_id=reply_group.id,
-        session_id=session.id,
-        user_message_id=user_message.id,
-        version_no=1,
-        content=assistant_message.content,
-        action_snapshot=assistant_message.meta.get("action", {}),
-        model_meta={
-            "model_config_id": model_config.id,
-            "model_name": model_config.model,
-            "display_name": model_config.name,
-            "base_url": model_config.base_url,
-        },
-        state_version_id=None,
-        prd_snapshot_version=None,
     )
-    assistant_reply_groups_repository.set_latest_version(
-        db=db_session,
-        reply_group=reply_group,
-        latest_version_id=version_1.id,
-    )
+    assert version_1 is not None
+    assert version_1.version_no == 1
 
     version_2 = assistant_reply_versions_repository.create_reply_version(
         db=db_session,
@@ -499,12 +515,11 @@ def test_create_reply_version_rejects_group_session_or_user_message_mismatch(db_
     primary_user_message = next(message for message in primary_messages if message.role == "user")
     secondary_user_message = next(message for message in secondary_messages if message.role == "user")
 
-    primary_group = assistant_reply_groups_repository.create_reply_group(
+    primary_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
         db=db_session,
-        session_id=primary_session.id,
         user_message_id=primary_user_message.id,
     )
-    db_session.commit()
+    assert primary_group is not None
 
     with pytest.raises(ValueError, match="session_id does not match"):
         assistant_reply_versions_repository.create_reply_version(
@@ -535,6 +550,231 @@ def test_create_reply_version_rejects_group_session_or_user_message_mismatch(db_
         )
 
 
+def test_stream_regenerate_message_events_appends_version_without_new_user_message(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="重生成模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "初版回复")
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请给我一个版本",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+    assistant_message = next(message for message in persisted_messages if message.role == "assistant")
+    existing_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    assert existing_group is not None
+    existing_versions = assistant_reply_versions_repository.list_versions_for_group(
+        db=db_session,
+        reply_group_id=existing_group.id,
+    )
+    assert [version.version_no for version in existing_versions] == [1]
+    version_1 = existing_versions[0]
+
+    class FakeReplyStream:
+        def __iter__(self):
+            yield "这是"
+            yield "重生成"
+            yield "版本"
+
+        def close(self):
+            return None
+
+    captured = {}
+
+    def fake_open_reply_stream(*, base_url, api_key, model, messages):
+        captured["messages"] = messages
+        return FakeReplyStream()
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
+
+    events = list(
+        stream_regenerate_message_events(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            user_message_id=user_message.id,
+            model_config_id=model_config.id,
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "action.decided",
+        "assistant.version.started",
+        "assistant.delta",
+        "assistant.delta",
+        "assistant.delta",
+        "assistant.done",
+    ]
+    started_event = next(event for event in events if event.type == "assistant.version.started")
+    done_event = next(event for event in events if event.type == "assistant.done")
+    assert started_event.data["session_id"] == session.id
+    assert started_event.data["user_message_id"] == user_message.id
+    assert started_event.data["version_no"] == 2
+    assert started_event.data["reply_group_id"] == existing_group.id
+    assert started_event.data["assistant_version_id"]
+    assert started_event.data["is_regeneration"] is True
+    assert started_event.data["is_latest"] is False
+    assert [event.data["delta"] for event in events if event.type == "assistant.delta"] == [
+        "这是",
+        "重生成",
+        "版本",
+    ]
+    assert all(event.data["assistant_version_id"] == started_event.data["assistant_version_id"] for event in events if event.type == "assistant.delta")
+    assert all(event.data["is_regeneration"] is True for event in events if event.type == "assistant.delta")
+    assert all(event.data["is_latest"] is False for event in events if event.type == "assistant.delta")
+    assert done_event.data["session_id"] == session.id
+    assert done_event.data["user_message_id"] == user_message.id
+    assert done_event.data["version_no"] == 2
+    assert done_event.data["reply_group_id"] == existing_group.id
+    assert done_event.data["assistant_message_id"] == assistant_message.id
+    assert done_event.data["version_id"]
+    assert done_event.data["assistant_version_id"] == started_event.data["assistant_version_id"]
+    assert done_event.data["is_regeneration"] is True
+    assert done_event.data["is_latest"] is True
+    assert captured["messages"] == [
+        {"role": "system", "content": "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"},
+        {"role": "user", "content": "请给我一个版本"},
+    ]
+
+    refreshed_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    versions = assistant_reply_versions_repository.list_versions_for_group(
+        db=db_session,
+        reply_group_id=existing_group.id,
+    )
+    latest_version = assistant_reply_versions_repository.get_latest_version_for_group(
+        db=db_session,
+        reply_group_id=existing_group.id,
+    )
+    latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
+    latest_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_messages = [message for message in latest_messages if message.role == "user"]
+    assistant_messages = [message for message in latest_messages if message.role == "assistant"]
+
+    assert refreshed_group is not None
+    assert refreshed_group.latest_version_id != version_1.id
+    assert [version.version_no for version in versions] == [1, 2]
+    assert latest_version is not None
+    assert latest_version.content == "这是重生成版本"
+    assert latest_version.state_version_id is not None
+    assert latest_version.prd_snapshot_version == 3
+    assert latest_state_version is not None
+    assert latest_state_version.version == 3
+    assert len(user_messages) == 1
+    assert len(assistant_messages) == 1
+    assert assistant_messages[0].id == assistant_message.id
+    assert assistant_messages[0].content == "这是重生成版本"
+
+
+def test_stream_regenerate_message_events_keeps_latest_version_when_stream_fails(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="重生成失败模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "初版回复")
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请给我一个版本",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+    assistant_message = next(message for message in persisted_messages if message.role == "assistant")
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    assert reply_group is not None
+    versions_before = assistant_reply_versions_repository.list_versions_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+    assert [version.version_no for version in versions_before] == [1]
+    version_1 = versions_before[0]
+
+    class BrokenReplyStream:
+        def __iter__(self):
+            yield "这是"
+            raise ModelGatewayError("流式中断")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", lambda **_: BrokenReplyStream())
+
+    events = list(
+        stream_regenerate_message_events(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            user_message_id=user_message.id,
+            model_config_id=model_config.id,
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "action.decided",
+        "assistant.version.started",
+        "assistant.delta",
+    ]
+    started_event = next(event for event in events if event.type == "assistant.version.started")
+    delta_event = next(event for event in events if event.type == "assistant.delta")
+    assert started_event.data["assistant_version_id"]
+    assert started_event.data["is_regeneration"] is True
+    assert started_event.data["is_latest"] is False
+    assert delta_event.data["assistant_version_id"] == started_event.data["assistant_version_id"]
+    assert delta_event.data["is_regeneration"] is True
+    assert delta_event.data["is_latest"] is False
+
+    refreshed_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    versions = assistant_reply_versions_repository.list_versions_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+    latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
+
+    assert refreshed_group is not None
+    assert refreshed_group.latest_version_id == version_1.id
+    assert [version.version_no for version in versions] == [1]
+    assert latest_state_version is not None
+    assert latest_state_version.version == 2
+    latest_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    assistant_messages = [message for message in latest_messages if message.role == "assistant"]
+    assert len(assistant_messages) == 1
+    assert assistant_messages[0].id == assistant_message.id
+    assert assistant_messages[0].content == "初版回复"
+
 def test_get_latest_version_for_group_uses_group_latest_pointer(db_session, monkeypatch):
     session = _create_session_with_state(db_session)
     model_config = model_configs_repository.create_model_config(
@@ -561,25 +801,17 @@ def test_get_latest_version_for_group_uses_group_latest_pointer(db_session, monk
 
     persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
     user_message = next(message for message in persisted_messages if message.role == "user")
-    assistant_message = next(message for message in persisted_messages if message.role == "assistant")
-
-    reply_group = assistant_reply_groups_repository.create_reply_group(
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
         db=db_session,
-        session_id=session.id,
         user_message_id=user_message.id,
     )
-    version_1 = assistant_reply_versions_repository.create_reply_version(
+    assert reply_group is not None
+    version_1 = assistant_reply_versions_repository.get_latest_version_for_group(
         db=db_session,
         reply_group_id=reply_group.id,
-        session_id=session.id,
-        user_message_id=user_message.id,
-        version_no=1,
-        content=assistant_message.content,
-        action_snapshot=assistant_message.meta.get("action", {}),
-        model_meta={"model_config_id": model_config.id},
-        state_version_id=None,
-        prd_snapshot_version=None,
     )
+    assert version_1 is not None
+    assert version_1.version_no == 1
     version_2 = assistant_reply_versions_repository.create_reply_version(
         db=db_session,
         reply_group_id=reply_group.id,
