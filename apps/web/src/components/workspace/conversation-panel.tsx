@@ -18,6 +18,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const messages = useWorkspaceStore((state) => state.messages);
   const pendingRequestMode = useWorkspaceStore((state) => state.pendingRequestMode);
   const pendingUserInput = useWorkspaceStore((state) => state.pendingUserInput);
+  const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -83,7 +84,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
         </div>
       ) : (
         <AssistantTurnCard
-          canRegenerate={Boolean(lastSubmittedInput)}
+          canRegenerate={Boolean(lastSubmittedInput && selectedModelConfigId)}
           currentAction={currentAction}
           isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
           latestAssistantMessage={latestAssistantMessage}

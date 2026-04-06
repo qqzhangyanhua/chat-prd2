@@ -1,8 +1,33 @@
 from sqlalchemy import select
 
 from app.db.models import PrdSnapshot, ProjectSession, ProjectStateVersion
+from app.repositories import model_configs as model_configs_repository
 from app.schemas.session import SessionCreateRequest
 from app.services import sessions as session_service
+
+
+def _create_enabled_model_config(testing_session_local) -> str:
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="会话测试模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        db.commit()
+        return model_config.id
+    finally:
+        db.close()
+
+
+def _mock_gateway_reply(monkeypatch, reply: str = "这是测试回复") -> None:
+    def fake_generate_reply(*, base_url, api_key, model, messages):
+        return reply
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fake_generate_reply)
 
 
 def test_create_session_returns_initial_state(auth_client):
@@ -134,7 +159,14 @@ def test_list_sessions_returns_only_current_user_sessions(client):
     assert data["sessions"][0]["title"] == "First Session"
 
 
-def test_list_sessions_returns_most_recently_active_session_first(auth_client):
+def test_list_sessions_returns_most_recently_active_session_first(
+    auth_client,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(monkeypatch)
+
     first_response = auth_client.post(
         "/api/sessions",
         json={"title": "Old Session", "initial_idea": "idea one"},
@@ -150,7 +182,10 @@ def test_list_sessions_returns_most_recently_active_session_first(auth_client):
     with auth_client.stream(
         "POST",
         f"/api/sessions/{first_response.json()['session']['id']}/messages",
-        json={"content": "make this active again"},
+        json={
+            "content": "make this active again",
+            "model_config_id": model_config_id,
+        },
     ) as response:
         assert response.status_code == 200
         list(response.iter_text())
@@ -186,11 +221,22 @@ def test_update_session_title_rejects_blank_title(auth_client, seeded_session):
     assert response.status_code == 422
 
 
-def test_get_session_includes_messages_in_snapshot(auth_client, seeded_session):
+def test_get_session_includes_messages_in_snapshot(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(monkeypatch)
+
     with auth_client.stream(
         "POST",
         f"/api/sessions/{seeded_session}/messages",
-        json={"content": "你好"},
+        json={
+            "content": "你好",
+            "model_config_id": model_config_id,
+        },
     ) as response:
         assert response.status_code == 200
         list(response.iter_text())

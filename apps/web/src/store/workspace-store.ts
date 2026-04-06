@@ -3,6 +3,7 @@ import { createStore } from "zustand/vanilla";
 
 import type {
   ConversationMessage,
+  EnabledModelConfigItem,
   NextAction,
   PrdState,
   SessionSnapshotResponse,
@@ -14,6 +15,7 @@ type StreamPhase = "idle" | "waiting" | "streaming";
 type RequestMode = "new" | "regenerate";
 
 interface WorkspaceState {
+  availableModelConfigs: EnabledModelConfigItem[];
   currentAction: NextAction | null;
   errorMessage: string | null;
   inputValue: string;
@@ -25,12 +27,16 @@ interface WorkspaceState {
   pendingRequestMode: RequestMode | null;
   prd: PrdState;
   regenerateRequestId: number;
+  selectedModelConfigId: string | null;
   streamPhase: StreamPhase;
   applyEvent: (event: WorkspaceEvent) => void;
+  cancelPendingRequest: () => void;
   failRequest: (message: string) => void;
   hydrateSession: (snapshot: SessionSnapshotResponse) => void;
   markInterrupted: () => void;
   resetError: () => void;
+  selectModelConfig: (modelConfigId: string) => void;
+  setAvailableModelConfigs: (items: EnabledModelConfigItem[]) => void;
   setInputValue: (value: string) => void;
   setStreaming: (value: boolean) => void;
   startRegenerate: () => boolean;
@@ -92,16 +98,20 @@ function normalizeMessages(messages: ConversationMessage[]): WorkspaceMessage[] 
 function createInitialState(): Omit<
   WorkspaceState,
   | "applyEvent"
+  | "cancelPendingRequest"
   | "failRequest"
   | "hydrateSession"
   | "markInterrupted"
   | "resetError"
+  | "selectModelConfig"
+  | "setAvailableModelConfigs"
   | "setInputValue"
   | "setStreaming"
   | "startRegenerate"
   | "startRequest"
 > {
   return {
+    availableModelConfigs: [],
     currentAction: {
       action: "probe_deeper",
       target: "target_user",
@@ -124,6 +134,7 @@ function createInitialState(): Omit<
       sections: initialPrdSections,
     },
     regenerateRequestId: 0,
+    selectedModelConfigId: null,
     streamPhase: "idle",
   };
 }
@@ -227,6 +238,14 @@ export function createWorkspaceStore() {
             return state;
         }
       }),
+    cancelPendingRequest: () =>
+      set((state) => ({
+        ...state,
+        isStreaming: false,
+        pendingRequestMode: null,
+        pendingUserInput: null,
+        streamPhase: "idle",
+      })),
     failRequest: (message) =>
       set((state) => ({
         ...state,
@@ -271,6 +290,26 @@ export function createWorkspaceStore() {
         ...state,
         errorMessage: null,
       })),
+    selectModelConfig: (modelConfigId) =>
+      set((state) => ({
+        ...state,
+        selectedModelConfigId: state.availableModelConfigs.some((item) => item.id === modelConfigId)
+          ? modelConfigId
+          : state.selectedModelConfigId,
+      })),
+    setAvailableModelConfigs: (items) =>
+      set((state) => {
+        const nextSelectedModelId =
+          state.selectedModelConfigId && items.some((item) => item.id === state.selectedModelConfigId)
+            ? state.selectedModelConfigId
+            : items[0]?.id ?? null;
+
+        return {
+          ...state,
+          availableModelConfigs: items,
+          selectedModelConfigId: nextSelectedModelId,
+        };
+      }),
     setInputValue: (value) =>
       set((state) => ({
         ...state,
@@ -285,8 +324,8 @@ export function createWorkspaceStore() {
         streamPhase: value ? state.streamPhase : "idle",
       })),
     startRegenerate: () => {
-      const { lastSubmittedInput } = get();
-      if (!lastSubmittedInput) {
+      const { lastSubmittedInput, selectedModelConfigId } = get();
+      if (!lastSubmittedInput || !selectedModelConfigId) {
         return false;
       }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Download, RotateCcw, Trash2, Check, Clock } from "lucide-react";
 
@@ -49,9 +49,11 @@ function formatRecentActivity(value: string): string {
 export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.showToast);
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
+  const [isTitleDirty, setIsTitleDirty] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -59,6 +61,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const [isRecovering, setIsRecovering] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
+  const hasMountedSessionStateRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,15 +92,27 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   );
 
   useEffect(() => {
-    setTitleDraft(activeSession?.title ?? "");
+    if (!isTitleDirty) {
+      setTitleDraft(activeSession?.title ?? "");
+    }
     setRenameError(null);
+  }, [activeSession, isTitleDirty]);
+
+  useEffect(() => {
+    if (!hasMountedSessionStateRef.current) {
+      hasMountedSessionStateRef.current = true;
+      return;
+    }
+
     setDeleteError(null);
     setIsDeleting(false);
     setConfirmingDelete(false);
     setIsRecovering(false);
     setIsExporting(false);
     setIsRenaming(false);
-  }, [activeSession]);
+    setIsTitleDirty(false);
+    setTitleDraft("");
+  }, [sessionId]);
 
   async function handleExport() {
     if (isExporting) {
@@ -198,6 +213,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
 
       const snapshot = await updateSession(sessionId, { title: normalizedTitle }, accessToken);
       setTitleDraft(snapshot.session.title);
+      setIsTitleDirty(false);
       setSessions((current) =>
         current.map((session) =>
           session.id === sessionId ? { ...session, ...snapshot.session } : session,
@@ -281,7 +297,10 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           <input
             className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 outline-none transition-all duration-150 hover:border-stone-300 focus:border-stone-900 focus:bg-white focus:ring-2 focus:ring-stone-900/8"
             value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
+            onChange={(event) => {
+              setTitleDraft(event.target.value);
+              setIsTitleDirty(true);
+            }}
           />
         </label>
         <button
@@ -308,6 +327,16 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           <Plus className="h-3.5 w-3.5" />
           新建会话
         </button>
+
+        {user?.is_admin ? (
+          <button
+            className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-xs font-medium text-stone-700 transition-all duration-150 hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]"
+            onClick={() => router.push("/admin/models")}
+            type="button"
+          >
+            模型管理
+          </button>
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2">
           <button

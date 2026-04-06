@@ -4,8 +4,10 @@ import { getSession } from "../lib/api";
 
 import { WorkspaceSessionShell } from "../components/workspace/workspace-session-shell";
 import { useToastStore } from "../store/toast-store";
+import { workspaceStore } from "../store/workspace-store";
 
 const getSessionMock = vi.fn();
+const listEnabledModelConfigsMock = vi.fn();
 const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -16,13 +18,16 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../lib/api", () => ({
   getSession: (...args: unknown[]) => getSessionMock(...args),
+  listEnabledModelConfigs: (...args: unknown[]) => listEnabledModelConfigsMock(...args),
 }));
 
 describe("WorkspaceSessionShell", () => {
   beforeEach(() => {
     getSessionMock.mockReset();
+    listEnabledModelConfigsMock.mockReset();
     pushMock.mockReset();
     useToastStore.getState().clearToast();
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
     getSessionMock.mockResolvedValue({
       session: {
         id: "session-1",
@@ -41,6 +46,15 @@ describe("WorkspaceSessionShell", () => {
       },
       messages: [],
     });
+    listEnabledModelConfigsMock.mockResolvedValue({
+      items: [
+        {
+          id: "model-openai",
+          name: "OpenAI GPT-4.1",
+          model: "gpt-4.1",
+        },
+      ],
+    });
   });
 
   it("loads the current session snapshot on mount", async () => {
@@ -49,6 +63,42 @@ describe("WorkspaceSessionShell", () => {
     await waitFor(() => {
       expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
     });
+  });
+
+  it("loads enabled model configs on mount and writes them into the store", async () => {
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(listEnabledModelConfigsMock).toHaveBeenCalledWith(null);
+    });
+
+    expect(workspaceStore.getState().availableModelConfigs).toEqual([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+    ]);
+    expect(workspaceStore.getState().selectedModelConfigId).toBe("model-openai");
+  });
+
+  it("keeps the workspace usable when session loading succeeds but model loading fails", async () => {
+    listEnabledModelConfigsMock.mockRejectedValue(new Error("模型列表加载失败"));
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().currentAction).toBeNull();
+    });
+
+    expect(workspaceStore.getState().messages).toEqual([]);
+    expect(workspaceStore.getState().availableModelConfigs).toEqual([]);
+    expect(workspaceStore.getState().selectedModelConfigId).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试加载" })).not.toBeInTheDocument();
   });
 
   it("shows a global toast when session loading fails", async () => {
@@ -132,5 +182,22 @@ describe("WorkspaceSessionShell", () => {
     await waitFor(() => {
       expect(getSessionMock).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("restores the retry button after a retry also fails", async () => {
+    getSessionMock
+      .mockRejectedValueOnce(new Error("首次加载失败"))
+      .mockRejectedValueOnce(new Error("重试仍失败"));
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    const retryButton = await screen.findByRole("button", { name: "重试加载" });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(await screen.findByRole("button", { name: "重试加载" })).toBeEnabled();
   });
 });

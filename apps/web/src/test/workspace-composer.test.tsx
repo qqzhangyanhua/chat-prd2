@@ -16,6 +16,18 @@ describe("Composer", () => {
     vi.mocked(sendMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+      {
+        id: "model-anthropic",
+        name: "Anthropic Claude 3.7",
+        model: "claude-3-7-sonnet",
+      },
+    ]);
     workspaceStore.getState().setInputValue("请帮我梳理目标用户。");
   });
 
@@ -160,6 +172,47 @@ describe("Composer", () => {
 
     expect(await screen.findByText("消息发送失败")).toBeInTheDocument();
   });
+
+  it("passes the selected model_config_id when sending a message", async () => {
+    const encoder = new TextEncoder();
+    vi.mocked(sendMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('event: message.accepted\ndata: {"message_id":"user-1"}\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    );
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.change(screen.getByLabelText("选择模型"), {
+      target: { value: "model-anthropic" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith(
+        "demo-session",
+        "请帮我梳理目标用户。",
+        null,
+        expect.any(AbortSignal),
+        "model-anthropic",
+      );
+    });
+  });
+
+  it("disables sending and shows a clear prompt when no model is available", () => {
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setInputValue("请帮我梳理目标用户。");
+
+    render(<Composer sessionId="demo-session" />);
+
+    expect(screen.getByText("当前暂无可用模型，请联系管理员配置。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  });
 });
 
 describe("ConversationPanel empty state", () => {
@@ -181,6 +234,13 @@ describe("ConversationPanel regenerate", () => {
     vi.mocked(sendMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+    ]);
   });
 
   it("replays the latest accepted input without adding a duplicate user message", async () => {
@@ -236,9 +296,50 @@ describe("ConversationPanel regenerate", () => {
       expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(2);
     });
 
+    expect(vi.mocked(sendMessage)).toHaveBeenNthCalledWith(
+      1,
+      "demo-session",
+      "请帮我梳理目标用户。",
+      null,
+      expect.any(AbortSignal),
+      "model-openai",
+    );
+    expect(vi.mocked(sendMessage)).toHaveBeenNthCalledWith(
+      2,
+      "demo-session",
+      "请帮我梳理目标用户。",
+      null,
+      expect.any(AbortSignal),
+      "model-openai",
+    );
     expect(
       workspaceStore.getState().messages.filter((message) => message.role === "user"),
     ).toHaveLength(1);
     expect(workspaceStore.getState().messages.at(-1)?.content).toContain("重新生成后的回复");
+  });
+
+  it("hides regenerate when no selected model is available", () => {
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      availableModelConfigs: [],
+      selectedModelConfigId: null,
+      lastSubmittedInput: "请帮我梳理目标用户。",
+      currentAction: null,
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "先把问题范围说清楚。",
+        },
+      ],
+    });
+
+    render(<ConversationPanel sessionId="demo-session" />);
+
+    expect(screen.queryByRole("button", { name: "重新生成" })).not.toBeInTheDocument();
+    expect(vi.mocked(sendMessage)).not.toHaveBeenCalled();
+    expect(workspaceStore.getState().isStreaming).toBe(false);
+    expect(workspaceStore.getState().streamPhase).toBe("idle");
+    expect(workspaceStore.getState().pendingRequestMode).toBeNull();
   });
 });
