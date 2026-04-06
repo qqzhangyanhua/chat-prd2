@@ -14,7 +14,6 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const currentAction = useWorkspaceStore((state) => state.currentAction);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const lastInterrupted = useWorkspaceStore((state) => state.lastInterrupted);
-  const lastSubmittedInput = useWorkspaceStore((state) => state.lastSubmittedInput);
   const messages = useWorkspaceStore((state) => state.messages);
   const pendingRequestMode = useWorkspaceStore((state) => state.pendingRequestMode);
   const pendingUserInput = useWorkspaceStore((state) => state.pendingUserInput);
@@ -35,6 +34,16 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const latestAssistantMessage =
     lastAssistantIndex >= 0 ? messages[lastAssistantIndex]?.content ?? "" : "";
   const historyMessages = lastAssistantIndex >= 0 ? messages.slice(0, lastAssistantIndex) : messages;
+  const latestAssistantMessageMeta =
+    lastAssistantIndex >= 0 ? messages[lastAssistantIndex] ?? null : null;
+  const latestUserMessage =
+    lastAssistantIndex >= 0
+      ? [...messages.slice(0, lastAssistantIndex)].reverse().find((message) => message.role === "user") ?? null
+      : null;
+  const regenerateUserMessageId =
+    latestAssistantMessageMeta?.replyGroupId
+      ? workspaceStore.getState().replyGroups[latestAssistantMessageMeta.replyGroupId]?.userMessageId ?? null
+      : null;
 
   const hasNoHistory = historyMessages.length === 0 && !isStreaming;
 
@@ -84,7 +93,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
         </div>
       ) : (
         <AssistantTurnCard
-          canRegenerate={Boolean(lastSubmittedInput && selectedModelConfigId)}
+          canRegenerate={Boolean(selectedModelConfigId && regenerateUserMessageId)}
           currentAction={currentAction}
           isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
           latestAssistantMessage={latestAssistantMessage}
@@ -92,12 +101,18 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
             if (isStreaming) {
               return;
             }
+            if (latestUserMessage?.content) {
+              workspaceStore.setState((state) => ({
+                ...state,
+                lastSubmittedInput: latestUserMessage.content,
+              }));
+            }
             workspaceStore.getState().startRegenerate();
           }}
           showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
         />
       )}
-      <Composer sessionId={sessionId} />
+      <Composer sessionId={sessionId} regenerateUserMessageId={regenerateUserMessageId} />
     </section>
   );
 }

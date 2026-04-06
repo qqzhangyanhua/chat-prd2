@@ -3,17 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationPanel } from "../components/workspace/conversation-panel";
 import { Composer } from "../components/workspace/composer";
+import { regenerateMessage } from "../lib/api";
 import { sendMessage } from "../lib/api";
 import { useToastStore } from "../store/toast-store";
 import { workspaceStore } from "../store/workspace-store";
 
 vi.mock("../lib/api", () => ({
   sendMessage: vi.fn(),
+  regenerateMessage: vi.fn(),
 }));
 
 describe("Composer", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();
+    vi.mocked(regenerateMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
     workspaceStore.getState().setAvailableModelConfigs([
@@ -218,6 +221,7 @@ describe("Composer", () => {
 describe("ConversationPanel empty state", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();
+    vi.mocked(regenerateMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
   });
@@ -232,6 +236,7 @@ describe("ConversationPanel empty state", () => {
 describe("ConversationPanel regenerate", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();
+    vi.mocked(regenerateMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
     workspaceStore.getState().setAvailableModelConfigs([
@@ -245,36 +250,37 @@ describe("ConversationPanel regenerate", () => {
 
   it("replays the latest accepted input without adding a duplicate user message", async () => {
     const encoder = new TextEncoder();
-    let callCount = 0;
-
-    vi.mocked(sendMessage).mockImplementation(async () => {
-      callCount += 1;
-      if (callCount === 1) {
-        return new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(
-              encoder.encode(
-                'event: message.accepted\ndata: {"message_id":"user-1"}\n\n' +
-                  'event: assistant.delta\ndata: {"delta":"先把问题范围说清楚。"}\n\n',
-              ),
-            );
-            controller.close();
-          },
-        });
-      }
-
-      return new ReadableStream<Uint8Array>({
+    vi.mocked(sendMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(
             encoder.encode(
-              'event: message.accepted\ndata: {"message_id":"user-2"}\n\n' +
-                'event: assistant.delta\ndata: {"delta":"重新生成后的回复。"}\n\n',
+              'event: message.accepted\ndata: {"message_id":"user-1","session_id":"demo-session"}\n\n' +
+                'event: reply_group.created\ndata: {"reply_group_id":"group-1","user_message_id":"user-1","session_id":"demo-session","is_regeneration":false,"is_latest":false}\n\n' +
+                'event: assistant.version.started\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-1","version_no":1,"assistant_message_id":null,"model_config_id":"model-openai","is_regeneration":false,"is_latest":false}\n\n' +
+                'event: assistant.delta\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-1","version_no":1,"assistant_message_id":null,"model_config_id":"model-openai","delta":"先把问题范围说清楚。","is_regeneration":false,"is_latest":false}\n\n' +
+                'event: assistant.done\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-1","version_id":"version-1","version_no":1,"assistant_message_id":"assistant-1","model_config_id":"model-openai","prd_snapshot_version":2,"is_regeneration":false,"is_latest":true}\n\n',
             ),
           );
           controller.close();
         },
-      });
-    });
+      }),
+    );
+    vi.mocked(regenerateMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'event: action.decided\ndata: {"action":"probe_deeper","target":"target_user","reason":"继续追问"}\n\n' +
+                'event: assistant.version.started\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-openai","is_regeneration":true,"is_latest":false}\n\n' +
+                'event: assistant.delta\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-openai","delta":"重新生成后的回复。","is_regeneration":true,"is_latest":false}\n\n' +
+                'event: assistant.done\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-openai","prd_snapshot_version":3,"is_regeneration":true,"is_latest":true}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    );
 
     render(<ConversationPanel sessionId="demo-session" />);
     fireEvent.change(screen.getByRole("textbox"), {
@@ -293,7 +299,8 @@ describe("ConversationPanel regenerate", () => {
     expect(screen.getByRole("button", { name: "生成中..." })).toBeDisabled();
 
     await waitFor(() => {
-      expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(regenerateMessage)).toHaveBeenCalledTimes(1);
     });
 
     expect(vi.mocked(sendMessage)).toHaveBeenNthCalledWith(
@@ -304,10 +311,10 @@ describe("ConversationPanel regenerate", () => {
       expect.any(AbortSignal),
       "model-openai",
     );
-    expect(vi.mocked(sendMessage)).toHaveBeenNthCalledWith(
-      2,
+    expect(vi.mocked(regenerateMessage)).toHaveBeenNthCalledWith(
+      1,
       "demo-session",
-      "请帮我梳理目标用户。",
+      "user-1",
       null,
       expect.any(AbortSignal),
       "model-openai",
@@ -341,5 +348,124 @@ describe("ConversationPanel regenerate", () => {
     expect(workspaceStore.getState().isStreaming).toBe(false);
     expect(workspaceStore.getState().streamPhase).toBe("idle");
     expect(workspaceStore.getState().pendingRequestMode).toBeNull();
+  });
+
+  it("aborts regenerateMessage when stopping an in-flight regenerate request", async () => {
+    const encoder = new TextEncoder();
+    let capturedSignal: AbortSignal | undefined;
+
+    vi.mocked(sendMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'event: message.accepted\ndata: {"message_id":"user-1","session_id":"demo-session"}\n\n' +
+                'event: reply_group.created\ndata: {"reply_group_id":"group-1","user_message_id":"user-1","session_id":"demo-session","is_regeneration":false,"is_latest":false}\n\n' +
+                'event: assistant.version.started\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-1","version_no":1,"assistant_message_id":null,"model_config_id":"model-openai","is_regeneration":false,"is_latest":false}\n\n' +
+                'event: assistant.delta\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-1","version_no":1,"assistant_message_id":null,"model_config_id":"model-openai","delta":"初版回复","is_regeneration":false,"is_latest":false}\n\n' +
+                'event: assistant.done\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-1","version_id":"version-1","version_no":1,"assistant_message_id":"assistant-1","model_config_id":"model-openai","prd_snapshot_version":2,"is_regeneration":false,"is_latest":true}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    );
+    vi.mocked(regenerateMessage).mockImplementation(async (_sessionId, _userMessageId, _token, signal) => {
+      capturedSignal = signal;
+      return new Promise<ReadableStream<Uint8Array>>((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    render(<ConversationPanel sessionId="demo-session" />);
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "请帮我梳理目标用户。" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "重新生成" })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    fireEvent.click(await screen.findByRole("button", { name: "停止生成" }));
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().isStreaming).toBe(false);
+    });
+
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(vi.mocked(regenerateMessage)).toHaveBeenCalledWith(
+      "demo-session",
+      "user-1",
+      null,
+      expect.any(AbortSignal),
+      "model-openai",
+    );
+  });
+
+  it("derives regenerate user_message_id from the latest assistant reply group after hydrate", async () => {
+    vi.mocked(regenerateMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    );
+
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      currentAction: null,
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+        },
+        {
+          id: "version-1",
+          role: "assistant",
+          content: "先把问题范围说清楚。",
+          replyGroupId: "group-1",
+          versionNo: 1,
+          isLatest: true,
+        },
+      ],
+      replyGroups: {
+        "group-1": {
+          id: "group-1",
+          sessionId: "demo-session",
+          userMessageId: "user-1",
+          latestVersionId: "version-1",
+          versions: [
+            {
+              id: "version-1",
+              versionNo: 1,
+              content: "先把问题范围说清楚。",
+              assistantMessageId: "assistant-1",
+              isRegeneration: false,
+              isLatest: true,
+            },
+          ],
+        },
+      },
+      lastSubmittedInput: null,
+    });
+
+    render(<ConversationPanel sessionId="demo-session" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(regenerateMessage)).toHaveBeenCalledWith(
+        "demo-session",
+        "user-1",
+        null,
+        expect.any(AbortSignal),
+        "model-openai",
+      );
+    });
   });
 });

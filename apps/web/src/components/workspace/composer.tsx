@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Send, Square, Loader } from "lucide-react";
 
+import { regenerateMessage } from "../../lib/api";
 import { sendMessage } from "../../lib/api";
 import { parseEventStream } from "../../lib/sse";
 import { useAuthStore } from "../../store/auth-store";
@@ -11,6 +12,7 @@ import { useWorkspaceStore, workspaceStore } from "../../store/workspace-store";
 import { ModelSelector } from "./model-selector";
 
 interface ComposerProps {
+  regenerateUserMessageId?: string | null;
   sessionId: string;
 }
 
@@ -20,7 +22,7 @@ function isAbortError(error: unknown): boolean {
     : error instanceof Error && error.name === "AbortError";
 }
 
-export function Composer({ sessionId }: ComposerProps) {
+export function Composer({ sessionId, regenerateUserMessageId = null }: ComposerProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastHandledRegenerateIdRef = useRef(0);
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -108,6 +110,65 @@ export function Composer({ sessionId }: ComposerProps) {
     }
   }
 
+  async function dispatchRegenerate(userMessageId: string) {
+    const modelConfigId = workspaceStore.getState().selectedModelConfigId;
+    if (!modelConfigId) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    try {
+      const stream = await regenerateMessage(
+        sessionId,
+        userMessageId,
+        accessToken,
+        abortController.signal,
+        modelConfigId,
+      );
+
+      for await (const event of parseEventStream(stream)) {
+        workspaceStore.getState().applyEvent(event);
+      }
+
+      if (workspaceStore.getState().isStreaming) {
+        workspaceStore.getState().setStreaming(false);
+      }
+    } catch (error) {
+      if (isAbortError(error)) {
+        const { markInterrupted, resetError, setStreaming, streamPhase } =
+          workspaceStore.getState();
+
+        if (streamPhase === "streaming") {
+          markInterrupted();
+        } else {
+          setStreaming(false);
+        }
+
+        resetError();
+        showToast({
+          id: `cancel-generation-${sessionId}`,
+          message: "已停止本轮生成",
+          tone: "info",
+        });
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : "消息重生成失败";
+      workspaceStore.getState().failRequest(message);
+      showToast({
+        id: `regenerate-message-${sessionId}`,
+        message,
+        tone: "error",
+      });
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+    }
+  }
+
   async function handleSend() {
     await dispatchMessage(inputValue);
   }
@@ -126,14 +187,20 @@ export function Composer({ sessionId }: ComposerProps) {
       return;
     }
 
-    if (!selectedModelConfigId) {
+    if (!selectedModelConfigId || !regenerateUserMessageId) {
       workspaceStore.getState().cancelPendingRequest();
       return;
     }
 
     lastHandledRegenerateIdRef.current = regenerateRequestId;
-    void dispatchMessage(pendingUserInput, true);
-  }, [pendingRequestMode, pendingUserInput, regenerateRequestId, selectedModelConfigId]);
+    void dispatchRegenerate(regenerateUserMessageId);
+  }, [
+    pendingRequestMode,
+    pendingUserInput,
+    regenerateRequestId,
+    regenerateUserMessageId,
+    selectedModelConfigId,
+  ]);
 
   const statusMessage =
     streamPhase === "waiting"

@@ -45,6 +45,7 @@ describe("WorkspaceSessionShell", () => {
         sections: {},
       },
       messages: [],
+      assistant_reply_groups: [],
     });
     listEnabledModelConfigsMock.mockResolvedValue({
       items: [
@@ -143,6 +144,7 @@ describe("WorkspaceSessionShell", () => {
         sections: {},
       },
       messages: [],
+      assistant_reply_groups: [],
     });
 
     render(<WorkspaceSessionShell sessionId="session-1" />);
@@ -172,6 +174,7 @@ describe("WorkspaceSessionShell", () => {
           sections: {},
         },
         messages: [],
+        assistant_reply_groups: [],
       });
 
     render(<WorkspaceSessionShell sessionId="session-1" />);
@@ -199,5 +202,70 @@ describe("WorkspaceSessionShell", () => {
     });
 
     expect(await screen.findByRole("button", { name: "重试加载" })).toBeEnabled();
+  });
+
+  it("hydrates assistant reply groups into workspace store", async () => {
+    getSessionMock.mockResolvedValueOnce({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "session-1",
+          user_message_id: "user-1",
+          latest_version_id: "version-2",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "session-1",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "第一版",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 2,
+              created_at: "2026-04-05T00:00:00Z",
+            },
+            {
+              id: "version-2",
+              reply_group_id: "group-1",
+              session_id: "session-1",
+              user_message_id: "user-1",
+              version_no: 2,
+              content: "第二版",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 3,
+              created_at: "2026-04-05T00:00:00Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().replyGroups["group-1"]?.latestVersionId).toBe("version-2");
+    });
   });
 });
