@@ -145,4 +145,21 @@ describe("WorkspaceSessionShell", () => {
       expect(getSessionMock).toHaveBeenCalledTimes(2);
     });
   });
+
+  it("restores the retry button after a retry also fails", async () => {
+    getSessionMock
+      .mockRejectedValueOnce(new Error("首次加载失败"))
+      .mockRejectedValueOnce(new Error("重试仍失败"));
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    const retryButton = await screen.findByRole("button", { name: "重试加载" });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(await screen.findByRole("button", { name: "重试加载" })).toBeEnabled();
+  });
 });

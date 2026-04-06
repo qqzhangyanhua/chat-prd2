@@ -29,40 +29,42 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
 
     async function loadSession() {
       try {
-        const snapshot = await getSession(sessionId, accessToken);
-        if (cancelled) {
+        try {
+          const snapshot = await getSession(sessionId, accessToken);
+          if (cancelled) {
+            return;
+          }
+
+          setLoadError(null);
+          workspaceStore.getState().hydrateSession(snapshot);
+        } catch (error) {
+          if (!cancelled) {
+            const message = error instanceof Error ? error.message : "会话加载失败";
+            setLoadError(message);
+            showToast({
+              id: `load-session-${sessionId}`,
+              message,
+              tone: "error",
+            });
+          }
           return;
         }
 
-        setLoadError(null);
-        workspaceStore.getState().hydrateSession(snapshot);
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : "会话加载失败";
-          setLoadError(message);
-          showToast({
-            id: `load-session-${sessionId}`,
-            message,
-            tone: "error",
-          });
-        }
-        return;
-      }
-
-      try {
-        const enabledModelConfigs = await listEnabledModelConfigs(accessToken);
-        if (!cancelled) {
-          workspaceStore.getState().setAvailableModelConfigs(enabledModelConfigs.items);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          workspaceStore.getState().setAvailableModelConfigs([]);
-          const message = error instanceof Error ? error.message : "模型列表加载失败";
-          showToast({
-            id: `load-model-configs-${sessionId}`,
-            message,
-            tone: "error",
-          });
+        try {
+          const enabledModelConfigs = await listEnabledModelConfigs(accessToken);
+          if (!cancelled) {
+            workspaceStore.getState().setAvailableModelConfigs(enabledModelConfigs.items);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            workspaceStore.getState().setAvailableModelConfigs([]);
+            const message = error instanceof Error ? error.message : "模型列表加载失败";
+            showToast({
+              id: `load-model-configs-${sessionId}`,
+              message,
+              tone: "error",
+            });
+          }
         }
       } finally {
         if (!cancelled) {
