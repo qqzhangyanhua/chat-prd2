@@ -33,8 +33,8 @@ uv --version
 
 当前项目已经准备好以下环境变量文件：
 
-- 根目录 [`.env`](D:/AI/chat-prd/.env)
-- 前端 [`apps/web/.env.local`](D:/AI/chat-prd/apps/web/.env.local)
+- 根目录 [`.env`](D:/AI/chat-prd2/.env)
+- 前端 [`apps/web/.env.local`](D:/AI/chat-prd2/apps/web/.env.local)
 
 当前配置如下：
 
@@ -82,7 +82,7 @@ ADMIN_EMAILS=admin@example.com,ops@example.com
 
 ## 3. 创建并激活 uv 虚拟环境
 
-在项目根目录 [D:\AI\chat-prd](D:/AI/chat-prd) 执行：
+在项目根目录 [D:\AI\chat-prd2](D:/AI/chat-prd2) 执行：
 
 ```powershell
 uv venv
@@ -203,7 +203,7 @@ http://127.0.0.1:8000/api/health
 新开一个 PowerShell 窗口，进入项目根目录：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 pnpm dev:web
 ```
 
@@ -218,7 +218,7 @@ http://localhost:3000
 建议严格按下面顺序执行：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 uv venv
 .\.venv\Scripts\Activate.ps1
 uv pip install -e "apps/api[dev]"
@@ -232,7 +232,7 @@ python -m uvicorn app.main:app --reload --app-dir apps/api
 然后新开一个窗口：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 pnpm dev:web
 ```
 
@@ -261,7 +261,7 @@ python -m pytest apps/api/tests -q
 如果你已经完成了依赖安装，并且根目录 `.venv` 已创建，可以直接运行：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 ```
 
@@ -306,14 +306,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 优先检查：
 
 - 后端是否已经启动在 `http://127.0.0.1:8000`
-- [`apps/web/.env.local`](D:/AI/chat-prd/apps/web/.env.local) 的 `NEXT_PUBLIC_API_BASE_URL` 是否正确
+- [`apps/web/.env.local`](D:/AI/chat-prd2/apps/web/.env.local) 的 `NEXT_PUBLIC_API_BASE_URL` 是否正确
 
 ## 13. 一键理解版
 
 如果你现在就是要本地跑起来，最短路径是：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 uv venv
 .\.venv\Scripts\Activate.ps1
 uv pip install -e "apps/api[dev]"
@@ -327,6 +327,6 @@ python -m uvicorn app.main:app --reload --app-dir apps/api
 再开一个窗口：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 pnpm dev:web
 ```

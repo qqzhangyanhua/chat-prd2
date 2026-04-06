@@ -304,7 +304,7 @@ describe("ConversationPanel regenerate", () => {
     expect(workspaceStore.getState().messages.at(-1)?.content).toContain("重新生成后的回复");
   });
 
-  it("does not enter a stuck waiting state when regenerate is triggered without a selected model", () => {
+  it("hides regenerate when no selected model is available", () => {
     workspaceStore.setState({
       ...workspaceStore.getState(),
       availableModelConfigs: [],
@@ -322,12 +322,10 @@ describe("ConversationPanel regenerate", () => {
 
     render(<ConversationPanel sessionId="demo-session" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
-
+    expect(screen.queryByRole("button", { name: "重新生成" })).not.toBeInTheDocument();
     expect(vi.mocked(sendMessage)).not.toHaveBeenCalled();
     expect(workspaceStore.getState().isStreaming).toBe(false);
     expect(workspaceStore.getState().streamPhase).toBe("idle");
     expect(workspaceStore.getState().pendingRequestMode).toBeNull();
-    expect(screen.getByRole("button", { name: "重新生成" })).not.toBeDisabled();
   });
 });
