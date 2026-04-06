@@ -162,6 +162,20 @@ describe("Composer", () => {
   });
 });
 
+describe("ConversationPanel empty state", () => {
+  beforeEach(() => {
+    vi.mocked(sendMessage).mockReset();
+    useToastStore.getState().clearToast();
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
+  });
+
+  it("shows empty state when no messages and not streaming", () => {
+    render(<ConversationPanel sessionId="session-1" />);
+
+    expect(screen.getByText(/开始描述你的想法/i)).toBeInTheDocument();
+  });
+});
+
 describe("ConversationPanel regenerate", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();

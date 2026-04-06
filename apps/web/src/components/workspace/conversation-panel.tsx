@@ -35,6 +35,8 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
     lastAssistantIndex >= 0 ? messages[lastAssistantIndex]?.content ?? "" : "";
   const historyMessages = lastAssistantIndex >= 0 ? messages.slice(0, lastAssistantIndex) : messages;
 
+  const hasNoHistory = historyMessages.length === 0 && !isStreaming;
+
   return (
     <section className="flex flex-col gap-5">
       {(historyMessages.length > 0 || (isStreaming && pendingRequestMode === "new" && pendingUserInput)) ? (
@@ -67,19 +69,33 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
         </div>
       ) : null}
 
-      <AssistantTurnCard
-        canRegenerate={Boolean(lastSubmittedInput)}
-        currentAction={currentAction}
-        isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
-        latestAssistantMessage={latestAssistantMessage}
-        onRegenerate={() => {
-          if (isStreaming) {
-            return;
-          }
-          workspaceStore.getState().startRegenerate();
-        }}
-        showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
-      />
+      {hasNoHistory ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-stone-200/80 bg-white p-10 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-primary to-brand-accent text-white">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <p className="text-sm font-semibold text-stone-900">开始描述你的想法</p>
+          <p className="text-xs text-center text-stone-500 max-w-xs">
+            在下方输入框告诉我你想解决的问题或构建的产品，我会帮你一步步梳理清楚。
+          </p>
+        </div>
+      ) : (
+        <AssistantTurnCard
+          canRegenerate={Boolean(lastSubmittedInput)}
+          currentAction={currentAction}
+          isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
+          latestAssistantMessage={latestAssistantMessage}
+          onRegenerate={() => {
+            if (isStreaming) {
+              return;
+            }
+            workspaceStore.getState().startRegenerate();
+          }}
+          showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
+        />
+      )}
       <Composer sessionId={sessionId} />
     </section>
   );
