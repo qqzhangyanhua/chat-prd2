@@ -23,6 +23,10 @@ vi.mock("../store/auth-store", () => ({
   useAuthStore: vi.fn(),
 }));
 
+vi.mock("../hooks/use-auth-guard", () => ({
+  useAuthGuard: vi.fn(),
+}));
+
 import { useAuthStore } from "../store/auth-store";
 
 describe("WorkspaceEntry", () => {
@@ -63,6 +67,8 @@ describe("WorkspaceEntry", () => {
     });
 
     render(<WorkspaceEntry />);
+
+    await screen.findByText("Describe your idea");
 
     fireEvent.change(
       screen.getByPlaceholderText(
@@ -120,6 +126,26 @@ describe("WorkspaceEntry", () => {
     expect(screen.queryByText("最近活跃会话")).not.toBeInTheDocument();
   });
 
+  it("does not redirect to the latest session when auto redirect is disabled", async () => {
+    listSessionsMock.mockResolvedValue({
+      sessions: [
+        {
+          id: "session-3",
+          user_id: "user-1",
+          title: "最近活跃会话",
+          initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+        },
+      ],
+    });
+
+    render(<WorkspaceEntry autoRedirectToLatest={false} />);
+
+    expect(await screen.findByText("Describe your idea")).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
   it("renders the global toast on workspace entry", async () => {
     useToastStore.getState().showToast({
       message: "会话已删除",
@@ -131,9 +157,11 @@ describe("WorkspaceEntry", () => {
     expect(await screen.findByText("会话已删除")).toBeInTheDocument();
   });
 
-  it("clicks 'Product Discovery' chip to pre-fill idea textarea", () => {
+  it("clicks 'Product Discovery' chip to pre-fill idea textarea", async () => {
     listSessionsMock.mockResolvedValue({ sessions: [] });
     render(<WorkspaceEntry />);
+
+    await screen.findByText("Describe your idea");
 
     const buttons = screen.getAllByRole("button", { name: /product discovery/i });
     fireEvent.click(buttons[buttons.length - 1]);
@@ -142,9 +170,11 @@ describe("WorkspaceEntry", () => {
     expect(textarea).toHaveValue("我有一个产品想法，想通过对话挖掘用户需求和核心问题。");
   });
 
-  it("clicks 'Feature Planning' chip to pre-fill idea textarea", () => {
+  it("clicks 'Feature Planning' chip to pre-fill idea textarea", async () => {
     listSessionsMock.mockResolvedValue({ sessions: [] });
     render(<WorkspaceEntry />);
+
+    await screen.findByText("Describe your idea");
 
     const buttons = screen.getAllByRole("button", { name: /feature planning/i });
     fireEvent.click(buttons[buttons.length - 1]);
@@ -167,6 +197,8 @@ describe("WorkspaceEntry", () => {
     listSessionsMock.mockResolvedValue({ sessions: [] });
 
     render(<WorkspaceEntry />);
+
+    await screen.findByText("Describe your idea");
 
     const menuButton = screen.getByRole("button", { name: /more/i });
     fireEvent.click(menuButton);

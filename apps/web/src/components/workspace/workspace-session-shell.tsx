@@ -43,6 +43,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
         } catch (error) {
           if (!cancelled) {
             const message = error instanceof Error ? error.message : "会话加载失败";
+            workspaceStore.setState(workspaceStore.getInitialState(), true);
             setLoadError(message);
             showToast({
               id: `load-session-${sessionId}`,
@@ -124,16 +125,21 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
                     {isRetrying ? "重试中..." : "重试加载"}
                   </button>
                 </div>
-              ) : null}
-              <ConversationPanel sessionId={sessionId} />
+              ) : (
+                <ConversationPanel sessionId={sessionId} />
+              )}
             </>
           )}
         </section>
         {/* PRD column */}
         {isLoading ? (
           <div className="h-full rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
-        ) : (
+        ) : !loadError ? (
           <PrdPanel />
+        ) : (
+          <div className="rounded-2xl border border-dashed border-stone-200/80 bg-white/60 p-6 text-sm text-stone-400 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+            当前会话加载失败，暂不展示 PRD 快照。
+          </div>
         )}
       </div>
     </main>

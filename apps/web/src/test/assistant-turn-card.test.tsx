@@ -54,18 +54,16 @@ describe("AssistantTurnCard", () => {
         latestAssistantMessage="第二版回复"
         replyVersions={[
           {
-            id: "v1",
-            versionNo: 1,
+            assistantVersionId: "v1",
             content: "第一版回复",
             isLatest: false,
-            createdAt: "2026-04-06T00:00:00Z",
+            versionNo: 1,
           },
           {
-            id: "v2",
-            versionNo: 2,
+            assistantVersionId: "v2",
             content: "第二版回复",
             isLatest: true,
-            createdAt: "2026-04-06T00:01:00Z",
+            versionNo: 2,
           },
         ]}
       />,

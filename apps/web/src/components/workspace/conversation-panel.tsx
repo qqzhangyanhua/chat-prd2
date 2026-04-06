@@ -17,6 +17,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const messages = useWorkspaceStore((state) => state.messages);
   const pendingRequestMode = useWorkspaceStore((state) => state.pendingRequestMode);
   const pendingUserInput = useWorkspaceStore((state) => state.pendingUserInput);
+  const replyGroups = useWorkspaceStore((state) => state.replyGroups);
   const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -40,9 +41,19 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
     lastAssistantIndex >= 0
       ? [...messages.slice(0, lastAssistantIndex)].reverse().find((message) => message.role === "user") ?? null
       : null;
+  const latestReplyVersions =
+    latestAssistantMessageMeta?.replyGroupId
+      ? (replyGroups[latestAssistantMessageMeta.replyGroupId]?.versions ?? []).map((version) => ({
+          assistantVersionId: version.id,
+          content: version.content,
+          createdAt: undefined,
+          isLatest: version.isLatest,
+          versionNo: version.versionNo,
+        }))
+      : [];
   const regenerateUserMessageId =
     latestAssistantMessageMeta?.replyGroupId
-      ? workspaceStore.getState().replyGroups[latestAssistantMessageMeta.replyGroupId]?.userMessageId ?? null
+      ? replyGroups[latestAssistantMessageMeta.replyGroupId]?.userMessageId ?? null
       : null;
 
   const hasNoHistory = historyMessages.length === 0 && !isStreaming;
@@ -109,6 +120,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
             }
             workspaceStore.getState().startRegenerate();
           }}
+          replyVersions={latestReplyVersions}
           showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
         />
       )}

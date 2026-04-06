@@ -90,6 +90,15 @@ const initialPrdSections: PrdState["sections"] = {
   },
 };
 
+function createInitialPrdSections(): PrdState["sections"] {
+  return {
+    target_user: { ...initialPrdSections.target_user },
+    problem: { ...initialPrdSections.problem },
+    solution: { ...initialPrdSections.solution },
+    mvp_scope: { ...initialPrdSections.mvp_scope },
+  };
+}
+
 function normalizePrdSections(
   sections: SessionSnapshotResponse["prd_snapshot"]["sections"],
 ): PrdState["sections"] {
@@ -217,7 +226,7 @@ function createInitialState(): Omit<
     pendingUserInput: null,
     pendingRequestMode: null,
     prd: {
-      sections: initialPrdSections,
+      sections: createInitialPrdSections(),
     },
     regenerateRequestId: 0,
     replyGroups: {},
@@ -599,7 +608,7 @@ export function createWorkspaceStore() {
           sections:
             Object.keys(snapshot.prd_snapshot.sections).length > 0
               ? normalizePrdSections(snapshot.prd_snapshot.sections)
-              : state.prd.sections,
+              : createInitialPrdSections(),
         },
         regenerateRequestId: 0,
         replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),

@@ -1,7 +1,7 @@
-interface AssistantVersionHistoryItem {
+export interface AssistantReplyVersionItem {
+  assistantVersionId: string;
   content: string;
   createdAt?: string;
-  id: string;
   isLatest: boolean;
   versionNo: number;
 }
@@ -11,7 +11,7 @@ interface AssistantVersionHistoryDialogProps {
   open: boolean;
   onClose: () => void;
   selectedVersionId: string | null;
-  versions: AssistantVersionHistoryItem[];
+  versions: AssistantReplyVersionItem[];
 }
 
 export function AssistantVersionHistoryDialog({
@@ -27,7 +27,7 @@ export function AssistantVersionHistoryDialog({
 
   const orderedVersions = [...versions].sort((a, b) => b.versionNo - a.versionNo);
   const selectedVersion =
-    orderedVersions.find((version) => version.id === selectedVersionId) ??
+    orderedVersions.find((version) => version.assistantVersionId === selectedVersionId) ??
     orderedVersions.find((version) => version.isLatest) ??
     orderedVersions[0] ??
     null;
@@ -67,7 +67,8 @@ export function AssistantVersionHistoryDialog({
             <>
               <div className="space-y-2">
                 {orderedVersions.map((version) => {
-                  const isSelected = version.id === selectedVersion?.id;
+                  const isSelected =
+                    version.assistantVersionId === selectedVersion?.assistantVersionId;
 
                   return (
                     <button
@@ -78,8 +79,8 @@ export function AssistantVersionHistoryDialog({
                           ? "border-stone-900 bg-stone-950 text-white"
                           : "border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300"
                       }`}
-                      key={version.id}
-                      onClick={() => onSelectVersion(version.id)}
+                      key={version.assistantVersionId}
+                      onClick={() => onSelectVersion(version.assistantVersionId)}
                       type="button"
                     >
                       <div className="flex items-center justify-between gap-2">

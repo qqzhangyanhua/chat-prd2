@@ -116,6 +116,36 @@ describe("WorkspaceSessionShell", () => {
     expect(await screen.findByRole("button", { name: "重试加载" })).toBeInTheDocument();
   });
 
+  it("does not render stale workspace content when the session fails to load", async () => {
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      messages: [
+        {
+          id: "stale-message",
+          role: "assistant",
+          content: "这是旧会话残留的回复",
+        },
+      ],
+      prd: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            content: "这是旧会话残留的 PRD",
+            status: "confirmed",
+          },
+        },
+      },
+    });
+    getSessionMock.mockRejectedValue(new Error("会话加载失败"));
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await screen.findByRole("button", { name: "重试加载" });
+
+    expect(screen.queryByText("这是旧会话残留的回复")).not.toBeInTheDocument();
+    expect(screen.queryByText("这是旧会话残留的 PRD")).not.toBeInTheDocument();
+  });
+
   it("shows loading skeleton while session is loading", () => {
     getSessionMock.mockImplementation(
       () => new Promise(() => {}), // never resolves — keeps loading state

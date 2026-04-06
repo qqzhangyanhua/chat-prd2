@@ -3,15 +3,10 @@ import { RefreshCw, AlertTriangle, ChevronRight, Layers } from "lucide-react";
 import type { NextAction } from "../../lib/types";
 import { workspaceStore } from "../../store/workspace-store";
 import { ActionOptions } from "./action-options";
-import { AssistantVersionHistoryDialog } from "./assistant-version-history-dialog";
-
-interface AssistantReplyVersionHistoryItem {
-  content: string;
-  createdAt?: string;
-  id: string;
-  isLatest: boolean;
-  versionNo: number;
-}
+import {
+  AssistantVersionHistoryDialog,
+  type AssistantReplyVersionItem,
+} from "./assistant-version-history-dialog";
 
 interface AssistantTurnCardProps {
   canRegenerate?: boolean;
@@ -19,7 +14,7 @@ interface AssistantTurnCardProps {
   isRegenerating?: boolean;
   latestAssistantMessage: string;
   onRegenerate?: () => void;
-  replyVersions?: AssistantReplyVersionHistoryItem[];
+  replyVersions?: AssistantReplyVersionItem[];
   showInterruptedMarker?: boolean;
 }
 
@@ -40,9 +35,11 @@ export function AssistantTurnCard({
 }: AssistantTurnCardProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const latestReplyVersion =
-    replyVersions.find((version) => version.isLatest) ?? replyVersions[replyVersions.length - 1] ?? null;
+    replyVersions.find((version) => version.isLatest) ??
+    replyVersions[replyVersions.length - 1] ??
+    null;
   const [selectedHistoryVersionId, setSelectedHistoryVersionId] = useState<string | null>(
-    latestReplyVersion?.id ?? null,
+    latestReplyVersion?.assistantVersionId ?? null,
   );
   const nextQuestion =
     currentAction?.target === "target_user"
@@ -50,13 +47,12 @@ export function AssistantTurnCard({
       : "如果只能先做一个最小版本，你希望它优先解决哪一个关键问题？";
 
   const openHistory = () => {
-    setSelectedHistoryVersionId(latestReplyVersion?.id ?? null);
+    setSelectedHistoryVersionId(latestReplyVersion?.assistantVersionId ?? null);
     setHistoryOpen(true);
   };
 
   return (
     <article className="rounded-2xl border border-stone-200/80 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.05)]">
-      {/* Header */}
       <div className="flex items-center justify-between gap-4 border-b border-stone-100 px-6 py-4">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-400">
@@ -93,7 +89,6 @@ export function AssistantTurnCard({
       </div>
 
       <div className="flex flex-col gap-px p-5">
-        {/* 我的理解 */}
         <div className="rounded-xl bg-stone-50 p-4">
           <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
             <Layers className="h-3.5 w-3.5 text-stone-400" />
@@ -112,7 +107,6 @@ export function AssistantTurnCard({
           ) : null}
         </div>
 
-        {/* 我的判断 */}
         <div className="mt-2 rounded-xl bg-stone-50 p-4">
           <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
             我的判断
@@ -122,7 +116,6 @@ export function AssistantTurnCard({
           </p>
         </div>
 
-        {/* 风险点 */}
         <div className="mt-2 rounded-xl border border-red-100 bg-red-50/60 p-4">
           <div className="flex items-center gap-2 border-b border-red-100 pb-3">
             <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
@@ -135,7 +128,6 @@ export function AssistantTurnCard({
           </p>
         </div>
 
-        {/* 可选推进方式 */}
         <div className="mt-2 rounded-xl bg-stone-50 p-4">
           <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
             可选推进方式
@@ -146,7 +138,6 @@ export function AssistantTurnCard({
           />
         </div>
 
-        {/* 下一步 */}
         <div className="mt-2 rounded-xl bg-stone-950 p-4">
           <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
             <ChevronRight className="h-3.5 w-3.5 text-stone-400" />

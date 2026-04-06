@@ -13,19 +13,19 @@ describe("AssistantVersionHistoryDialog", () => {
         selectedVersionId="version-3"
         versions={[
           {
-            id: "version-1",
+            assistantVersionId: "version-1",
             content: "第一版回复",
             isLatest: false,
             versionNo: 1,
           },
           {
-            id: "version-2",
+            assistantVersionId: "version-2",
             content: "第二版回复",
             isLatest: false,
             versionNo: 2,
           },
           {
-            id: "version-3",
+            assistantVersionId: "version-3",
             content: "第三版回复",
             isLatest: true,
             versionNo: 3,
@@ -53,13 +53,13 @@ describe("AssistantVersionHistoryDialog", () => {
         selectedVersionId="version-3"
         versions={[
           {
-            id: "version-2",
+            assistantVersionId: "version-2",
             content: "第二版回复",
             isLatest: false,
             versionNo: 2,
           },
           {
-            id: "version-3",
+            assistantVersionId: "version-3",
             content: "第三版回复",
             isLatest: true,
             versionNo: 3,

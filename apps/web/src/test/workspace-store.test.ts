@@ -350,6 +350,46 @@ describe("workspace store", () => {
     expect(store.getState().replyGroups).toEqual({});
   });
 
+  it("resets prd sections when the loaded session has an empty snapshot", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            content: "上一会话的目标用户",
+            status: "confirmed",
+          },
+        },
+      },
+    });
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-2",
+        user_id: "user-1",
+        title: "新的空白会话",
+        initial_idea: "new idea",
+        created_at: "2026-04-06T00:00:00Z",
+        updated_at: "2026-04-06T00:00:00Z",
+      },
+      state: {
+        idea: "new idea",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+    });
+
+    expect(store.getState().prd.sections.target_user?.content).not.toBe("上一会话的目标用户");
+    expect(store.getState().prd.sections.target_user?.content).toBe(
+      "还需要继续明确谁会最频繁、最迫切地使用这个产品。",
+    );
+  });
+
   it("stores reply groups and keeps old versions when regenerate completes", () => {
     const store = createWorkspaceStore();
 

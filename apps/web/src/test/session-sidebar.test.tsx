@@ -153,6 +153,14 @@ describe("SessionSidebar", () => {
     expect(pushMock).toHaveBeenCalledWith("/workspace/session-2");
   });
 
+  it("navigates to the dedicated new-session page", async () => {
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建会话" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/workspace/new");
+  });
+
   it("renames the active session", async () => {
     updateSessionMock.mockResolvedValue({
       session: {

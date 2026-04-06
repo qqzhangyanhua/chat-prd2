@@ -6,7 +6,8 @@
       "mcp__ace-tool__search_context",
       "Bash(python -m pytest apps/api/tests -q)",
       "Bash(python -m pytest apps/api/tests/test_health.py apps/api/tests/test_models.py apps/api/tests/test_agent_runtime.py apps/api/tests/test_config.py -q)",
-      "Bash(python -m pytest apps/api/tests/test_messages_service.py apps/api/tests/test_health.py apps/api/tests/test_models.py apps/api/tests/test_agent_runtime.py apps/api/tests/test_config.py -q)"
+      "Bash(python -m pytest apps/api/tests/test_messages_service.py apps/api/tests/test_health.py apps/api/tests/test_models.py apps/api/tests/test_agent_runtime.py apps/api/tests/test_config.py -q)",
+      "Bash(pnpm test:*)"
     ]
   }
 }

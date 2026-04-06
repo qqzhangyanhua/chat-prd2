@@ -321,7 +321,7 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
       <div className="flex flex-col gap-2">
         <button
           className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-stone-950 px-3 py-2.5 text-xs font-semibold text-white transition-all duration-150 hover:bg-stone-800 active:scale-[0.98]"
-          onClick={() => router.push("/workspace")}
+          onClick={() => router.push("/workspace/new")}
           type="button"
         >
           <Plus className="h-3.5 w-3.5" />
