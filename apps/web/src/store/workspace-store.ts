@@ -103,6 +103,8 @@ function createInitialState(): Omit<
   | "hydrateSession"
   | "markInterrupted"
   | "resetError"
+  | "selectModelConfig"
+  | "setAvailableModelConfigs"
   | "setInputValue"
   | "setStreaming"
   | "startRegenerate"

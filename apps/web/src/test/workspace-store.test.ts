@@ -79,6 +79,13 @@ describe("workspace store", () => {
 
   it("replays the last accepted user input without duplicating the user message", () => {
     const store = createWorkspaceStore();
+    store.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+    ]);
 
     store.getState().startRequest("我想先服务独立开发者");
     store.getState().applyEvent({
