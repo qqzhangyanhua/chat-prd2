@@ -1,7 +1,17 @@
+import { useState } from "react";
 import { RefreshCw, AlertTriangle, ChevronRight, Layers } from "lucide-react";
 import type { NextAction } from "../../lib/types";
 import { workspaceStore } from "../../store/workspace-store";
 import { ActionOptions } from "./action-options";
+import { AssistantVersionHistoryDialog } from "./assistant-version-history-dialog";
+
+interface AssistantReplyVersionHistoryItem {
+  content: string;
+  createdAt?: string;
+  id: string;
+  isLatest: boolean;
+  versionNo: number;
+}
 
 interface AssistantTurnCardProps {
   canRegenerate?: boolean;
@@ -9,6 +19,7 @@ interface AssistantTurnCardProps {
   isRegenerating?: boolean;
   latestAssistantMessage: string;
   onRegenerate?: () => void;
+  replyVersions?: AssistantReplyVersionHistoryItem[];
   showInterruptedMarker?: boolean;
 }
 
@@ -24,12 +35,24 @@ export function AssistantTurnCard({
   isRegenerating = false,
   latestAssistantMessage,
   onRegenerate,
+  replyVersions = [],
   showInterruptedMarker = false,
 }: AssistantTurnCardProps) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const latestReplyVersion =
+    replyVersions.find((version) => version.isLatest) ?? replyVersions[replyVersions.length - 1] ?? null;
+  const [selectedHistoryVersionId, setSelectedHistoryVersionId] = useState<string | null>(
+    latestReplyVersion?.id ?? null,
+  );
   const nextQuestion =
     currentAction?.target === "target_user"
       ? "你现在最想服务的第一类用户是谁？请尽量具体到角色、场景和触发时机。"
       : "如果只能先做一个最小版本，你希望它优先解决哪一个关键问题？";
+
+  const openHistory = () => {
+    setSelectedHistoryVersionId(latestReplyVersion?.id ?? null);
+    setHistoryOpen(true);
+  };
 
   return (
     <article className="rounded-2xl border border-stone-200/80 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.05)]">
@@ -42,6 +65,15 @@ export function AssistantTurnCard({
           <h3 className="mt-1 text-base font-semibold text-stone-950">当前分析</h3>
         </div>
         <div className="flex items-center gap-2">
+          {replyVersions.length > 1 ? (
+            <button
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 transition-all duration-150 hover:border-stone-900 hover:text-stone-950 active:scale-[0.97]"
+              onClick={openHistory}
+              type="button"
+            >
+              重新生成历史
+            </button>
+          ) : null}
           {canRegenerate ? (
             <button
               className="flex cursor-pointer items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 transition-all duration-150 hover:border-stone-900 hover:text-stone-950 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
@@ -125,6 +157,13 @@ export function AssistantTurnCard({
           <p className="mt-3 text-sm leading-7 text-stone-100">{nextQuestion}</p>
         </div>
       </div>
+      <AssistantVersionHistoryDialog
+        onClose={() => setHistoryOpen(false)}
+        onSelectVersion={setSelectedHistoryVersionId}
+        open={historyOpen}
+        selectedVersionId={selectedHistoryVersionId}
+        versions={replyVersions}
+      />
     </article>
   );
 }

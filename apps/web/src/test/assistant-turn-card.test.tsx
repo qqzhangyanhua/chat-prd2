@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AssistantTurnCard } from "../components/workspace/assistant-turn-card";
@@ -44,5 +44,41 @@ describe("AssistantTurnCard", () => {
     );
 
     expect(screen.getByRole("button", { name: "生成中..." })).toBeDisabled();
+  });
+
+  it("shows version history entry and opens dialog with latest highlighted", () => {
+    render(
+      <AssistantTurnCard
+        canRegenerate
+        currentAction={null}
+        latestAssistantMessage="第二版回复"
+        replyVersions={[
+          {
+            id: "v1",
+            versionNo: 1,
+            content: "第一版回复",
+            isLatest: false,
+            createdAt: "2026-04-06T00:00:00Z",
+          },
+          {
+            id: "v2",
+            versionNo: 2,
+            content: "第二版回复",
+            isLatest: true,
+            createdAt: "2026-04-06T00:01:00Z",
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成历史" }));
+
+    const dialog = screen.getByRole("dialog", { name: "重新生成历史" });
+
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "查看版本 2" })).toBeInTheDocument();
+    expect(within(dialog).getAllByText("当前版本")).toHaveLength(2);
+    expect(within(dialog).getByRole("button", { name: "查看版本 1" })).toBeInTheDocument();
+    expect(within(dialog).getByText("第二版回复")).toBeInTheDocument();
   });
 });
