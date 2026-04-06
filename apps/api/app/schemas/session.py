@@ -2,6 +2,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.message import AssistantReplyGroupResponse
 from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
 from app.schemas.state import StateSnapshot
@@ -35,6 +36,7 @@ class SessionCreateResponse(BaseModel):
     state: StateSnapshot
     prd_snapshot: PrdSnapshotResponse
     messages: list[ConversationMessageResponse] = Field(default_factory=list)
+    assistant_reply_groups: list[AssistantReplyGroupResponse] = Field(default_factory=list)
 
 
 class SessionListResponse(BaseModel):

@@ -1,6 +1,9 @@
+import json
+from uuid import uuid4
+
 from sqlalchemy import select
 
-from app.db.models import PrdSnapshot, ProjectSession, ProjectStateVersion
+from app.db.models import ConversationMessage, PrdSnapshot, ProjectSession, ProjectStateVersion
 from app.repositories import model_configs as model_configs_repository
 from app.schemas.session import SessionCreateRequest
 from app.services import sessions as session_service
@@ -99,6 +102,7 @@ def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
     assert data["session"]["id"] == seeded_session
     assert data["state"]["idea"]
     assert "sections" in data["prd_snapshot"]
+    assert "assistant_reply_groups" in data
 
 
 def test_get_session_marks_session_as_recently_active(auth_client):
@@ -252,10 +256,123 @@ def test_get_session_includes_messages_in_snapshot(
     assert response.status_code == 200
     data = response.json()
     assert "messages" in data
+    assert "assistant_reply_groups" in data
     assert isinstance(data["messages"], list)
     assert len(data["messages"]) >= 1
     assert data["messages"][0]["role"] in ("user", "assistant")
     assert "content" in data["messages"][0]
+
+
+def test_get_session_returns_assistant_reply_groups_and_latest_projection(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+
+    class OrderedReplyStream:
+        def __init__(self, text: str):
+            self._text = text
+
+        def __iter__(self):
+            yield self._text
+
+        def close(self):
+            return None
+
+    replies = iter(["第一版回复", "第二版回复"])
+
+    def fake_open_reply_stream(*, base_url, api_key, model, messages):
+        return OrderedReplyStream(next(replies))
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={"content": "请回答", "model_config_id": model_config_id},
+    ) as response:
+        assert response.status_code == 200
+        first_body = "".join(response.iter_text())
+
+    user_message_id = next(
+        json.loads(line.removeprefix("data: "))["message_id"]
+        for line in first_body.splitlines()
+        if line.startswith("data: ") and '"message_id"' in line and '"session_id"' in line
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages/{user_message_id}/regenerate",
+        json={"model_config_id": model_config_id},
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
+    snapshot = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert snapshot.status_code == 200
+    data = snapshot.json()
+
+    assert len(data["assistant_reply_groups"]) == 1
+    group = data["assistant_reply_groups"][0]
+    assert group["session_id"] == seeded_session
+    assert group["user_message_id"] == user_message_id
+    assert isinstance(group["versions"], list)
+    assert [version["version_no"] for version in group["versions"]] == [1, 2]
+    assert group["latest_version_id"] == group["versions"][1]["id"]
+    assert group["versions"][1]["content"] == "第二版回复"
+    assert group["versions"][0]["is_latest"] is False
+    assert group["versions"][1]["is_latest"] is True
+
+    timeline_user_messages = [message for message in data["messages"] if message["role"] == "user"]
+    timeline_assistant_messages = [message for message in data["messages"] if message["role"] == "assistant"]
+    assert len(timeline_user_messages) == 1
+    assert len(timeline_assistant_messages) == 1
+    assert timeline_assistant_messages[0]["id"] == group["latest_version_id"]
+    assert timeline_assistant_messages[0]["content"] == "第二版回复"
+    assert timeline_assistant_messages[0]["reply_group_id"] == group["id"]
+    assert timeline_assistant_messages[0]["version_no"] == 2
+    assert timeline_assistant_messages[0]["is_latest"] is True
+
+
+def test_get_session_keeps_legacy_messages_when_reply_groups_missing(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        user_message = ConversationMessage(
+            id=str(uuid4()),
+            session_id=seeded_session,
+            role="user",
+            content="legacy user",
+            meta={},
+        )
+        assistant_message = ConversationMessage(
+            id=str(uuid4()),
+            session_id=seeded_session,
+            role="assistant",
+            content="legacy assistant",
+            meta={},
+        )
+        db.add(user_message)
+        db.add(assistant_message)
+        db.commit()
+    finally:
+        db.close()
+
+    snapshot = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert snapshot.status_code == 200
+    data = snapshot.json()
+
+    assert data["assistant_reply_groups"] == []
+    assert [message["role"] for message in data["messages"]] == ["user", "assistant"]
+    assert data["messages"][1]["content"] == "legacy assistant"
+    assert data["messages"][1]["reply_group_id"] is None
+    assert data["messages"][1]["version_no"] is None
+    assert data["messages"][1]["is_latest"] is None
 
 
 def test_delete_session_removes_owned_session(auth_client, seeded_session):

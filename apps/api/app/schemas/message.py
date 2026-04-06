@@ -70,3 +70,35 @@ class ConversationMessageResponse(BaseModel):
     role: str
     content: str
     message_type: str
+    reply_group_id: str | None = None
+    version_no: int | None = None
+    is_latest: bool | None = None
+
+
+class AssistantReplyVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    reply_group_id: str
+    session_id: str
+    user_message_id: str
+    version_no: int
+    content: str
+    action_snapshot: dict
+    model_meta: dict
+    state_version_id: str | None
+    prd_snapshot_version: int | None
+    created_at: object
+    is_latest: bool = False
+
+
+class AssistantReplyGroupResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    session_id: str
+    user_message_id: str
+    latest_version_id: str | None
+    created_at: object
+    updated_at: object
+    versions: list[AssistantReplyVersionResponse] = Field(default_factory=list)
