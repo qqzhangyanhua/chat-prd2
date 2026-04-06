@@ -8,6 +8,7 @@ import { parseEventStream } from "../../lib/sse";
 import { useAuthStore } from "../../store/auth-store";
 import { useToastStore } from "../../store/toast-store";
 import { useWorkspaceStore, workspaceStore } from "../../store/workspace-store";
+import { ModelSelector } from "./model-selector";
 
 interface ComposerProps {
   sessionId: string;
@@ -24,12 +25,14 @@ export function Composer({ sessionId }: ComposerProps) {
   const lastHandledRegenerateIdRef = useRef(0);
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
+  const availableModelConfigs = useWorkspaceStore((state) => state.availableModelConfigs);
   const errorMessage = useWorkspaceStore((state) => state.errorMessage);
   const inputValue = useWorkspaceStore((state) => state.inputValue);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const pendingRequestMode = useWorkspaceStore((state) => state.pendingRequestMode);
   const pendingUserInput = useWorkspaceStore((state) => state.pendingUserInput);
   const regenerateRequestId = useWorkspaceStore((state) => state.regenerateRequestId);
+  const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const streamPhase = useWorkspaceStore((state) => state.streamPhase);
   const resetError = useWorkspaceStore((state) => state.resetError);
   const setInputValue = useWorkspaceStore((state) => state.setInputValue);
@@ -43,7 +46,8 @@ export function Composer({ sessionId }: ComposerProps) {
 
   async function dispatchMessage(content: string, skipStartRequest = false) {
     const normalizedContent = content.trim();
-    if (!normalizedContent || (isStreaming && !skipStartRequest)) {
+    const modelConfigId = workspaceStore.getState().selectedModelConfigId;
+    if (!normalizedContent || !modelConfigId || (isStreaming && !skipStartRequest)) {
       return;
     }
 
@@ -60,6 +64,7 @@ export function Composer({ sessionId }: ComposerProps) {
         normalizedContent,
         accessToken,
         abortController.signal,
+        modelConfigId,
       );
 
       for await (const event of parseEventStream(stream)) {
@@ -133,6 +138,8 @@ export function Composer({ sessionId }: ComposerProps) {
         : "准备好继续，补充你的想法";
 
   const isWaiting = streamPhase === "waiting";
+  const hasAvailableModels = availableModelConfigs.length > 0;
+  const sendDisabled = !isStreaming && (!inputValue.trim() || !selectedModelConfigId);
 
   return (
     <div className="rounded-2xl border border-stone-200/80 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
@@ -157,6 +164,7 @@ export function Composer({ sessionId }: ComposerProps) {
 
         <div className="flex items-center justify-between gap-4 border-t border-stone-100 px-5 py-3.5">
           <div className="flex flex-col gap-0.5">
+            <ModelSelector />
             <p className={`flex items-center gap-1.5 text-xs ${isWaiting || isStreaming ? "text-amber-600" : "text-stone-400"}`}>
               {isWaiting ? (
                 <Loader className="h-3 w-3 animate-spin" />
@@ -165,6 +173,9 @@ export function Composer({ sessionId }: ComposerProps) {
               ) : null}
               {statusMessage}
             </p>
+            {!hasAvailableModels ? (
+              <p className="text-xs text-amber-700">当前没有可用模型，请先启用至少一个模型配置。</p>
+            ) : null}
             {errorMessage ? (
               <p className="text-xs text-red-600">{errorMessage}</p>
             ) : null}
@@ -176,7 +187,7 @@ export function Composer({ sessionId }: ComposerProps) {
                 ? "bg-stone-100 text-stone-700 hover:bg-stone-200"
                 : "bg-stone-950 text-white hover:bg-stone-800 disabled:bg-stone-300 disabled:text-stone-500"
             }`}
-            disabled={!isStreaming && !inputValue.trim()}
+            disabled={sendDisabled}
             onClick={() => {
               if (isStreaming) {
                 handleCancel();

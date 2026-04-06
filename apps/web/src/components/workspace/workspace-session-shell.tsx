@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
-import { getSession } from "../../lib/api";
+import { getSession, listEnabledModelConfigs } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
@@ -29,10 +29,14 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
 
     async function loadSession() {
       try {
-        const snapshot = await getSession(sessionId, accessToken);
+        const [snapshot, enabledModelConfigs] = await Promise.all([
+          getSession(sessionId, accessToken),
+          listEnabledModelConfigs(accessToken),
+        ]);
         if (!cancelled) {
           setLoadError(null);
           workspaceStore.getState().hydrateSession(snapshot);
+          workspaceStore.getState().setAvailableModelConfigs(enabledModelConfigs.items);
         }
       } catch (error) {
         if (!cancelled) {

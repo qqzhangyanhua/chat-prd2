@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceSessionShell } from "../components/workspace/workspace-session-shell";
 import { useToastStore } from "../store/toast-store";
+import { workspaceStore } from "../store/workspace-store";
 
 const getSessionMock = vi.fn();
+const listEnabledModelConfigsMock = vi.fn();
 const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -15,13 +17,16 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../lib/api", () => ({
   getSession: (...args: unknown[]) => getSessionMock(...args),
+  listEnabledModelConfigs: (...args: unknown[]) => listEnabledModelConfigsMock(...args),
 }));
 
 describe("WorkspaceSessionShell", () => {
   beforeEach(() => {
     getSessionMock.mockReset();
+    listEnabledModelConfigsMock.mockReset();
     pushMock.mockReset();
     useToastStore.getState().clearToast();
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
     getSessionMock.mockResolvedValue({
       session: {
         id: "session-1",
@@ -40,6 +45,15 @@ describe("WorkspaceSessionShell", () => {
       },
       messages: [],
     });
+    listEnabledModelConfigsMock.mockResolvedValue({
+      items: [
+        {
+          id: "model-openai",
+          name: "OpenAI GPT-4.1",
+          model: "gpt-4.1",
+        },
+      ],
+    });
   });
 
   it("loads the current session snapshot on mount", async () => {
@@ -48,6 +62,23 @@ describe("WorkspaceSessionShell", () => {
     await waitFor(() => {
       expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
     });
+  });
+
+  it("loads enabled model configs on mount and writes them into the store", async () => {
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(listEnabledModelConfigsMock).toHaveBeenCalledWith(null);
+    });
+
+    expect(workspaceStore.getState().availableModelConfigs).toEqual([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+    ]);
+    expect(workspaceStore.getState().selectedModelConfigId).toBe("model-openai");
   });
 
   it("shows a global toast when session loading fails", async () => {

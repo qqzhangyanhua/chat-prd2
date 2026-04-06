@@ -16,6 +16,18 @@ describe("Composer", () => {
     vi.mocked(sendMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+      {
+        id: "model-anthropic",
+        name: "Anthropic Claude 3.7",
+        model: "claude-3-7-sonnet",
+      },
+    ]);
     workspaceStore.getState().setInputValue("请帮我梳理目标用户。");
   });
 
@@ -160,6 +172,47 @@ describe("Composer", () => {
 
     expect(await screen.findByText("消息发送失败")).toBeInTheDocument();
   });
+
+  it("passes the selected model_config_id when sending a message", async () => {
+    const encoder = new TextEncoder();
+    vi.mocked(sendMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('event: message.accepted\ndata: {"message_id":"user-1"}\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    );
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.change(screen.getByLabelText("选择模型"), {
+      target: { value: "model-anthropic" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith(
+        "demo-session",
+        "请帮我梳理目标用户。",
+        null,
+        expect.any(AbortSignal),
+        "model-anthropic",
+      );
+    });
+  });
+
+  it("disables sending and shows a clear prompt when no model is available", () => {
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setInputValue("请帮我梳理目标用户。");
+
+    render(<Composer sessionId="demo-session" />);
+
+    expect(screen.getByText("当前没有可用模型，请先启用至少一个模型配置。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  });
 });
 
 describe("ConversationPanel regenerate", () => {
@@ -167,6 +220,13 @@ describe("ConversationPanel regenerate", () => {
     vi.mocked(sendMessage).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+    ]);
   });
 
   it("replays the latest accepted input without adding a duplicate user message", async () => {
@@ -222,6 +282,22 @@ describe("ConversationPanel regenerate", () => {
       expect(vi.mocked(sendMessage)).toHaveBeenCalledTimes(2);
     });
 
+    expect(vi.mocked(sendMessage)).toHaveBeenNthCalledWith(
+      1,
+      "demo-session",
+      "请帮我梳理目标用户。",
+      null,
+      expect.any(AbortSignal),
+      "model-openai",
+    );
+    expect(vi.mocked(sendMessage)).toHaveBeenNthCalledWith(
+      2,
+      "demo-session",
+      "请帮我梳理目标用户。",
+      null,
+      expect.any(AbortSignal),
+      "model-openai",
+    );
     expect(
       workspaceStore.getState().messages.filter((message) => message.role === "user"),
     ).toHaveLength(1);
