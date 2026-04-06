@@ -59,3 +59,14 @@ def test_settings_use_database_url_from_environment(monkeypatch) -> None:
         settings.database_url
         == "postgresql+psycopg://postgres:postgres@localhost:5432/ai_cofounder_test"
     )
+
+
+def test_settings_parse_admin_emails_to_normalized_tuple(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "ADMIN_EMAILS",
+        "  Admin@Example.com,manager@example.com ,, ADMIN@example.com  ",
+    )
+
+    settings = Settings()
+
+    assert settings.admin_emails == ("admin@example.com", "manager@example.com")
