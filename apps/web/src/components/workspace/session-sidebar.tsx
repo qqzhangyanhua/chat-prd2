@@ -49,6 +49,7 @@ function formatRecentActivity(value: string): string {
 export function SessionSidebar({ sessionId }: SessionSidebarProps) {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.showToast);
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
@@ -312,6 +313,16 @@ export function SessionSidebar({ sessionId }: SessionSidebarProps) {
           <Plus className="h-3.5 w-3.5" />
           新建会话
         </button>
+
+        {user?.is_admin ? (
+          <button
+            className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-xs font-medium text-stone-700 transition-all duration-150 hover:border-stone-300 hover:bg-stone-50 active:scale-[0.98]"
+            onClick={() => router.push("/admin/models")}
+            type="button"
+          >
+            模型管理
+          </button>
+        ) : null}
 
         <div className="grid grid-cols-2 gap-2">
           <button

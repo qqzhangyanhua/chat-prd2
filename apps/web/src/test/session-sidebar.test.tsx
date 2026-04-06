@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionSidebar } from "../components/workspace/session-sidebar";
+import { useAuthStore } from "../store/auth-store";
 import { useToastStore } from "../store/toast-store";
 
 const exportSessionMock = vi.fn();
@@ -37,6 +38,15 @@ describe("SessionSidebar", () => {
     updateSessionMock.mockReset();
     pushMock.mockReset();
     useToastStore.getState().clearToast();
+    useAuthStore.setState({
+      accessToken: null,
+      isAuthenticated: true,
+      user: {
+        id: "admin-1",
+        email: "admin@example.com",
+        is_admin: true,
+      },
+    });
 
     listSessionsMock.mockResolvedValue({
       sessions: [
@@ -63,6 +73,31 @@ describe("SessionSidebar", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     useToastStore.getState().clearToast();
+  });
+
+  it("shows admin model management entry for admin users", async () => {
+    render(<SessionSidebar sessionId="session-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模型管理" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/admin/models");
+  });
+
+  it("hides admin model management entry for normal users", async () => {
+    useAuthStore.setState({
+      accessToken: null,
+      isAuthenticated: true,
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        is_admin: false,
+      },
+    });
+
+    render(<SessionSidebar sessionId="session-1" />);
+
+    await screen.findByRole("button", { name: "新建会话" });
+    expect(screen.queryByRole("button", { name: "模型管理" })).not.toBeInTheDocument();
   });
 
   it("calls export when clicking export prd", async () => {
