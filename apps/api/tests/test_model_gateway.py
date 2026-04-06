@@ -122,3 +122,21 @@ def test_generate_reply_raises_model_gateway_error_on_incompatible_response(monk
             model="gpt-test",
             messages=[{"role": "user", "content": "hi"}],
         )
+
+
+@pytest.mark.parametrize("content", ["", "   ", 123])
+def test_generate_reply_raises_model_gateway_error_on_unusable_content(
+    monkeypatch, content
+):
+    def fake_post(url, *, headers, json, timeout):
+        return DummyResponse({"choices": [{"message": {"content": content}}]})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    with pytest.raises(ModelGatewayError):
+        generate_reply(
+            base_url="https://api.example.com/v1",
+            api_key="secret-key",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hi"}],
+        )
