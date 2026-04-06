@@ -1,5 +1,10 @@
 import type {
+  AdminModelConfigCreateRequest,
+  AdminModelConfigItem,
+  AdminModelConfigListResponse,
+  AdminModelConfigUpdateRequest,
   AuthResponse,
+  EnabledModelConfigListResponse,
   ExportResponse,
   SessionCreateRequest,
   SessionListResponse,
@@ -69,14 +74,16 @@ export async function sendMessage(
   content: string,
   accessToken?: string | null,
   signal?: AbortSignal,
+  modelConfigId?: string,
 ): Promise<ReadableStream<Uint8Array>> {
+  const payload = modelConfigId ? { content, model_config_id: modelConfigId } : { content };
   const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(payload),
     signal,
   });
 
@@ -158,5 +165,66 @@ export function updateSession(
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body: JSON.stringify(payload),
+  });
+}
+
+export function listEnabledModelConfigs(
+  accessToken?: string | null,
+): Promise<EnabledModelConfigListResponse> {
+  return requestJson<EnabledModelConfigListResponse>("/api/model-configs/enabled", {
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+}
+
+export function listAdminModelConfigs(
+  accessToken?: string | null,
+): Promise<AdminModelConfigListResponse> {
+  return requestJson<AdminModelConfigListResponse>("/api/admin/model-configs", {
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+}
+
+export function createAdminModelConfig(
+  payload: AdminModelConfigCreateRequest,
+  accessToken?: string | null,
+): Promise<AdminModelConfigItem> {
+  return requestJson<AdminModelConfigItem>("/api/admin/model-configs", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminModelConfig(
+  configId: string,
+  payload: AdminModelConfigUpdateRequest,
+  accessToken?: string | null,
+): Promise<AdminModelConfigItem> {
+  return requestJson<AdminModelConfigItem>(`/api/admin/model-configs/${configId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminModelConfig(
+  configId: string,
+  accessToken?: string | null,
+): Promise<void> {
+  return requestVoid(`/api/admin/model-configs/${configId}`, {
+    method: "DELETE",
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
   });
 }

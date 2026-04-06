@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
 
     id: str
     email: EmailStr
+    is_admin: bool
 
 
 class AuthResponse(BaseModel):

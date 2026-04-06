@@ -1,7 +1,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-from app.db.models import ProjectSession, User
+from app.db.models import LLMModelConfig, ProjectSession, User
 
 
 def _load_initial_migration_module():
@@ -34,6 +34,7 @@ def _load_migration_module(filename: str, module_name: str):
 def test_models_have_expected_tablenames() -> None:
     assert User.__tablename__ == "users"
     assert ProjectSession.__tablename__ == "project_sessions"
+    assert LLMModelConfig.__tablename__ == "llm_model_configs"
 
 
 def test_initial_migration_uses_unique_index_for_user_email_only(monkeypatch) -> None:
@@ -117,3 +118,20 @@ def test_followup_migration_creates_conversation_messages_table(monkeypatch) -> 
 
     assert "conversation_messages" in created_tables
     assert "ix_conversation_messages_session_id" in created_indexes
+
+
+def test_migration_creates_llm_model_configs_table(monkeypatch) -> None:
+    migration = _load_migration_module(
+        "0005_add_llm_model_configs.py",
+        "alembic_0005_add_llm_model_configs",
+    )
+    created_tables: list[str] = []
+
+    def fake_create_table(name, *columns, **kwargs):
+        created_tables.append(name)
+
+    monkeypatch.setattr(migration.op, "create_table", fake_create_table)
+
+    migration.upgrade()
+
+    assert "llm_model_configs" in created_tables

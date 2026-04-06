@@ -25,6 +25,21 @@ def load_env_file(env_file_path: Path = ENV_FILE_PATH) -> None:
 load_env_file()
 
 
+def parse_admin_emails(raw: str | None) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+
+    normalized_emails: list[str] = []
+    seen: set[str] = set()
+    for part in raw.split(","):
+        email = part.strip().lower()
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        normalized_emails.append(email)
+    return tuple(normalized_emails)
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "AI Co-founder API"
@@ -33,6 +48,9 @@ class Settings:
     )
     auth_secret_key: str | None = field(
         default_factory=lambda: os.getenv("AUTH_SECRET_KEY")
+    )
+    admin_emails: tuple[str, ...] = field(
+        default_factory=lambda: parse_admin_emails(os.getenv("ADMIN_EMAILS"))
     )
 
 
