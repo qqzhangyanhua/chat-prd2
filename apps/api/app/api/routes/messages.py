@@ -26,8 +26,15 @@ def create_message(
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
+    result = messages_service.handle_user_message(
+        db,
+        session_id,
+        session,
+        payload.content,
+        payload.model_config_id,
+    )
+
     def event_generator() -> Generator[dict[str, str], None, None]:
-        result = messages_service.handle_user_message(db, session_id, session, payload.content)
         yield {
             "event": "message.accepted",
             "data": json.dumps({"message_id": result.user_message_id}, ensure_ascii=False),

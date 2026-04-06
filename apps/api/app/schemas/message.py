@@ -3,6 +3,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class MessageCreateRequest(BaseModel):
     content: str = Field(min_length=1)
+    model_config_id: str = Field(min_length=1)
 
 
 class ConversationMessageResponse(BaseModel):
