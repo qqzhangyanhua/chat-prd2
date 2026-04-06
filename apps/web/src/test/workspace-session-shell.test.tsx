@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getSession } from "../lib/api";
 
 import { WorkspaceSessionShell } from "../components/workspace/workspace-session-shell";
 import { useToastStore } from "../store/toast-store";
@@ -62,6 +63,43 @@ describe("WorkspaceSessionShell", () => {
     const toast = await screen.findByRole("status");
     expect(toast).toHaveTextContent("会话加载失败");
     expect(await screen.findByRole("button", { name: "重试加载" })).toBeInTheDocument();
+  });
+
+  it("shows loading skeleton while session is loading", () => {
+    getSessionMock.mockImplementation(
+      () => new Promise(() => {}), // never resolves — keeps loading state
+    );
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    expect(screen.getByTestId("session-loading-skeleton")).toBeInTheDocument();
+  });
+
+  it("hides skeleton after session loads", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("session-loading-skeleton")).not.toBeInTheDocument();
+    });
   });
 
   it("renders a retry action after session loading fails", async () => {

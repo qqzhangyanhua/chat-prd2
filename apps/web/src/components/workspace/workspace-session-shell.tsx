@@ -25,6 +25,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +50,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
       } finally {
         if (!cancelled) {
           setIsRetrying(false);
+          setIsLoading(false);
         }
       }
     }
@@ -76,26 +78,41 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
         >
           {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
         </button>
+        {/* conversation column */}
         <section className="flex flex-col gap-4">
-          {loadError ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
-              <p>{loadError}</p>
-              <button
-                className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isRetrying}
-                onClick={() => {
-                  setIsRetrying(true);
-                  setRetryToken((current) => current + 1);
-                }}
-                type="button"
-              >
-                {isRetrying ? "重试中..." : "重试加载"}
-              </button>
+          {isLoading ? (
+            <div data-testid="session-loading-skeleton" className="flex flex-col gap-5">
+              <div className="h-64 rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
+              <div className="h-32 rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
             </div>
-          ) : null}
-          <ConversationPanel sessionId={sessionId} />
+          ) : (
+            <>
+              {loadError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
+                  <p>{loadError}</p>
+                  <button
+                    className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isRetrying}
+                    onClick={() => {
+                      setIsRetrying(true);
+                      setRetryToken((current) => current + 1);
+                    }}
+                    type="button"
+                  >
+                    {isRetrying ? "重试中..." : "重试加载"}
+                  </button>
+                </div>
+              ) : null}
+              <ConversationPanel sessionId={sessionId} />
+            </>
+          )}
         </section>
-        <PrdPanel />
+        {/* PRD column */}
+        {isLoading ? (
+          <div className="h-full rounded-2xl border border-stone-200/80 bg-white animate-pulse shadow-[0_2px_12px_rgba(0,0,0,0.04)]" />
+        ) : (
+          <PrdPanel />
+        )}
       </div>
     </main>
   );
