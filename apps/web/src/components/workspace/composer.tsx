@@ -126,9 +126,14 @@ export function Composer({ sessionId }: ComposerProps) {
       return;
     }
 
+    if (!selectedModelConfigId) {
+      workspaceStore.getState().cancelPendingRequest();
+      return;
+    }
+
     lastHandledRegenerateIdRef.current = regenerateRequestId;
     void dispatchMessage(pendingUserInput, true);
-  }, [pendingRequestMode, pendingUserInput, regenerateRequestId]);
+  }, [pendingRequestMode, pendingUserInput, regenerateRequestId, selectedModelConfigId]);
 
   const statusMessage =
     streamPhase === "waiting"

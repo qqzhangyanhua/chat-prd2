@@ -81,6 +81,25 @@ describe("WorkspaceSessionShell", () => {
     expect(workspaceStore.getState().selectedModelConfigId).toBe("model-openai");
   });
 
+  it("keeps the workspace usable when session loading succeeds but model loading fails", async () => {
+    listEnabledModelConfigsMock.mockRejectedValue(new Error("模型列表加载失败"));
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().currentAction).toBeNull();
+    });
+
+    expect(workspaceStore.getState().messages).toEqual([]);
+    expect(workspaceStore.getState().availableModelConfigs).toEqual([]);
+    expect(workspaceStore.getState().selectedModelConfigId).toBeNull();
+    expect(screen.queryByRole("button", { name: "重试加载" })).not.toBeInTheDocument();
+  });
+
   it("shows a global toast when session loading fails", async () => {
     getSessionMock.mockRejectedValue(new Error("会话加载失败"));
 

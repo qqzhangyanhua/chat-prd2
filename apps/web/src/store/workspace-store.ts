@@ -30,6 +30,7 @@ interface WorkspaceState {
   selectedModelConfigId: string | null;
   streamPhase: StreamPhase;
   applyEvent: (event: WorkspaceEvent) => void;
+  cancelPendingRequest: () => void;
   failRequest: (message: string) => void;
   hydrateSession: (snapshot: SessionSnapshotResponse) => void;
   markInterrupted: () => void;
@@ -97,6 +98,7 @@ function normalizeMessages(messages: ConversationMessage[]): WorkspaceMessage[] 
 function createInitialState(): Omit<
   WorkspaceState,
   | "applyEvent"
+  | "cancelPendingRequest"
   | "failRequest"
   | "hydrateSession"
   | "markInterrupted"
@@ -234,6 +236,14 @@ export function createWorkspaceStore() {
             return state;
         }
       }),
+    cancelPendingRequest: () =>
+      set((state) => ({
+        ...state,
+        isStreaming: false,
+        pendingRequestMode: null,
+        pendingUserInput: null,
+        streamPhase: "idle",
+      })),
     failRequest: (message) =>
       set((state) => ({
         ...state,
@@ -312,8 +322,8 @@ export function createWorkspaceStore() {
         streamPhase: value ? state.streamPhase : "idle",
       })),
     startRegenerate: () => {
-      const { lastSubmittedInput } = get();
-      if (!lastSubmittedInput) {
+      const { lastSubmittedInput, selectedModelConfigId } = get();
+      if (!lastSubmittedInput || !selectedModelConfigId) {
         return false;
       }
 
