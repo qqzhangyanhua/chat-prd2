@@ -9,6 +9,7 @@ from app.repositories import model_configs as model_configs_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
+from app.services.messages import stream_user_message_events
 from app.services.model_gateway import ModelGatewayError
 
 
@@ -211,3 +212,97 @@ def test_handle_user_message_rolls_back_user_message_when_generate_reply_fails(d
     latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
     assert latest_state_version is not None
     assert latest_state_version.version == 1
+
+
+def test_handle_user_message_logs_model_gateway_context(db_session, monkeypatch, caplog):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="失败模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    def fake_generate_reply(*, base_url, api_key, model, messages):
+        raise ModelGatewayError("上游不可用")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fake_generate_reply)
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(HTTPException):
+            handle_user_message(
+                db=db_session,
+                session_id=session.id,
+                session=session,
+                content="这轮消息必须记录日志",
+                model_config_id=model_config.id,
+            )
+
+    assert session.id in caplog.text
+    assert model_config.id in caplog.text
+    assert "上游不可用" in caplog.text
+
+
+def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="流式模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    class FakeReplyStream:
+        def __iter__(self):
+            yield "先把"
+            yield "目标用户"
+            yield "讲清楚。"
+
+        def close(self):
+            return None
+
+    def fake_open_reply_stream(*, base_url, api_key, model, messages):
+        assert base_url == "https://gateway.example.com/v1"
+        assert api_key == "secret"
+        assert model == "gpt-4o-mini"
+        assert messages == [
+            {"role": "system", "content": "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"},
+            {"role": "user", "content": "帮我梳理目标用户"},
+        ]
+        return FakeReplyStream()
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
+
+    events = list(
+        stream_user_message_events(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            content="帮我梳理目标用户",
+            model_config_id=model_config.id,
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "message.accepted",
+        "action.decided",
+        "assistant.delta",
+        "assistant.delta",
+        "assistant.delta",
+        "assistant.done",
+    ]
+    assert [event.data["delta"] for event in events if event.type == "assistant.delta"] == [
+        "先把",
+        "目标用户",
+        "讲清楚。",
+    ]
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    assert len(persisted_messages) == 2
+    assert persisted_messages[1].content == "先把目标用户讲清楚。"

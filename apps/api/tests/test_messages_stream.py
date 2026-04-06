@@ -27,7 +27,16 @@ def test_message_stream_emits_progress_and_persists_messages(
     finally:
         db.close()
 
-    def fake_generate_reply(*, base_url, api_key, model, messages):
+    class FakeReplyStream:
+        def __iter__(self):
+            yield "这是"
+            yield "流式"
+            yield "回复"
+
+        def close(self):
+            return None
+
+    def fake_open_reply_stream(*, base_url, api_key, model, messages):
         assert base_url == "https://gateway.example.com/v1"
         assert api_key == "secret"
         assert model == "gpt-4o-mini"
@@ -35,9 +44,9 @@ def test_message_stream_emits_progress_and_persists_messages(
             {"role": "system", "content": "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"},
             {"role": "user", "content": "help me think through the target user"},
         ]
-        return "这是流式回复"
+        return FakeReplyStream()
 
-    monkeypatch.setattr("app.services.messages.generate_reply", fake_generate_reply)
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
 
     with auth_client.stream(
         "POST",
@@ -55,6 +64,7 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert "action.decided" in body
     assert "assistant.delta" in body
     assert "assistant.done" in body
+    assert body.count("event: assistant.delta") == 3
 
     db = testing_session_local()
     try:
@@ -84,11 +94,12 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert assistant_message.meta["display_name"] == "流式模型"
     assert assistant_message.meta["base_url"] == "https://gateway.example.com/v1"
 
-    delta_line = next(
-        line for line in body.splitlines() if line.startswith("data: ") and "delta" in line
-    )
-    delta_payload = json.loads(delta_line.removeprefix("data: "))
-    assert delta_payload["delta"] == assistant_message.content
+    delta_payloads = [
+        json.loads(line.removeprefix("data: "))
+        for line in body.splitlines()
+        if line.startswith("data: ") and "delta" in line
+    ]
+    assert [payload["delta"] for payload in delta_payloads] == ["这是", "流式", "回复"]
     assert assistant_message.content == "这是流式回复"
 
 

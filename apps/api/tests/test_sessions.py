@@ -24,10 +24,17 @@ def _create_enabled_model_config(testing_session_local) -> str:
 
 
 def _mock_gateway_reply(monkeypatch, reply: str = "这是测试回复") -> None:
-    def fake_generate_reply(*, base_url, api_key, model, messages):
-        return reply
+    class FakeReplyStream:
+        def __iter__(self):
+            yield reply
 
-    monkeypatch.setattr("app.services.messages.generate_reply", fake_generate_reply)
+        def close(self):
+            return None
+
+    def fake_open_reply_stream(*, base_url, api_key, model, messages):
+        return FakeReplyStream()
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
 
 
 def test_create_session_returns_initial_state(auth_client):
