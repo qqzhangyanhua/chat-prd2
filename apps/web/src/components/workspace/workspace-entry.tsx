@@ -17,6 +17,7 @@ import {
 
 import { createSession, listSessions } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { WorkspaceToastViewport } from "./workspace-toast-viewport";
 
 function getGreeting() {
@@ -27,6 +28,7 @@ function getGreeting() {
 }
 
 export function WorkspaceEntry() {
+  useAuthGuard();
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);

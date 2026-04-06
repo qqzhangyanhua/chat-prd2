@@ -5,6 +5,7 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { getSession } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 import { ConversationPanel } from "./conversation-panel";
@@ -17,6 +18,7 @@ interface WorkspaceSessionShellProps {
 }
 
 export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps) {
+  useAuthGuard();
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const [loadError, setLoadError] = useState<string | null>(null);
