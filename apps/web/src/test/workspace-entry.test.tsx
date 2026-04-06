@@ -19,6 +19,12 @@ vi.mock("../lib/api", () => ({
   listSessions: (...args: unknown[]) => listSessionsMock(...args),
 }));
 
+vi.mock("../store/auth-store", () => ({
+  useAuthStore: vi.fn(),
+}));
+
+import { useAuthStore } from "../store/auth-store";
+
 describe("WorkspaceEntry", () => {
   beforeEach(() => {
     createSessionMock.mockReset();
@@ -26,6 +32,15 @@ describe("WorkspaceEntry", () => {
     pushMock.mockReset();
     useToastStore.getState().clearToast();
     listSessionsMock.mockResolvedValue({ sessions: [] });
+    vi.mocked(useAuthStore).mockImplementation((selector) =>
+      selector({
+        accessToken: null,
+        user: null,
+        isAuthenticated: false,
+        setAuth: vi.fn(),
+        clearAuth: vi.fn(),
+      } as never),
+    );
   });
 
   it("creates a new session and redirects into the workspace", async () => {
@@ -114,5 +129,30 @@ describe("WorkspaceEntry", () => {
     render(<WorkspaceEntry />);
 
     expect(await screen.findByText("会话已删除")).toBeInTheDocument();
+  });
+
+  it("logs out when logout button is clicked", async () => {
+    const clearAuthMock = vi.fn();
+    vi.mocked(useAuthStore).mockImplementation((selector) =>
+      selector({
+        accessToken: null,
+        user: null,
+        isAuthenticated: false,
+        setAuth: vi.fn(),
+        clearAuth: clearAuthMock,
+      } as never),
+    );
+    listSessionsMock.mockResolvedValue({ sessions: [] });
+
+    render(<WorkspaceEntry />);
+
+    const menuButton = screen.getByRole("button", { name: /more/i });
+    fireEvent.click(menuButton);
+
+    const logoutBtn = await screen.findByRole("button", { name: /退出登录/i });
+    fireEvent.click(logoutBtn);
+
+    expect(clearAuthMock).toHaveBeenCalled();
+    expect(pushMock).toHaveBeenCalledWith("/login");
   });
 });

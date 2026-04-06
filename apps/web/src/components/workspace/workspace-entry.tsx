@@ -12,7 +12,8 @@ import {
   HelpCircle,
   Download,
   MoreVertical,
-  MessageSquare
+  MessageSquare,
+  LogOut
 } from "lucide-react";
 
 import { createSession, listSessions } from "../../lib/api";
@@ -32,10 +33,17 @@ export function WorkspaceEntry() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  function handleLogout() {
+    clearAuth();
+    router.push("/login");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -142,7 +150,7 @@ export function WorkspaceEntry() {
 
         <div className="space-y-3">
           
-          <div className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-2.5 shadow-sm">
+          <div className="relative flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 p-2.5 shadow-sm">
             <div className="flex items-center gap-2 overflow-hidden">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-primary to-brand-accent text-xs font-bold text-white shadow-sm">
                 {email.substring(0, 2).toUpperCase()}
@@ -152,9 +160,26 @@ export function WorkspaceEntry() {
                 <span className="truncate text-[10px] text-stone-500">Personal</span>
               </div>
             </div>
-            <button className="shrink-0 p-1 text-stone-400 hover:text-stone-600 transition-colors">
+            <button
+              type="button"
+              aria-label="more"
+              className="shrink-0 p-1 text-stone-400 hover:text-stone-600 transition-colors"
+              onClick={() => setShowUserMenu((v) => !v)}
+            >
               <MoreVertical className="h-4 w-4" />
             </button>
+            {showUserMenu && (
+              <div className="absolute bottom-full right-0 mb-1 w-36 rounded-xl border border-stone-200 bg-white py-1 shadow-lg z-10">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-stone-700 hover:bg-stone-50"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  退出登录
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </aside>
