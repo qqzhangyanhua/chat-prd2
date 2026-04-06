@@ -1,7 +1,10 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-from app.db.models import LLMModelConfig, ProjectSession, User
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.pool import StaticPool
+
+from app.db.models import AssistantReplyGroup, AssistantReplyVersion, Base, LLMModelConfig, ProjectSession, User
 
 
 def _load_initial_migration_module():
@@ -35,6 +38,8 @@ def test_models_have_expected_tablenames() -> None:
     assert User.__tablename__ == "users"
     assert ProjectSession.__tablename__ == "project_sessions"
     assert LLMModelConfig.__tablename__ == "llm_model_configs"
+    assert AssistantReplyGroup.__tablename__ == "assistant_reply_groups"
+    assert AssistantReplyVersion.__tablename__ == "assistant_reply_versions"
 
 
 def test_initial_migration_uses_unique_index_for_user_email_only(monkeypatch) -> None:
@@ -135,3 +140,67 @@ def test_migration_creates_llm_model_configs_table(monkeypatch) -> None:
     migration.upgrade()
 
     assert "llm_model_configs" in created_tables
+
+
+def test_migration_creates_assistant_reply_group_and_version_tables(monkeypatch) -> None:
+    migration = _load_migration_module(
+        "0006_add_assistant_reply_versions.py",
+        "alembic_0006_add_assistant_reply_versions",
+    )
+    created_tables: list[str] = []
+    created_indexes: list[str] = []
+
+    def fake_create_table(name, *columns, **kwargs):
+        created_tables.append(name)
+
+    def fake_create_index(name, table_name, columns, unique=False, **kwargs):
+        created_indexes.append(name)
+
+    monkeypatch.setattr(migration.op, "create_table", fake_create_table)
+    monkeypatch.setattr(migration.op, "create_index", fake_create_index)
+
+    migration.upgrade()
+
+    assert "assistant_reply_groups" in created_tables
+    assert "assistant_reply_versions" in created_tables
+    assert "ix_assistant_reply_groups_session_id" in created_indexes
+    assert "ix_assistant_reply_versions_reply_group_id" in created_indexes
+
+
+def test_assistant_reply_migration_avoids_sqlite_unsafe_alter_table_fk() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0006_add_assistant_reply_versions.py"
+    )
+    migration_source = migration_path.read_text(encoding="utf-8")
+
+    assert "create_foreign_key(" not in migration_source
+    assert "drop_constraint(" not in migration_source
+    assert "fk_arv_group_session_user_message" in migration_source
+
+
+def test_assistant_reply_tables_include_consistency_constraints_in_sqlite() -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        future=True,
+    )
+    Base.metadata.create_all(bind=engine)
+    table_inspector = inspect(engine)
+
+    group_foreign_keys = table_inspector.get_foreign_keys("assistant_reply_groups")
+    assert not any(
+        fk.get("referred_table") == "assistant_reply_versions"
+        and "latest_version_id" in fk.get("constrained_columns", [])
+        for fk in group_foreign_keys
+    )
+
+    version_foreign_keys = table_inspector.get_foreign_keys("assistant_reply_versions")
+    assert any(
+        set(fk.get("constrained_columns", [])) == {"reply_group_id", "session_id", "user_message_id"}
+        and fk.get("referred_table") == "assistant_reply_groups"
+        for fk in version_foreign_keys
+    )

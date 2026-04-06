@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -96,6 +96,75 @@ class ConversationMessage(Base):
     )
 
     session: Mapped[ProjectSession] = relationship(back_populates="messages")
+
+
+class AssistantReplyGroup(Base):
+    __tablename__ = "assistant_reply_groups"
+    __table_args__ = (
+        UniqueConstraint("id", "session_id", "user_message_id", name="uq_arg_id_session_user_message"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("project_sessions.id"),
+        index=True,
+    )
+    user_message_id: Mapped[str] = mapped_column(
+        ForeignKey("conversation_messages.id"),
+        unique=True,
+    )
+    latest_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AssistantReplyVersion(Base):
+    __tablename__ = "assistant_reply_versions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["reply_group_id", "session_id", "user_message_id"],
+            [
+                "assistant_reply_groups.id",
+                "assistant_reply_groups.session_id",
+                "assistant_reply_groups.user_message_id",
+            ],
+            name="fk_arv_group_session_user_message",
+        ),
+        UniqueConstraint("reply_group_id", "version_no", name="uq_arv_group_version_no"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    reply_group_id: Mapped[str] = mapped_column(
+        ForeignKey("assistant_reply_groups.id"),
+        index=True,
+    )
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("project_sessions.id"),
+        index=True,
+    )
+    user_message_id: Mapped[str] = mapped_column(
+        ForeignKey("conversation_messages.id"),
+        index=True,
+    )
+    version_no: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    action_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    model_meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    state_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_state_versions.id"),
+        nullable=True,
+    )
+    prd_snapshot_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
 
 
 class LLMModelConfig(Base):

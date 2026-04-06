@@ -4,6 +4,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.db.models import User
+from app.repositories import assistant_reply_groups as assistant_reply_groups_repository
+from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
 from app.repositories import messages as messages_repository
 from app.repositories import model_configs as model_configs_repository
 from app.repositories import sessions as sessions_repository
@@ -57,7 +59,7 @@ def test_apply_prd_patch_overwrites_existing_section():
 def _create_session_with_state(db_session):
     user = User(
         id=str(uuid4()),
-        email="messages-service@example.com",
+        email=f"messages-service-{uuid4()}@example.com",
         password_hash="hashed",
     )
     db_session.add(user)
@@ -306,3 +308,302 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
     persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
     assert len(persisted_messages) == 2
     assert persisted_messages[1].content == "先把目标用户讲清楚。"
+
+
+def test_reply_version_writes_do_not_create_new_user_messages(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="版本测试模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.messages.generate_reply",
+        lambda **_: "第一版助手回复",
+    )
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请先给我一个初始回复",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+    assistant_message = next(message for message in persisted_messages if message.role == "assistant")
+
+    reply_group = assistant_reply_groups_repository.create_reply_group(
+        db=db_session,
+        session_id=session.id,
+        user_message_id=user_message.id,
+    )
+    version_1 = assistant_reply_versions_repository.create_reply_version(
+        db=db_session,
+        reply_group_id=reply_group.id,
+        session_id=session.id,
+        user_message_id=user_message.id,
+        version_no=1,
+        content=assistant_message.content,
+        action_snapshot=assistant_message.meta.get("action", {}),
+        model_meta={
+            "model_config_id": model_config.id,
+            "model_name": model_config.model,
+            "display_name": model_config.name,
+            "base_url": model_config.base_url,
+        },
+        state_version_id=None,
+        prd_snapshot_version=None,
+    )
+    assistant_reply_groups_repository.set_latest_version(
+        db=db_session,
+        reply_group=reply_group,
+        latest_version_id=version_1.id,
+    )
+
+    version_2 = assistant_reply_versions_repository.create_reply_version(
+        db=db_session,
+        reply_group_id=reply_group.id,
+        session_id=session.id,
+        user_message_id=user_message.id,
+        version_no=2,
+        content="第二版助手回复",
+        action_snapshot={"action": "probe_deeper"},
+        model_meta={"model_config_id": model_config.id},
+        state_version_id=None,
+        prd_snapshot_version=None,
+    )
+    assistant_reply_groups_repository.set_latest_version(
+        db=db_session,
+        reply_group=reply_group,
+        latest_version_id=version_2.id,
+    )
+    db_session.commit()
+
+    refreshed_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    versions = assistant_reply_versions_repository.list_versions_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+    latest_version = assistant_reply_versions_repository.get_latest_version_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+    persisted_messages_after_version_append = messages_repository.get_messages_for_session(
+        db_session,
+        session.id,
+    )
+    user_messages_after_version_append = [
+        message for message in persisted_messages_after_version_append if message.role == "user"
+    ]
+
+    assert result.user_message_id == user_message.id
+    assert refreshed_group is not None
+    assert refreshed_group.latest_version_id == version_2.id
+    assert [version.version_no for version in versions] == [1, 2]
+    assert latest_version is not None
+    assert latest_version.id == version_2.id
+    assert all(version.user_message_id == user_message.id for version in versions)
+    assert all(version.reply_group_id == reply_group.id for version in versions)
+    assert len(user_messages_after_version_append) == 1
+
+
+def test_create_reply_group_rejects_user_message_from_other_session(db_session, monkeypatch):
+    primary_session = _create_session_with_state(db_session)
+    secondary_session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="group 一致性测试模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.messages.generate_reply",
+        lambda **_: "group 一致性测试回复",
+    )
+
+    handle_user_message(
+        db=db_session,
+        session_id=primary_session.id,
+        session=primary_session,
+        content="primary",
+        model_config_id=model_config.id,
+    )
+    handle_user_message(
+        db=db_session,
+        session_id=secondary_session.id,
+        session=secondary_session,
+        content="secondary",
+        model_config_id=model_config.id,
+    )
+
+    secondary_messages = messages_repository.get_messages_for_session(db_session, secondary_session.id)
+    secondary_user_message = next(message for message in secondary_messages if message.role == "user")
+
+    with pytest.raises(ValueError, match="does not belong to session"):
+        assistant_reply_groups_repository.create_reply_group(
+            db=db_session,
+            session_id=primary_session.id,
+            user_message_id=secondary_user_message.id,
+        )
+
+
+def test_create_reply_version_rejects_group_session_or_user_message_mismatch(db_session, monkeypatch):
+    primary_session = _create_session_with_state(db_session)
+    secondary_session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="一致性测试模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.messages.generate_reply",
+        lambda **_: "一致性测试回复",
+    )
+
+    handle_user_message(
+        db=db_session,
+        session_id=primary_session.id,
+        session=primary_session,
+        content="primary",
+        model_config_id=model_config.id,
+    )
+    handle_user_message(
+        db=db_session,
+        session_id=secondary_session.id,
+        session=secondary_session,
+        content="secondary",
+        model_config_id=model_config.id,
+    )
+
+    primary_messages = messages_repository.get_messages_for_session(db_session, primary_session.id)
+    secondary_messages = messages_repository.get_messages_for_session(db_session, secondary_session.id)
+    primary_user_message = next(message for message in primary_messages if message.role == "user")
+    secondary_user_message = next(message for message in secondary_messages if message.role == "user")
+
+    primary_group = assistant_reply_groups_repository.create_reply_group(
+        db=db_session,
+        session_id=primary_session.id,
+        user_message_id=primary_user_message.id,
+    )
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="session_id does not match"):
+        assistant_reply_versions_repository.create_reply_version(
+            db=db_session,
+            reply_group_id=primary_group.id,
+            session_id=secondary_session.id,
+            user_message_id=primary_user_message.id,
+            version_no=1,
+            content="不合法版本",
+            action_snapshot={},
+            model_meta={},
+            state_version_id=None,
+            prd_snapshot_version=None,
+        )
+
+    with pytest.raises(ValueError, match="user_message_id does not match"):
+        assistant_reply_versions_repository.create_reply_version(
+            db=db_session,
+            reply_group_id=primary_group.id,
+            session_id=primary_session.id,
+            user_message_id=secondary_user_message.id,
+            version_no=1,
+            content="不合法版本",
+            action_snapshot={},
+            model_meta={},
+            state_version_id=None,
+            prd_snapshot_version=None,
+        )
+
+
+def test_get_latest_version_for_group_uses_group_latest_pointer(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="latest 语义模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.messages.generate_reply",
+        lambda **_: "latest 语义测试回复",
+    )
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="latest",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+    assistant_message = next(message for message in persisted_messages if message.role == "assistant")
+
+    reply_group = assistant_reply_groups_repository.create_reply_group(
+        db=db_session,
+        session_id=session.id,
+        user_message_id=user_message.id,
+    )
+    version_1 = assistant_reply_versions_repository.create_reply_version(
+        db=db_session,
+        reply_group_id=reply_group.id,
+        session_id=session.id,
+        user_message_id=user_message.id,
+        version_no=1,
+        content=assistant_message.content,
+        action_snapshot=assistant_message.meta.get("action", {}),
+        model_meta={"model_config_id": model_config.id},
+        state_version_id=None,
+        prd_snapshot_version=None,
+    )
+    version_2 = assistant_reply_versions_repository.create_reply_version(
+        db=db_session,
+        reply_group_id=reply_group.id,
+        session_id=session.id,
+        user_message_id=user_message.id,
+        version_no=2,
+        content="候选但非 latest",
+        action_snapshot={"action": "probe_deeper"},
+        model_meta={"model_config_id": model_config.id},
+        state_version_id=None,
+        prd_snapshot_version=None,
+    )
+    assistant_reply_groups_repository.set_latest_version(
+        db=db_session,
+        reply_group=reply_group,
+        latest_version_id=version_1.id,
+    )
+    db_session.commit()
+
+    latest_version = assistant_reply_versions_repository.get_latest_version_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+
+    assert latest_version is not None
+    assert latest_version.id == version_1.id
+    assert latest_version.id != version_2.id
