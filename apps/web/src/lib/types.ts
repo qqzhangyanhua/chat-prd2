@@ -3,6 +3,7 @@ export type AuthMode = "login" | "register";
 export interface User {
   id: string;
   email: string;
+  is_admin: boolean;
 }
 
 export interface AuthResponse {
@@ -70,6 +71,47 @@ export interface WorkspaceMessage {
   content: string;
   id?: string;
   role: "user" | "assistant";
+}
+
+export interface EnabledModelConfigItem {
+  id: string;
+  name: string;
+  model: string;
+}
+
+export interface EnabledModelConfigListResponse {
+  items: EnabledModelConfigItem[];
+}
+
+export interface AdminModelConfigItem {
+  id: string;
+  name: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminModelConfigListResponse {
+  items: AdminModelConfigItem[];
+}
+
+export interface AdminModelConfigCreateRequest {
+  name: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  enabled?: boolean;
+}
+
+export interface AdminModelConfigUpdateRequest {
+  name?: string;
+  base_url?: string;
+  api_key?: string;
+  model?: string;
+  enabled?: boolean;
 }
 
 export type PrdSectionStatus = "confirmed" | "inferred" | "missing";

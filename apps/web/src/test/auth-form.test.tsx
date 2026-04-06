@@ -38,7 +38,7 @@ describe("AuthForm", () => {
 
   it("persists auth state and redirects after login succeeds", async () => {
     loginMock.mockResolvedValue({
-      user: { id: "user-1", email: "user@example.com" },
+      user: { id: "user-1", email: "user@example.com", is_admin: true },
       access_token: "token-123",
     });
 
@@ -56,13 +56,36 @@ describe("AuthForm", () => {
       expect(loginMock).toHaveBeenCalledWith("user@example.com", "secret123");
       expect(useAuthStore.getState().accessToken).toBe("token-123");
       expect(useAuthStore.getState().user?.email).toBe("user@example.com");
+      expect(useAuthStore.getState().user?.is_admin).toBe(true);
       expect(pushMock).toHaveBeenCalledWith("/workspace");
+    });
+  });
+
+  it("defaults is_admin to false when auth payload omits the field", async () => {
+    loginMock.mockResolvedValue({
+      user: { id: "user-1", email: "user@example.com" },
+      access_token: "token-789",
+    });
+
+    render(<AuthForm mode="login" />);
+
+    fireEvent.change(screen.getByPlaceholderText("Business email*"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password*"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().accessToken).toBe("token-789");
+      expect(useAuthStore.getState().user?.is_admin).toBe(false);
     });
   });
 
   it("submits register request in register mode", async () => {
     registerMock.mockResolvedValue({
-      user: { id: "user-2", email: "new@example.com" },
+      user: { id: "user-2", email: "new@example.com", is_admin: false },
       access_token: "token-456",
     });
 
