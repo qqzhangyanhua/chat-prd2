@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 
-import { getSession, listEnabledModelConfigs } from "../../lib/api";
+import { getHealthStatus, getSession, listEnabledModelConfigs, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
 import { consumeNewSessionDraft } from "../../lib/new-session-draft";
+import type { HealthStatusResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 import { ConversationPanel } from "./conversation-panel";
 import { PrdPanel } from "./prd-panel";
+import { SchemaOutdatedNotice } from "./schema-outdated-notice";
 import { SkeletonCard } from "./skeleton-card";
 import { WorkspaceLayout } from "./workspace-layout";
 
@@ -22,6 +24,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,6 +40,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
           const snapshot = await getSession(sessionId, accessToken);
           if (cancelled) return;
           setLoadError(null);
+          setSchemaHealth(null);
           workspaceStore.getState().hydrateSession(snapshot);
           const pendingDraft = consumeNewSessionDraft(sessionId);
           if (pendingDraft) workspaceStore.getState().setInputValue(pendingDraft);
@@ -45,6 +49,16 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
             const message = error instanceof Error ? error.message : "会话加载失败";
             workspaceStore.setState(workspaceStore.getInitialState(), true);
             setLoadError(message);
+            if (message === SCHEMA_OUTDATED_DETAIL) {
+              try {
+                const health = await getHealthStatus();
+                if (!cancelled && health.schema === "outdated") setSchemaHealth(health);
+              } catch {
+                if (!cancelled) setSchemaHealth(null);
+              }
+            } else {
+              setSchemaHealth(null);
+            }
             showToast({ id: `load-session-${sessionId}`, message, tone: "error" });
           }
           return;
@@ -82,17 +96,34 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
             <SkeletonCard className="h-32" />
           </div>
         ) : loadError ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
-            <p>{loadError}</p>
-            <button
-              type="button"
-              disabled={isRetrying}
-              className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => { setIsRetrying(true); setRetryToken((n) => n + 1); }}
-            >
-              {isRetrying ? "重试中..." : "重试加载"}
-            </button>
-          </div>
+          schemaHealth?.schema === "outdated" ? (
+            <div className="flex flex-col gap-3">
+              <SchemaOutdatedNotice
+                detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
+                missingTables={schemaHealth.missing_tables}
+              />
+              <button
+                type="button"
+                disabled={isRetrying}
+                className="w-fit rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => { setIsRetrying(true); setRetryToken((n) => n + 1); }}
+              >
+                {isRetrying ? "重试中..." : "重试加载"}
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
+              <p>{loadError}</p>
+              <button
+                type="button"
+                disabled={isRetrying}
+                className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => { setIsRetrying(true); setRetryToken((n) => n + 1); }}
+              >
+                {isRetrying ? "重试中..." : "重试加载"}
+              </button>
+            </div>
+          )
         ) : (
           <ConversationPanel sessionId={sessionId} />
         )}

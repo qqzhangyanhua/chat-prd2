@@ -11,6 +11,13 @@ export interface AuthResponse {
   access_token: string;
 }
 
+export interface HealthStatusResponse {
+  status: "ok" | "degraded";
+  schema: "ready" | "outdated";
+  detail?: string;
+  missing_tables?: string[];
+}
+
 export interface SessionResponse {
   id: string;
   user_id: string;

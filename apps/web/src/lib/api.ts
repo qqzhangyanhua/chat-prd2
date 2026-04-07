@@ -6,6 +6,7 @@ import type {
   AuthResponse,
   EnabledModelConfigListResponse,
   ExportResponse,
+  HealthStatusResponse,
   SessionCreateRequest,
   SessionListResponse,
   SessionSnapshotResponse,
@@ -14,6 +15,7 @@ import type {
 import { useAuthStore } from "../store/auth-store";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+export const SCHEMA_OUTDATED_DETAIL = "数据库结构版本过旧，请先执行 alembic upgrade head";
 
 async function getErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
   const errorPayload = (await response.json().catch(() => null)) as
@@ -70,6 +72,20 @@ export function login(email: string, password: string): Promise<AuthResponse> {
 
 export function register(email: string, password: string): Promise<AuthResponse> {
   return requestAuth("/api/auth/register", email, password);
+}
+
+export async function getHealthStatus(): Promise<HealthStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/health`);
+
+  if (response.status === 503) {
+    return (await response.json()) as HealthStatusResponse;
+  }
+
+  if (!response.ok) {
+    await throwApiError(response, "健康检查失败");
+  }
+
+  return (await response.json()) as HealthStatusResponse;
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

@@ -4,11 +4,13 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Bot, LayoutGrid, MessageSquare } from "lucide-react";
 
-import { createSession, listSessions } from "../../lib/api";
+import { createSession, getHealthStatus, listSessions, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
 import { storeNewSessionDraft } from "../../lib/new-session-draft";
 import { useAuthStore } from "../../store/auth-store";
+import type { HealthStatusResponse } from "../../lib/types";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { BrandIcon } from "./brand-icon";
+import { SchemaOutdatedNotice } from "./schema-outdated-notice";
 import { SectionLabel } from "./section-label";
 import { Spinner } from "./spinner";
 import { WorkspaceLayout } from "./workspace-layout";
@@ -38,6 +40,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingSessions, setIsCheckingSessions] = useState(true);
 
@@ -55,6 +58,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
       try {
         const response = await listSessions(accessToken);
         if (cancelled) return;
+        setSchemaHealth(null);
         if (response.sessions.length > 0) {
           const latest = response.sessions.reduce((best, s) =>
             new Date(best.updated_at) > new Date(s.updated_at) ? best : s,
@@ -63,7 +67,20 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
           return;
         }
       } catch (error) {
-        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "加载会话失败");
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "加载会话失败";
+          setErrorMessage(message);
+          if (message === SCHEMA_OUTDATED_DETAIL) {
+            try {
+              const health = await getHealthStatus();
+              if (!cancelled && health.schema === "outdated") setSchemaHealth(health);
+            } catch {
+              if (!cancelled) setSchemaHealth(null);
+            }
+          } else {
+            setSchemaHealth(null);
+          }
+        }
       } finally {
         if (!cancelled) setIsCheckingSessions(false);
       }
@@ -77,6 +94,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
     event.preventDefault();
     setIsSubmitting(true);
     setErrorMessage(null);
+    setSchemaHealth(null);
     try {
       const trimmedIdea = idea.trim();
       const response = await createSession(
@@ -105,6 +123,15 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
               {greeting}, {email.split("@")[0]}
             </h1>
           </div>
+
+          {schemaHealth?.schema === "outdated" ? (
+            <div className="mb-6">
+              <SchemaOutdatedNotice
+                detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
+                missingTables={schemaHealth.missing_tables}
+              />
+            </div>
+          ) : null}
 
           {isCheckingSessions ? (
             <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-stone-200/80 bg-white/90 p-5 shadow-[0_2px_16px_rgba(0,0,0,0.04)]">
