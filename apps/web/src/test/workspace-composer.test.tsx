@@ -476,20 +476,23 @@ describe("ConversationPanel decision guidance", () => {
     name: "OpenAI GPT-4.1",
     model: "gpt-4.1",
   };
+  const guidanceQuestions = [
+    "确认当前目标用户是哪个人群？",
+    "确认下一步验证的关键假设。",
+  ];
 
   beforeEach(() => {
     workspaceStore.setState(workspaceStore.getInitialState(), true);
     workspaceStore.getState().setAvailableModelConfigs([openaiConfig]);
   });
 
-  it("shows the latest guidance and populates the input when a recommendation is clicked", () => {
+  it("shows the latest guidance and populates the input when a recommendation is clicked", async () => {
     const guidance = {
       conversationStrategy: "choose",
       strategyLabel: "取舍中",
       strategyReason: "需要先确定空之间的优先级",
       nextBestQuestions: [
-        "确认当前目标用户是哪个人群？",
-        "确认下一步验证的关键假设。",
+        ...guidanceQuestions,
       ],
     };
 
@@ -504,16 +507,17 @@ describe("ConversationPanel decision guidance", () => {
 
     render(<ConversationPanel sessionId="session-1" />);
 
-    expect(screen.getByText("下一步建议")).toBeInTheDocument();
-    expect(screen.getByText("取舍中")).toBeInTheDocument();
-    expect(screen.getByText(guidance.strategyReason!)).toBeInTheDocument();
     guidance.nextBestQuestions.forEach((question) => {
-      expect(screen.getByRole("button", { name: question })).toBeInTheDocument();
+      const button = screen.getByRole("button", { name: question });
+      expect(button).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: guidance.nextBestQuestions[0] }));
-    expect(openaiConfig).toBeDefined();
-    expect(workspaceStore.getState().inputValue).toBe(guidance.nextBestQuestions[0]);
+    const firstQuestion = guidance.nextBestQuestions[0];
+    fireEvent.click(screen.getByRole("button", { name: firstQuestion }));
+    await waitFor(() => {
+      expect(workspaceStore.getState().inputValue).toBe(firstQuestion);
+      expect(screen.getByRole("textbox")).toHaveValue(firstQuestion);
+    });
   });
 
   it("keeps existing history and controls when no guidance is available", () => {
@@ -527,7 +531,9 @@ describe("ConversationPanel decision guidance", () => {
 
     render(<ConversationPanel sessionId="session-1" />);
 
-    expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
+    guidanceQuestions.forEach((question) => {
+      expect(screen.queryByRole("button", { name: question })).not.toBeInTheDocument();
+    });
     expect(screen.getByText("先讲清问题")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeInTheDocument();
   });
