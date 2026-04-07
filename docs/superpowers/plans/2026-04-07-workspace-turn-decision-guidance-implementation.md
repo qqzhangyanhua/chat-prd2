@@ -21,10 +21,15 @@
 
 在 `apps/web/src/test/workspace-store.test.ts` 补以下断言：
 - `hydrateSession()` 能从 `turn_decisions` 里派生出 `decisionGuidance`
-- guidance 优先读取 `decision_sections[].meta`
-- 当 `meta` 缺失时会回退到 `state_patch_json`
+- `conversationStrategy`、`strategyLabel`、`strategyReason` 只从 `key === "judgement"` 的 section meta 优先读取
+- `nextBestQuestions` 只从 `key === "next_step"` 的 section meta 优先读取
+- 当对应 section 或 meta 缺失时，会按字段级规则回退到 `state_patch_json`
 - 多条决策并存时按 `created_at` 选择最新一条
+- 当 `created_at` 缺失或不可解析时，会回退到数组最后一项
 - `next_best_questions` 会过滤空值、去重，并最多保留前 4 条
+- 当 `conversationStrategy` 缺失时默认回退为 `clarify`
+- 当 `strategyLabel` 和 `conversationStrategy` 都不可用时，最终标签兜底为 `继续推进`
+- 当 `decision_sections` 的 key 缺失、变更或结构不完整时，不会抛错，并能从 `state_patch_json` 派生 guidance
 - 当推荐项裁剪后为空时不生成 guidance
 
 - [ ] **Step 2: 运行测试确认失败**
@@ -38,8 +43,9 @@ Expected: 新增断言失败，证明当前 store 还没有接入 `turn_decision
 - 在 `apps/web/src/lib/types.ts` 增加 `AgentTurnDecision`、`AgentTurnDecisionSection` 及其嵌套 `meta/state_patch_json` 类型
 - 扩展 `SessionSnapshotResponse`，增加可选 `turn_decisions`
 - 在 `apps/web/src/store/workspace-store.ts` 新增 `decisionGuidance` 状态和解析 helper
+- 将解析逻辑拆成独立 helper，例如 `pickLatestDecision(decisions)` 与 `deriveDecisionGuidance(decision)`
 - 让 `hydrateSession()` 在处理 snapshot 时同步派生 `decisionGuidance`
-- 将 latest 选择、字段优先级、推荐项裁剪逻辑封装在 store 内部 helper，避免组件重复判断
+- 将 latest 选择、按 section key 的字段优先级、默认值兜底、异常 key 回退、推荐项裁剪逻辑封装在 store 内部 helper，避免组件重复判断
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -64,7 +70,7 @@ git commit -m "feat(web): hydrate turn decision guidance in workspace store"
 
 新增 `apps/web/src/test/assistant-turn-card.test.tsx`，至少覆盖：
 - 存在 guidance 时展示阶段标签、推进原因和 1 到 4 个推荐按钮
-- 阶段标签优先展示后端 `strategyLabel`，没有时才使用前端映射
+- 阶段标签优先展示 store 已派生好的 `strategyLabel`，组件自身不重复做字段优先级解析
 - 点击推荐按钮会调用 `workspaceStore.getState().setInputValue(...)`
 - 没有 guidance 时不展示该引导区
 
