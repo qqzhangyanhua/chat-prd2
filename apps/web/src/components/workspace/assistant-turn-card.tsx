@@ -8,6 +8,8 @@ import {
   type AssistantReplyVersionItem,
 } from "./assistant-version-history-dialog";
 
+export const DECISION_GUIDANCE_REASON_LABEL = "decision-guidance-reason";
+
 interface AssistantTurnCardProps {
   canRegenerate?: boolean;
   currentAction: NextAction | null;
@@ -134,7 +136,12 @@ export function AssistantTurnCard({
               </div>
               <p className="mt-3 text-sm font-semibold text-stone-900">{decisionGuidance.strategyLabel}</p>
               {decisionGuidance.strategyReason ? (
-                <p className="mt-2 text-sm text-stone-700">{decisionGuidance.strategyReason}</p>
+                <p
+                  aria-label={DECISION_GUIDANCE_REASON_LABEL}
+                  className="mt-2 text-sm text-stone-700"
+                >
+                  {decisionGuidance.strategyReason}
+                </p>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {decisionGuidance.nextBestQuestions.map((question, index) => (

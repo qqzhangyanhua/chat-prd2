@@ -87,11 +87,6 @@ describe("AssistantTurnCard", () => {
     expect(within(dialog).getByText("第二版回复")).toBeInTheDocument();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-    workspaceStore.setState((state) => ({ ...state, inputValue: "" }));
-  });
-
   it("renders decision guidance with stage label, reason, and recommendation buttons", () => {
     const guidance: DecisionGuidance = {
       conversationStrategy: "choose",
@@ -139,7 +134,7 @@ describe("AssistantTurnCard", () => {
     expect(screen.getByText("推动取舍")).toBeInTheDocument();
     expect(screen.queryByText("我先帮你收敛 MVP 的首个关键场景。"))
       .toBeInTheDocument();
-    expect(screen.queryByText("无策略原因"))
+    expect(screen.queryByLabelText("decision-guidance-reason"))
       .not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "先确定主线再调整方案" }))
       .toBeInTheDocument();
