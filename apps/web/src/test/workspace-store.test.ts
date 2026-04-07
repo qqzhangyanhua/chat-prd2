@@ -371,6 +371,79 @@ describe("workspace store", () => {
     expect(store.getState().replyGroups).toEqual({});
   });
 
+  it("refreshes session snapshot without clearing current action or typed input", () => {
+    const store = createWorkspaceStore();
+
+    store.setState({
+      ...store.getState(),
+      currentAction: {
+        action: "probe_deeper",
+        target: "problem",
+        reason: "继续澄清问题边界",
+      },
+      inputValue: "我已经开始输入下一条了",
+      lastSubmittedInput: "上一轮输入",
+      isStreaming: false,
+    });
+
+    store.getState().refreshSessionSnapshot({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "session-1",
+          role: "user",
+          content: "上一轮用户输入",
+          message_type: "chat",
+        },
+        {
+          id: "assistant-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "刷新后的回复",
+          message_type: "chat",
+        },
+      ],
+      assistant_reply_groups: [],
+      turn_decisions: [
+        {
+          id: "decision-1",
+          session_id: "session-1",
+          created_at: "2026-04-07T10:00:00Z",
+          state_patch_json: {
+            conversation_strategy: "confirm",
+            strategy_reason: "需要确认最新范围",
+            next_best_questions: ["确认下一步优先级"],
+          },
+        },
+      ],
+    });
+
+    expect(store.getState().currentAction).toEqual({
+      action: "probe_deeper",
+      target: "problem",
+      reason: "继续澄清问题边界",
+    });
+    expect(store.getState().inputValue).toBe("我已经开始输入下一条了");
+    expect(store.getState().lastSubmittedInput).toBe("上一轮输入");
+    expect(store.getState().messages.at(-1)?.content).toBe("刷新后的回复");
+    expect(store.getState().decisionGuidance?.strategyLabel).toBe("确认中");
+  });
+
   it("resets prd sections when the loaded session has an empty snapshot", () => {
     const store = createWorkspaceStore();
 

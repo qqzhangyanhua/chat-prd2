@@ -1,7 +1,11 @@
 import httpx
 import pytest
 
-from app.services.model_gateway import ModelGatewayError, generate_reply
+from app.services.model_gateway import (
+    ModelGatewayError,
+    generate_reply,
+    generate_structured_extraction,
+)
 
 
 class DummyResponse:
@@ -70,6 +74,79 @@ def test_generate_reply_success_and_request_payload(monkeypatch):
     }
     assert captured["json"] == {"model": "gpt-test", "messages": messages}
     assert captured["timeout"] == 30.0
+
+
+def test_generate_structured_extraction_success_and_request_payload(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return DummyResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"should_update":true,"confidence":"high","reasoning_summary":"识别到目标用户",'
+                                '"state_patch":{"target_user":"独立开发者"},"prd_patch":{"target_user":{"title":"目标用户","content":"独立开发者","status":"confirmed"}}}'
+                            ),
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    result = generate_structured_extraction(
+        base_url="https://api.example.com/v1/",
+        api_key="secret-key",
+        model="gpt-test",
+        state={"target_user": None},
+        target_section="target_user",
+        user_input="独立开发者",
+    )
+
+    assert result["should_update"] is True
+    assert result["state_patch"]["target_user"] == "独立开发者"
+    assert captured["url"] == "https://api.example.com/v1/chat/completions"
+    assert captured["headers"] == {
+        "Authorization": "Bearer secret-key",
+        "Content-Type": "application/json",
+    }
+    assert captured["json"]["model"] == "gpt-test"
+    assert captured["json"]["response_format"] == {"type": "json_object"}
+    assert captured["timeout"] == 30.0
+
+
+def test_generate_structured_extraction_raises_on_invalid_json_content(monkeypatch):
+    def fake_post(url, *, headers, json, timeout):
+        return DummyResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "这不是 JSON",
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    with pytest.raises(ModelGatewayError, match="上游结构化提取结果不是合法 JSON"):
+        generate_structured_extraction(
+            base_url="https://api.example.com/v1",
+            api_key="secret-key",
+            model="gpt-test",
+            state={"target_user": None},
+            target_section="target_user",
+            user_input="独立开发者",
+        )
 
 
 def test_generate_reply_defaults_root_base_url_to_v1_path(monkeypatch):

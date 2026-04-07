@@ -1,9 +1,22 @@
 import json
+from datetime import datetime, timezone
 from uuid import uuid4
 
+from fastapi import HTTPException
+from sqlalchemy import create_engine, select
 from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app.db.models import ConversationMessage, PrdSnapshot, ProjectSession, ProjectStateVersion
+from app.db.models import (
+    AssistantReplyGroup,
+    AssistantReplyVersion,
+    ConversationMessage,
+    PrdSnapshot,
+    ProjectSession,
+    ProjectStateVersion,
+    User,
+)
 from app.repositories import model_configs as model_configs_repository
 from app.schemas.session import SessionCreateRequest
 from app.services import sessions as session_service
@@ -53,6 +66,32 @@ def test_create_session_returns_initial_state(auth_client):
     assert data["session"]["title"] == "AI Co-founder"
     assert data["state"]["stage_hint"] == "问题探索"
     assert data["prd_snapshot"]["sections"] == {}
+
+
+def test_create_session_persists_phase1_default_state(auth_client, testing_session_local):
+    response = auth_client.post(
+        "/api/sessions",
+        json={
+            "title": "AI Co-founder",
+            "initial_idea": "一个帮助独立开发者梳理产品想法并生成 PRD 的智能体系统",
+        },
+    )
+    assert response.status_code == 200
+    session_id = response.json()["session"]["id"]
+
+    db = testing_session_local()
+    try:
+        state_version = db.execute(
+            select(ProjectStateVersion).where(ProjectStateVersion.session_id == session_id)
+        ).scalar_one()
+    finally:
+        db.close()
+
+    assert state_version.state_json["current_phase"] == "idea_clarification"
+    assert state_version.state_json["conversation_strategy"] == "clarify"
+    assert state_version.state_json["working_hypotheses"] == []
+    assert state_version.state_json["recommended_directions"] == []
+    assert state_version.state_json["pending_confirmations"] == []
 
 
 def test_create_session_rejects_blank_title_and_initial_idea(auth_client):
@@ -106,6 +145,36 @@ def test_export_returns_markdown(auth_client, seeded_session):
     assert data["content"].startswith("# PRD")
 
 
+def test_export_returns_real_prd_content_after_message_updates_snapshot(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(monkeypatch)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "独立开发者",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/export",
+        json={"format": "md"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "独立开发者" in data["content"]
+
+
 def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
     response = auth_client.get(f"/api/sessions/{seeded_session}")
 
@@ -115,6 +184,64 @@ def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
     assert data["state"]["idea"]
     assert "sections" in data["prd_snapshot"]
     assert "assistant_reply_groups" in data
+
+
+def test_get_session_returns_explicit_503_when_turn_decision_table_is_missing():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        future=True,
+    )
+    session_local = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+    User.__table__.create(bind=engine)
+    ProjectSession.__table__.create(bind=engine)
+    ProjectStateVersion.__table__.create(bind=engine)
+    PrdSnapshot.__table__.create(bind=engine)
+    ConversationMessage.__table__.create(bind=engine)
+    AssistantReplyGroup.__table__.create(bind=engine)
+    AssistantReplyVersion.__table__.create(bind=engine)
+
+    db = session_local()
+    try:
+        user = User(
+            id="user-1",
+            email="schema-check@example.com",
+            password_hash="hashed",
+        )
+        session = ProjectSession(
+            id="session-1",
+            user_id=user.id,
+            title="AI Co-founder",
+            initial_idea="idea",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        state_version = ProjectStateVersion(
+            id="state-1",
+            session_id=session.id,
+            version=1,
+            state_json=session_service.build_initial_state("idea"),
+        )
+        prd_snapshot = PrdSnapshot(
+            id="prd-1",
+            session_id=session.id,
+            version=1,
+            sections={},
+        )
+        db.add_all([user, session, state_version, prd_snapshot])
+        db.commit()
+
+        try:
+            session_service.get_session_snapshot(db, session.id, user.id)
+        except HTTPException as exc:
+            assert exc.status_code == 503
+            assert exc.detail == "数据库结构版本过旧，请先执行 alembic upgrade head"
+        else:
+            raise AssertionError("expected get_session_snapshot to raise HTTPException")
+    finally:
+        db.close()
 
 
 def test_get_session_marks_session_as_recently_active(auth_client):
@@ -311,10 +438,26 @@ def test_get_session_includes_messages_in_snapshot(
     data = response.json()
     assert "messages" in data
     assert "assistant_reply_groups" in data
+    assert "turn_decisions" in data
     assert isinstance(data["messages"], list)
     assert len(data["messages"]) >= 1
     assert data["messages"][0]["role"] in ("user", "assistant")
     assert "content" in data["messages"][0]
+    assert isinstance(data["turn_decisions"], list)
+    assert len(data["turn_decisions"]) == 1
+    assert data["turn_decisions"][0]["session_id"] == seeded_session
+    assert data["turn_decisions"][0]["user_message_id"] == data["messages"][0]["id"]
+    assert data["turn_decisions"][0]["next_move"]
+    assert data["turn_decisions"][0]["decision_summary"]
+    assert len(data["turn_decisions"][0]["decision_sections"]) == 5
+    assert data["turn_decisions"][0]["decision_sections"][0]["key"] == "judgement"
+    assert data["turn_decisions"][0]["decision_sections"][0]["title"]
+    assert data["turn_decisions"][0]["decision_sections"][0]["content"]
+    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
+    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
+    assert data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"]
+    assert isinstance(data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"], list)
+    assert "建议" in data["turn_decisions"][0]["decision_summary"]
 
 
 def test_get_session_returns_assistant_reply_groups_and_latest_projection(
@@ -369,6 +512,20 @@ def test_get_session_returns_assistant_reply_groups_and_latest_projection(
     data = snapshot.json()
 
     assert len(data["assistant_reply_groups"]) == 1
+    assert len(data["turn_decisions"]) == 1
+    assert data["turn_decisions"][0]["user_message_id"] == user_message_id
+    assert data["turn_decisions"][0]["decision_summary"]
+    assert len(data["turn_decisions"][0]["decision_sections"]) == 5
+    assert [section["key"] for section in data["turn_decisions"][0]["decision_sections"]] == [
+        "judgement",
+        "assumption",
+        "suggestion",
+        "confirmation",
+        "next_step",
+    ]
+    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
+    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
+    assert data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"]
     group = data["assistant_reply_groups"][0]
     assert group["session_id"] == seeded_session
     assert group["user_message_id"] == user_message_id

@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
+from app.db.models import AgentTurnDecision
 from app.db.models import ConversationMessage
 from app.repositories import model_configs as model_configs_repository
 
@@ -135,6 +136,19 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert done_payload["is_regeneration"] is False
     assert done_payload["is_latest"] is True
     assert assistant_message.content == "这是流式回复"
+    decision = db.execute(
+        select(AgentTurnDecision).where(
+            AgentTurnDecision.user_message_id == user_message.id
+        )
+    ).scalar_one_or_none()
+    assert decision is not None
+    assert assistant_message.meta["action"]["action"] == decision.next_move or decision.next_move in {
+        "probe_for_specificity",
+        "assume_and_advance",
+        "challenge_and_reframe",
+        "summarize_and_confirm",
+        "force_rank_or_choose",
+    }
 
 
 def test_message_stream_returns_404_for_other_users_session(client, auth_client, seeded_session):
@@ -272,6 +286,7 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     assert "assistant.version.started" in body
     assert "assistant.delta" in body
     assert "assistant.done" in body
+    assert "prd.updated" not in body
     assert "message.accepted" not in body
     parsed_events = _parse_sse_events(body)
     event_order = [name for name, _ in parsed_events]
@@ -292,6 +307,11 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
 
     db = testing_session_local()
     try:
+        decisions_before = db.execute(
+            select(AgentTurnDecision).where(
+                AgentTurnDecision.session_id == seeded_session
+            )
+        ).scalars().all()
         messages = db.execute(
             select(ConversationMessage)
             .where(ConversationMessage.session_id == seeded_session)
@@ -306,6 +326,11 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
             .where(AssistantReplyVersion.reply_group_id == reply_group.id)
             .order_by(AssistantReplyVersion.version_no.asc())
         ).scalars().all()
+        decisions_after = db.execute(
+            select(AgentTurnDecision).where(
+                AgentTurnDecision.session_id == seeded_session
+            )
+        ).scalars().all()
     finally:
         db.close()
 
@@ -314,3 +339,5 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     assert len(versions) == 2
     assert [version.version_no for version in versions] == [1, 2]
     assert versions[1].content == "重生成版本"
+    assert len(decisions_before) == 1
+    assert len(decisions_after) == 1

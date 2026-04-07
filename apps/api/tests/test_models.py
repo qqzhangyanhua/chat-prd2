@@ -4,7 +4,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
-from app.db.models import AssistantReplyGroup, AssistantReplyVersion, Base, LLMModelConfig, ProjectSession, User
+from app.db.models import AgentTurnDecision, AssistantReplyGroup, AssistantReplyVersion, Base, LLMModelConfig, ProjectSession, User
 
 
 def _load_initial_migration_module():
@@ -40,6 +40,7 @@ def test_models_have_expected_tablenames() -> None:
     assert LLMModelConfig.__tablename__ == "llm_model_configs"
     assert AssistantReplyGroup.__tablename__ == "assistant_reply_groups"
     assert AssistantReplyVersion.__tablename__ == "assistant_reply_versions"
+    assert AgentTurnDecision.__tablename__ == "agent_turn_decisions"
 
 
 def test_initial_migration_uses_unique_index_for_user_email_only(monkeypatch) -> None:
@@ -204,3 +205,27 @@ def test_assistant_reply_tables_include_consistency_constraints_in_sqlite() -> N
         and fk.get("referred_table") == "assistant_reply_groups"
         for fk in version_foreign_keys
     )
+
+
+def test_migration_creates_agent_turn_decisions_table(monkeypatch) -> None:
+    migration = _load_migration_module(
+        "0007_add_agent_turn_decisions.py",
+        "alembic_0007_add_agent_turn_decisions",
+    )
+    created_tables: list[str] = []
+    created_indexes: list[str] = []
+
+    def fake_create_table(name, *columns, **kwargs):
+        created_tables.append(name)
+
+    def fake_create_index(name, table_name, columns, unique=False, **kwargs):
+        created_indexes.append(name)
+
+    monkeypatch.setattr(migration.op, "create_table", fake_create_table)
+    monkeypatch.setattr(migration.op, "create_index", fake_create_index)
+
+    migration.upgrade()
+
+    assert "agent_turn_decisions" in created_tables
+    assert "ix_agent_turn_decisions_session_id" in created_indexes
+    assert "ix_agent_turn_decisions_user_message_id" in created_indexes

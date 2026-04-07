@@ -7,6 +7,7 @@ import { useToastStore } from "../store/toast-store";
 import { workspaceStore } from "../store/workspace-store";
 
 const getSessionMock = vi.fn();
+const getHealthStatusMock = vi.fn();
 const listEnabledModelConfigsMock = vi.fn();
 const pushMock = vi.fn();
 
@@ -17,13 +18,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("../lib/api", () => ({
+  getHealthStatus: (...args: unknown[]) => getHealthStatusMock(...args),
   getSession: (...args: unknown[]) => getSessionMock(...args),
   listEnabledModelConfigs: (...args: unknown[]) => listEnabledModelConfigsMock(...args),
+  SCHEMA_OUTDATED_DETAIL: "数据库结构版本过旧，请先执行 alembic upgrade head",
 }));
 
 describe("WorkspaceSessionShell", () => {
   beforeEach(() => {
     getSessionMock.mockReset();
+    getHealthStatusMock.mockReset();
     listEnabledModelConfigsMock.mockReset();
     pushMock.mockReset();
     window.sessionStorage.clear();
@@ -254,6 +258,24 @@ describe("WorkspaceSessionShell", () => {
     });
 
     expect(await screen.findByRole("button", { name: "重试加载" })).toBeEnabled();
+  });
+
+  it("shows an explicit migration hint when session loading fails because schema is outdated", async () => {
+    getSessionMock.mockRejectedValue(
+      new Error("数据库结构版本过旧，请先执行 alembic upgrade head"),
+    );
+    getHealthStatusMock.mockResolvedValue({
+      status: "degraded",
+      schema: "outdated",
+      detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+      missing_tables: ["agent_turn_decisions"],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
+    expect(screen.getByText("agent_turn_decisions")).toBeInTheDocument();
+    expect(screen.getByText(/cd apps\/api && alembic upgrade head/i)).toBeInTheDocument();
   });
 
   it("hydrates assistant reply groups into workspace store", async () => {

@@ -2,12 +2,17 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
+from app.agent.types import Suggestion, TurnDecision
 from app.db.models import User
+from app.db.models import AgentTurnDecision
+from app.repositories import agent_turn_decisions as agent_turn_decisions_repository
 from app.repositories import assistant_reply_groups as assistant_reply_groups_repository
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
 from app.repositories import messages as messages_repository
 from app.repositories import model_configs as model_configs_repository
+from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
@@ -78,6 +83,74 @@ def _create_session_with_state(db_session):
     )
     db_session.commit()
     return session
+
+
+def _sample_turn_decision() -> TurnDecision:
+    return TurnDecision(
+        phase="idea_clarification",
+        phase_goal="收敛目标用户",
+        understanding={
+            "summary": "用户给了一个模糊方向",
+            "candidate_updates": {},
+            "ambiguous_points": [],
+        },
+        assumptions=[],
+        gaps=["缺少明确的目标用户"],
+        challenges=["目标用户范围过泛，需优先收敛"],
+        pm_risk_flags=["user_too_broad"],
+        next_move="force_rank_or_choose",
+        suggestions=[
+            Suggestion(
+                type="direction",
+                label="独立开发者",
+                content="先聚焦独立开发者",
+                rationale="反馈链路更短",
+                priority=1,
+            ),
+        ],
+        recommendation={"label": "独立开发者"},
+        reply_brief={"focus": "force_rank_or_choose", "must_include": []},
+        state_patch={},
+        prd_patch={},
+        needs_confirmation=["是否先聚焦独立开发者"],
+        confidence="medium",
+        next_best_questions=["如果只能先选一个主线，你更愿意先收敛用户还是问题？"],
+        strategy_reason="目标用户仍然过泛，当前先推动你做主线取舍。",
+    )
+
+
+def _phase1_state(**overrides):
+    base = {
+        "idea": "做一个 AI 产品经理",
+        "stage_hint": "问题探索",
+        "iteration": 0,
+        "goal": None,
+        "target_user": None,
+        "problem": None,
+        "solution": None,
+        "mvp_scope": [],
+        "success_metrics": [],
+        "known_facts": {},
+        "assumptions": [],
+        "risks": [],
+        "unexplored_areas": [],
+        "options": [],
+        "decisions": [],
+        "open_questions": [],
+        "prd_snapshot": {"sections": {}},
+        "current_phase": "idea_clarification",
+        "phase_goal": None,
+        "working_hypotheses": [],
+        "evidence": [],
+        "decision_readiness": None,
+        "pm_risk_flags": [],
+        "recommended_directions": [],
+        "pending_confirmations": [],
+        "rejected_options": [],
+        "next_best_questions": [],
+    }
+    base.update(overrides)
+    return base
 
 
 def test_handle_user_message_rejects_missing_model_config(db_session):
@@ -183,6 +256,299 @@ def test_handle_user_message_uses_selected_model_and_persists_model_metadata(db_
     assert assistant_message.meta["base_url"] == "https://gateway.example.com/v1"
 
 
+def test_handle_user_message_persists_turn_decision_audit(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="审计模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "审计回复")
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请继续推进这个产品想法",
+        model_config_id=model_config.id,
+    )
+
+    decision = db_session.execute(
+        select(AgentTurnDecision).where(
+            AgentTurnDecision.user_message_id == result.user_message_id
+        )
+    ).scalar_one_or_none()
+    assert decision is not None
+    assert decision.user_message_id == result.user_message_id
+    assert decision.session_id == session.id
+    assert decision.phase
+    assert isinstance(decision.understanding_summary, str)
+    assert decision.next_move
+    assert decision.confidence in {"high", "medium", "low"}
+    assert isinstance(decision.assumptions_json, list)
+    assert isinstance(decision.risk_flags_json, list)
+    assert isinstance(decision.suggestions_json, list)
+    assert isinstance(decision.needs_confirmation_json, list)
+    assert isinstance(decision.state_patch_json, dict)
+    assert isinstance(decision.prd_patch_json, dict)
+    assert isinstance(decision.recommendation_json, (dict, type(None)))
+
+
+def test_handle_user_message_prefers_model_structured_extraction_when_available(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="结构化提取模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "这是网关生成的回复")
+    monkeypatch.setattr(
+        "app.services.messages.generate_structured_extraction",
+        lambda **_: {
+            "should_update": True,
+            "confidence": "high",
+            "reasoning_summary": "识别到更具体的目标用户",
+            "state_patch": {
+                "target_user": "独立开发者团队负责人",
+                "iteration": 1,
+                "stage_hint": "问题定义",
+            },
+            "prd_patch": {
+                "target_user": {
+                    "title": "目标用户",
+                    "content": "独立开发者团队负责人",
+                    "status": "confirmed",
+                }
+            },
+        },
+    )
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="我们主要服务独立开发者团队负责人",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+
+    assert latest_state["target_user"] == "独立开发者团队负责人"
+    assert latest_prd_snapshot is not None
+    assert latest_prd_snapshot.sections["target_user"]["content"] == "独立开发者团队负责人"
+
+
+def test_handle_user_message_persists_phase1_state_fields(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="阶段字段模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            iteration=3,
+            stage_hint="MVP 收敛",
+        ),
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        sections={},
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "进入总结")
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="继续",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert latest_state["current_phase"]
+    assert latest_state["phase_goal"] == "总结共识并确认下一步"
+    assert latest_state["conversation_strategy"] == "confirm"
+    assert "核心信息已基本齐备" in latest_state["strategy_reason"]
+    assert latest_state["recommended_directions"]
+    assert latest_state["pending_confirmations"] == ["请确认当前理解是否准确"]
+    assert latest_state["next_best_questions"] == ["请确认当前理解是否准确"]
+    assert latest_state["working_hypotheses"] == []
+    assert latest_state["pm_risk_flags"] == []
+
+
+def test_handle_user_message_persists_conversation_strategy_converge(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="策略收敛模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            iteration=1,
+            stage_hint="问题定义",
+        ),
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        sections={},
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "继续推进")
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="他们现在最大的问题是不知道先验证哪个需求",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert latest_state["conversation_strategy"] == "converge"
+    assert "已有方向信号" in latest_state["strategy_reason"]
+    assert latest_state["next_best_questions"]
+    assert "最想先验证" in latest_state["next_best_questions"][0]
+
+
+def test_handle_user_message_preserves_confirm_strategy_on_vague_continue(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="确认保护模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="confirm",
+            pending_confirmations=["请确认当前理解是否准确"],
+            iteration=4,
+            stage_hint="总结共识",
+        ),
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        sections={},
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "继续确认")
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="继续",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert latest_state["conversation_strategy"] == "confirm"
+    assert "没有新增风险" in latest_state["strategy_reason"]
+    assert latest_state["pending_confirmations"] == ["请确认当前理解是否准确"]
+
+
+def test_handle_user_message_falls_back_to_rule_extraction_when_model_extraction_fails(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="结构化提取失败模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "这是网关生成的回复")
+
+    def fail_generate_structured_extraction(**_kwargs):
+        raise ModelGatewayError("结构化提取失败")
+
+    monkeypatch.setattr(
+        "app.services.messages.generate_structured_extraction",
+        fail_generate_structured_extraction,
+    )
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="独立开发者",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+
+    assert latest_state["target_user"] == "独立开发者"
+    assert latest_prd_snapshot is not None
+    assert latest_prd_snapshot.sections["target_user"]["content"] == "独立开发者"
+
+
 def test_handle_user_message_rolls_back_user_message_when_generate_reply_fails(db_session, monkeypatch):
     session = _create_session_with_state(db_session)
     model_config = model_configs_repository.create_model_config(
@@ -215,6 +581,50 @@ def test_handle_user_message_rolls_back_user_message_when_generate_reply_fails(d
     latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
     assert latest_state_version is not None
     assert latest_state_version.version == 1
+
+
+def test_handle_user_message_rolls_back_turn_decision_when_persist_chain_fails(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="回滚模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "这次会回滚")
+    original_touch = messages_repository.touch_session_activity
+    calls = {"count": 0}
+
+    def fail_on_second_touch(db, persisted_session):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise RuntimeError("持久化链路失败")
+        return original_touch(db, persisted_session)
+
+    monkeypatch.setattr(
+        "app.services.messages.messages_repository.touch_session_activity",
+        fail_on_second_touch,
+    )
+
+    with pytest.raises(RuntimeError, match="持久化链路失败"):
+        handle_user_message(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            content="这条消息会触发回滚",
+            model_config_id=model_config.id,
+        )
+
+    assert messages_repository.get_messages_for_session(db_session, session.id) == []
+    decisions = [
+        item
+        for item in db_session.query(AgentTurnDecision).filter_by(session_id=session.id).all()
+    ]
+    assert decisions == []
 
 
 def test_handle_user_message_logs_model_gateway_context(db_session, monkeypatch, caplog):
@@ -300,6 +710,7 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
         "assistant.delta",
         "assistant.delta",
         "assistant.delta",
+        "prd.updated",
         "assistant.done",
     ]
     accepted_event = next(event for event in events if event.type == "message.accepted")
@@ -307,6 +718,7 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
     started_event = next(event for event in events if event.type == "assistant.version.started")
     delta_events = [event for event in events if event.type == "assistant.delta"]
     done_event = next(event for event in events if event.type == "assistant.done")
+    prd_updated_event = next(event for event in events if event.type == "prd.updated")
 
     assert accepted_event.data["message_id"]
     assert group_event.data["reply_group_id"]
@@ -326,6 +738,7 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
     assert done_event.data["assistant_version_id"] == started_event.data["assistant_version_id"]
     assert done_event.data["is_regeneration"] is False
     assert done_event.data["is_latest"] is True
+    assert prd_updated_event.data["sections"]["target_user"]["content"] == "帮我梳理目标用户"
 
     persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
     assert len(persisted_messages) == 2
@@ -342,6 +755,14 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
     assert [version.version_no for version in versions] == [1]
     assert versions[0].content == "先把目标用户讲清楚。"
     assert reply_group.latest_version_id == versions[0].id
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+    assert latest_state["target_user"] == "帮我梳理目标用户"
+    assert latest_state["stage_hint"] == "问题定义"
+    assert latest_state["current_phase"]
+    assert latest_state["recommended_directions"]
+    assert latest_prd_snapshot is not None
+    assert latest_prd_snapshot.sections["target_user"]["content"] == "帮我梳理目标用户"
 
 
 def test_reply_version_writes_do_not_create_new_user_messages(db_session, monkeypatch):
@@ -474,6 +895,46 @@ def test_create_reply_group_rejects_user_message_from_other_session(db_session, 
             db=db_session,
             session_id=primary_session.id,
             user_message_id=secondary_user_message.id,
+        )
+
+
+def test_create_turn_decision_rejects_user_message_from_other_session(db_session):
+    primary_session = _create_session_with_state(db_session)
+    secondary_session = _create_session_with_state(db_session)
+
+    secondary_user_message = messages_repository.create_message(
+        db=db_session,
+        session_id=secondary_session.id,
+        role="user",
+        content="secondary",
+    )
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="does not belong to session"):
+        agent_turn_decisions_repository.create_turn_decision(
+            db=db_session,
+            session_id=primary_session.id,
+            user_message_id=secondary_user_message.id,
+            turn_decision=_sample_turn_decision(),
+        )
+
+
+def test_create_turn_decision_rejects_non_user_message(db_session):
+    session = _create_session_with_state(db_session)
+    assistant_message = messages_repository.create_message(
+        db=db_session,
+        session_id=session.id,
+        role="assistant",
+        content="assistant",
+    )
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="must have user role"):
+        agent_turn_decisions_repository.create_turn_decision(
+            db=db_session,
+            session_id=session.id,
+            user_message_id=assistant_message.id,
+            turn_decision=_sample_turn_decision(),
         )
 
 
@@ -675,9 +1136,10 @@ def test_stream_regenerate_message_events_appends_version_without_new_user_messa
     assert latest_version is not None
     assert latest_version.content == "这是重生成版本"
     assert latest_version.state_version_id is not None
-    assert latest_version.prd_snapshot_version == 3
+    assert latest_version.state_version_id == version_1.state_version_id
+    assert latest_version.prd_snapshot_version == version_1.prd_snapshot_version
     assert latest_state_version is not None
-    assert latest_state_version.version == 3
+    assert latest_state_version.version == 2
     assert len(user_messages) == 1
     assert len(assistant_messages) == 1
     assert assistant_messages[0].id == assistant_message.id
