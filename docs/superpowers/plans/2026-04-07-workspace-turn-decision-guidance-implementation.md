@@ -28,6 +28,7 @@
 - 当 `created_at` 缺失或不可解析时，会回退到数组最后一项
 - `next_best_questions` 会过滤空值、去重，并最多保留前 4 条
 - 当 `conversationStrategy` 缺失时默认回退为 `clarify`
+- 当 `strategyLabel` 缺失但 `conversationStrategy` 存在时，会稳定映射为中文阶段标签：`澄清中 / 取舍中 / 收敛中 / 确认中`
 - 当 `strategyLabel` 和 `conversationStrategy` 都不可用时，最终标签兜底为 `继续推进`
 - 当 `decision_sections` 的 key 缺失、变更或结构不完整时，不会抛错，并能从 `state_patch_json` 派生 guidance
 - 当推荐项裁剪后为空时不生成 guidance
@@ -71,6 +72,7 @@ git commit -m "feat(web): hydrate turn decision guidance in workspace store"
 新增 `apps/web/src/test/assistant-turn-card.test.tsx`，至少覆盖：
 - 存在 guidance 时展示阶段标签、推进原因和 1 到 4 个推荐按钮
 - 阶段标签优先展示 store 已派生好的 `strategyLabel`，组件自身不重复做字段优先级解析
+- 当 `strategyReason` 为空时，仍展示阶段标签和推荐按钮，不因缺少原因而隐藏整卡
 - 点击推荐按钮会调用 `workspaceStore.getState().setInputValue(...)`
 - 没有 guidance 时不展示该引导区
 
