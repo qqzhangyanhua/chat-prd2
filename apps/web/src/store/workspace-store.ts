@@ -61,6 +61,7 @@ interface WorkspaceState {
   cancelPendingRequest: () => void;
   failRequest: (message: string) => void;
   hydrateSession: (snapshot: SessionSnapshotResponse) => void;
+  refreshSessionSnapshot: (snapshot: SessionSnapshotResponse) => void;
   markInterrupted: () => void;
   resetError: () => void;
   selectModelConfig: (modelConfigId: string) => void;
@@ -272,6 +273,50 @@ function normalizeReplyGroups(groups: AssistantReplyGroup[]): Record<string, Wor
   );
 }
 
+function buildHydratedSessionState(
+  state: Omit<WorkspaceState, "applyEvent" | "cancelPendingRequest" | "failRequest" | "hydrateSession" | "refreshSessionSnapshot" | "markInterrupted" | "resetError" | "selectModelConfig" | "setAvailableModelConfigs" | "setInputValue" | "setLeftNavCollapsed" | "setStreaming" | "startRegenerate" | "startRequest"> & {
+    replyGroups: Record<string, WorkspaceReplyGroup>;
+    messages: WorkspaceMessage[];
+  },
+  snapshot: SessionSnapshotResponse,
+  options?: {
+    preserveCurrentAction?: boolean;
+    preserveInputValue?: boolean;
+    preserveLastSubmittedInput?: boolean;
+  },
+) {
+  const preserveCurrentAction = options?.preserveCurrentAction ?? false;
+  const preserveInputValue = options?.preserveInputValue ?? false;
+  const preserveLastSubmittedInput = options?.preserveLastSubmittedInput ?? false;
+
+  return {
+    ...state,
+    activeAssistantVersionId: null,
+    activeReplyGroupId: null,
+    currentAction: preserveCurrentAction ? state.currentAction : null,
+    errorMessage: null,
+    inputValue: preserveInputValue ? state.inputValue : "",
+    isStreaming: false,
+    lastInterrupted: false,
+    lastSubmittedInput: preserveLastSubmittedInput ? state.lastSubmittedInput : null,
+    messages: normalizeMessages(snapshot.messages),
+    pendingRequestMode: null,
+    pendingUserInput: null,
+    prd: {
+      sections:
+        Object.keys(snapshot.prd_snapshot.sections).length > 0
+          ? normalizePrdSections(snapshot.prd_snapshot.sections)
+          : createInitialPrdSections(),
+    },
+    regenerateRequestId: 0,
+    replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),
+    selectedHistoryGroupId: null,
+    selectedHistoryVersionId: null,
+    streamPhase: "idle" as const,
+    decisionGuidance: deriveGuidanceFromSnapshot(snapshot),
+  };
+}
+
 function upsertReplyVersion(
   group: WorkspaceReplyGroup,
   version: WorkspaceReplyVersion,
@@ -310,6 +355,7 @@ function createInitialState(): Omit<
   | "cancelPendingRequest"
   | "failRequest"
   | "hydrateSession"
+  | "refreshSessionSnapshot"
   | "markInterrupted"
   | "resetError"
   | "selectModelConfig"
@@ -710,32 +756,15 @@ export function createWorkspaceStore() {
         streamPhase: "idle",
       })),
     hydrateSession: (snapshot) =>
-      set((state) => ({
-        ...state,
-        activeAssistantVersionId: null,
-        activeReplyGroupId: null,
-        currentAction: null,
-        errorMessage: null,
-        inputValue: "",
-        isStreaming: false,
-        lastInterrupted: false,
-        lastSubmittedInput: null,
-        messages: normalizeMessages(snapshot.messages),
-        pendingRequestMode: null,
-        pendingUserInput: null,
-        prd: {
-          sections:
-            Object.keys(snapshot.prd_snapshot.sections).length > 0
-              ? normalizePrdSections(snapshot.prd_snapshot.sections)
-              : createInitialPrdSections(),
-        },
-        regenerateRequestId: 0,
-        replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),
-        selectedHistoryGroupId: null,
-        selectedHistoryVersionId: null,
-        streamPhase: "idle",
-        decisionGuidance: deriveGuidanceFromSnapshot(snapshot),
-      })),
+      set((state) => buildHydratedSessionState(state, snapshot)),
+    refreshSessionSnapshot: (snapshot) =>
+      set((state) =>
+        buildHydratedSessionState(state, snapshot, {
+          preserveCurrentAction: true,
+          preserveInputValue: true,
+          preserveLastSubmittedInput: true,
+        }),
+      ),
     markInterrupted: () =>
       set((state) => ({
         ...state,

@@ -3,8 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Send, Square, Loader } from "lucide-react";
 
-import { regenerateMessage } from "../../lib/api";
-import { sendMessage } from "../../lib/api";
+import { getSession, regenerateMessage, sendMessage } from "../../lib/api";
 import { parseEventStream } from "../../lib/sse";
 import { handleStreamError } from "../../lib/stream-error";
 import { useAuthStore } from "../../store/auth-store";
@@ -72,6 +71,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
       if (workspaceStore.getState().isStreaming) {
         workspaceStore.getState().setStreaming(false);
       }
+      await refreshSessionSnapshot();
     } catch (error) {
       const wasAborted = handleStreamError({
         error,
@@ -113,6 +113,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
       if (workspaceStore.getState().isStreaming) {
         workspaceStore.getState().setStreaming(false);
       }
+      await refreshSessionSnapshot();
     } catch (error) {
       const wasAborted = handleStreamError({
         error,
@@ -126,6 +127,15 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
       }
+    }
+  }
+
+  async function refreshSessionSnapshot() {
+    try {
+      const snapshot = await getSession(sessionId, accessToken);
+      workspaceStore.getState().refreshSessionSnapshot(snapshot);
+    } catch (error) {
+      console.error("刷新会话快照失败", error);
     }
   }
 

@@ -69,6 +69,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
       : null;
 
   const hasNoHistory = historyMessages.length === 0 && !isStreaming;
+  const shouldShowGuidance = streamPhase !== "waiting" && !isStreaming;
 
   return (
     <section className="flex flex-col gap-5">
@@ -117,7 +118,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
           isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
           isWaiting={isWaitingForNew}
           latestAssistantMessage={latestAssistantMessage}
-          decisionGuidance={decisionGuidance}
+          decisionGuidance={shouldShowGuidance ? decisionGuidance : null}
           onSelectDecisionGuidanceQuestion={(question) =>
             workspaceStore.getState().setInputValue(question)
           }

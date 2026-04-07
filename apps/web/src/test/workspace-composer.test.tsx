@@ -3,16 +3,60 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationPanel } from "../components/workspace/conversation-panel";
 import { Composer } from "../components/workspace/composer";
-import { regenerateMessage } from "../lib/api";
-import { sendMessage } from "../lib/api";
+import { getSession, regenerateMessage, sendMessage } from "../lib/api";
 import { useToastStore } from "../store/toast-store";
 import { workspaceStore } from "../store/workspace-store";
-import type { DecisionGuidance } from "../lib/types";
+import type { DecisionGuidance, SessionSnapshotResponse } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   sendMessage: vi.fn(),
   regenerateMessage: vi.fn(),
+  getSession: vi.fn(),
 }));
+
+function createSessionSnapshot(
+  overrides: Partial<SessionSnapshotResponse> = {},
+): SessionSnapshotResponse {
+  return {
+    session: {
+      id: "demo-session",
+      user_id: "user-1",
+      title: "AI Co-founder",
+      initial_idea: "idea",
+      created_at: "2026-04-05T00:00:00Z",
+      updated_at: "2026-04-05T00:00:00Z",
+    },
+    state: {
+      idea: "idea",
+      stage_hint: "明确问题",
+    },
+    prd_snapshot: {
+      sections: {},
+    },
+    messages: [],
+    assistant_reply_groups: [],
+    turn_decisions: [],
+    ...overrides,
+  };
+}
+
+function normalizeMessagesForTest(
+  messages: SessionSnapshotResponse["messages"],
+) {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    replyGroupId: message.reply_group_id ?? null,
+    versionNo: message.version_no ?? null,
+    isLatest: message.is_latest ?? null,
+  }));
+}
+
+beforeEach(() => {
+  vi.mocked(getSession).mockReset();
+  vi.mocked(getSession).mockResolvedValue(createSessionSnapshot());
+});
 
 describe("Composer", () => {
   beforeEach(() => {
@@ -217,6 +261,59 @@ describe("Composer", () => {
     expect(screen.getByText("当前暂无可用模型，请联系管理员配置。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
   });
+
+  it("refreshes the workspace from the latest snapshot after sending completes", async () => {
+    const snapshot = createSessionSnapshot({
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "这是最新的生成回复。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    });
+
+    vi.mocked(getSession).mockResolvedValueOnce(snapshot);
+    const encoder = new TextEncoder();
+    vi.mocked(sendMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'event: message.accepted\ndata: {"message_id":"user-1"}\n\n' +
+                'event: assistant.delta\ndata: {"delta":"先收敛 MVP。"}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    );
+
+    render(<Composer sessionId="demo-session" />);
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(getSession)).toHaveBeenCalledWith("demo-session", null);
+    });
+    expect(workspaceStore.getState().messages).toEqual(
+      normalizeMessagesForTest(snapshot.messages),
+    );
+  });
 });
 
 describe("ConversationPanel empty state", () => {
@@ -283,6 +380,124 @@ describe("ConversationPanel regenerate", () => {
       }),
     );
 
+    const postSendSnapshot = createSessionSnapshot({
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "demo-session",
+          user_message_id: "user-1",
+          latest_version_id: "version-1",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "先把问题范围说清楚。",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 2,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "先把问题范围说清楚。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    });
+    const postRegenerateSnapshot = createSessionSnapshot({
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "demo-session",
+          user_message_id: "user-1",
+          latest_version_id: "version-2",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "先把问题范围说清楚。",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 2,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: false,
+            },
+            {
+              id: "version-2",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 2,
+              content: "重新生成后的回复。",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 3,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-2",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "重新生成后的回复。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 2,
+          is_latest: true,
+        },
+      ],
+    });
+    vi.mocked(getSession)
+      .mockResolvedValueOnce(postSendSnapshot)
+      .mockResolvedValueOnce(postRegenerateSnapshot);
+
     render(<ConversationPanel sessionId="demo-session" />);
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "请帮我梳理目标用户。" },
@@ -294,8 +509,9 @@ describe("ConversationPanel regenerate", () => {
       expect(workspaceStore.getState().lastSubmittedInput).toBe("请帮我梳理目标用户。");
     });
 
-    expect(screen.getByRole("button", { name: "重新生成" })).not.toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    const regenerateButton = await screen.findByRole("button", { name: "重新生成" });
+    expect(regenerateButton).not.toBeDisabled();
+    fireEvent.click(regenerateButton);
 
     expect(screen.getByRole("button", { name: "生成中..." })).toBeDisabled();
 
@@ -324,6 +540,12 @@ describe("ConversationPanel regenerate", () => {
       workspaceStore.getState().messages.filter((message) => message.role === "user"),
     ).toHaveLength(1);
     expect(workspaceStore.getState().messages.at(-1)?.content).toContain("重新生成后的回复");
+    await waitFor(() => {
+      expect(vi.mocked(getSession)).toHaveBeenCalledTimes(2);
+    });
+    expect(workspaceStore.getState().messages).toEqual(
+      normalizeMessagesForTest(postRegenerateSnapshot.messages),
+    );
   });
 
   it("hides regenerate when no selected model is available", () => {
@@ -354,6 +576,56 @@ describe("ConversationPanel regenerate", () => {
   it("aborts regenerateMessage when stopping an in-flight regenerate request", async () => {
     const encoder = new TextEncoder();
     let capturedSignal: AbortSignal | undefined;
+    const postSendSnapshot = createSessionSnapshot({
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "demo-session",
+          user_message_id: "user-1",
+          latest_version_id: "version-1",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "初版回复",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 2,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "初版回复",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    });
 
     vi.mocked(sendMessage).mockResolvedValue(
       new ReadableStream<Uint8Array>({
@@ -371,6 +643,7 @@ describe("ConversationPanel regenerate", () => {
         },
       }),
     );
+    vi.mocked(getSession).mockResolvedValueOnce(postSendSnapshot);
     vi.mocked(regenerateMessage).mockImplementation(async (_sessionId, _userMessageId, _token, signal) => {
       capturedSignal = signal;
       return new Promise<ReadableStream<Uint8Array>>((_, reject) => {
@@ -386,11 +659,10 @@ describe("ConversationPanel regenerate", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "重新生成" })).not.toBeDisabled();
-    });
+    const regenerateButton = await screen.findByRole("button", { name: "重新生成" });
+    expect(regenerateButton).not.toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    fireEvent.click(regenerateButton);
     fireEvent.click(await screen.findByRole("button", { name: "停止生成" }));
 
     await waitFor(() => {
@@ -537,5 +809,59 @@ describe("ConversationPanel decision guidance", () => {
     });
     expect(screen.getByText("先讲清问题")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送消息" })).toBeInTheDocument();
+  });
+
+  it("hides decision guidance while streaming", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "choose",
+      strategyLabel: "取舍中",
+      strategyReason: "需要先确定空之间的优先级",
+      nextBestQuestions: guidanceQuestions,
+    };
+
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      messages: [
+        { id: "user-1", role: "user", content: "先讲清问题" },
+        { id: "assistant-1", role: "assistant", content: "我们先判断取舍" },
+      ],
+      decisionGuidance: guidance,
+      isStreaming: true,
+      streamPhase: "streaming",
+    });
+
+    render(<ConversationPanel sessionId="session-1" />);
+
+    guidanceQuestions.forEach((question) => {
+      expect(screen.queryByRole("button", { name: question })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
+  });
+
+  it("hides decision guidance while waiting", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "choose",
+      strategyLabel: "取舍中",
+      strategyReason: "需要先确定空之间的优先级",
+      nextBestQuestions: guidanceQuestions,
+    };
+
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      messages: [
+        { id: "user-1", role: "user", content: "先讲清问题" },
+        { id: "assistant-1", role: "assistant", content: "我们先判断取舍" },
+      ],
+      decisionGuidance: guidance,
+      streamPhase: "waiting",
+      pendingRequestMode: "new",
+    });
+
+    render(<ConversationPanel sessionId="session-1" />);
+
+    guidanceQuestions.forEach((question) => {
+      expect(screen.queryByRole("button", { name: question })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
   });
 });
