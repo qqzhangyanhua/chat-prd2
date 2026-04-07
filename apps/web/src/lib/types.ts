@@ -75,6 +75,48 @@ export interface AssistantReplyGroup {
   versions: AssistantReplyVersion[];
 }
 
+export type DecisionStrategy = "clarify" | "choose" | "converge" | "confirm";
+
+export interface AgentTurnDecisionSectionMeta {
+  conversation_strategy?: string;
+  strategy_label?: string;
+  strategy_reason?: string;
+  next_best_questions?: unknown[];
+}
+
+export interface AgentTurnDecisionSection {
+  key?: string;
+  title?: string;
+  content?: string;
+  meta?: AgentTurnDecisionSectionMeta;
+}
+
+export interface AgentTurnDecisionStatePatch {
+  conversation_strategy?: string;
+  strategy_label?: string;
+  strategy_reason?: string;
+  next_best_questions?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface AgentTurnDecision {
+  id: string;
+  session_id: string;
+  user_message_id?: string | null;
+  phase?: string;
+  next_move?: string;
+  created_at?: string | null;
+  decision_sections?: AgentTurnDecisionSection[];
+  state_patch_json?: AgentTurnDecisionStatePatch;
+}
+
+export interface DecisionGuidance {
+  conversationStrategy: DecisionStrategy;
+  strategyLabel: string;
+  strategyReason: string | null;
+  nextBestQuestions: string[];
+}
+
 export interface SessionSnapshotResponse {
   session: SessionResponse;
   state: StateSnapshotResponse;
@@ -83,6 +125,7 @@ export interface SessionSnapshotResponse {
   };
   messages: ConversationMessage[];
   assistant_reply_groups?: AssistantReplyGroup[];
+  turn_decisions?: AgentTurnDecision[];
 }
 
 export interface ExportResponse {

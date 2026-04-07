@@ -2,6 +2,8 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type {
+  AgentTurnDecision,
+  DecisionGuidance,
   AssistantReplyGroup,
   AssistantReplyVersion,
   ConversationMessage,
@@ -47,6 +49,7 @@ interface WorkspaceState {
   pendingUserInput: string | null;
   pendingRequestMode: RequestMode | null;
   prd: PrdState;
+  decisionGuidance: DecisionGuidance | null;
   regenerateRequestId: number;
   replyGroups: Record<string, WorkspaceReplyGroup>;
   selectedModelConfigId: string | null;
@@ -118,6 +121,119 @@ function normalizePrdSections(
   });
 
   return Object.fromEntries(normalizedEntries);
+}
+
+const STRATEGY_LABEL_MAP: Record<DecisionStrategy, string> = {
+  clarify: "澄清中",
+  choose: "取舍中",
+  converge: "收敛中",
+  confirm: "确认中",
+};
+
+function normalizeBestQuestions(items?: unknown[]): string[] {
+  if (!items?.length) {
+    return [];
+  }
+
+  const strings = items.filter((item): item is string => typeof item === "string");
+  if (!strings.length) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const raw of strings) {
+    const next = raw?.trim();
+    if (!next || seen.has(next)) {
+      continue;
+    }
+    seen.add(next);
+    normalized.push(next);
+    if (normalized.length >= 4) {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+function pickLatestDecision(decisions?: AgentTurnDecision[]): AgentTurnDecision | null {
+  if (!decisions?.length) {
+    return null;
+  }
+
+  const parsedDecisions = decisions.map((decision, index) => {
+    const parsed = decision.created_at ? Date.parse(decision.created_at) : NaN;
+    return { decision, timestamp: Number.isFinite(parsed) ? parsed : NaN, fallbackIndex: index };
+  });
+
+  const sorted = [...parsedDecisions].sort((a, b) => {
+    const aValid = Number.isFinite(a.timestamp);
+    const bValid = Number.isFinite(b.timestamp);
+    if (aValid && bValid) {
+      return b.timestamp - a.timestamp;
+    }
+    if (!aValid && !bValid) {
+      return b.fallbackIndex - a.fallbackIndex;
+    }
+    return aValid ? -1 : 1;
+  });
+
+  return sorted[0].decision;
+}
+
+function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance | null {
+  const judgementMeta = decision.decision_sections?.find((section) => section.key === "judgement")?.meta;
+  const nextStepMeta = decision.decision_sections?.find((section) => section.key === "next_step")?.meta;
+  const explicitStrategy =
+    judgementMeta?.conversation_strategy ?? deductionStrategyFromState(decision.state_patch_json);
+
+  const conversationStrategy = mapStrategy(explicitStrategy);
+  const strategyLabelSource =
+    judgementMeta?.strategy_label;
+  const mappedLabel = STRATEGY_LABEL_MAP[conversationStrategy];
+  const strategyLabel = strategyLabelSource ?? mappedLabel ?? "继续推进";
+  const strategyReason =
+    judgementMeta?.strategy_reason ?? decision.state_patch_json?.strategy_reason ?? null;
+
+  const metaNextQuestions = nextStepMeta?.next_best_questions;
+  const fallbackNextQuestions = decision.state_patch_json?.next_best_questions;
+  const nextBestQuestions = normalizeBestQuestions(metaNextQuestions ?? fallbackNextQuestions);
+
+  if (!nextBestQuestions.length) {
+    return null;
+  }
+
+  return {
+    conversationStrategy,
+    strategyLabel,
+    strategyReason,
+    nextBestQuestions,
+  };
+}
+
+function deductionStrategyFromState(statePatch?: AgentTurnDecision["state_patch_json"]): string | undefined {
+  return statePatch?.conversation_strategy;
+}
+
+function mapStrategy(value?: string): DecisionStrategy {
+  if (!value) {
+    return "clarify";
+  }
+  if (value === "clarify" || value === "choose" || value === "converge" || value === "confirm") {
+    return value;
+  }
+  return "clarify";
+}
+
+function deriveGuidanceFromSnapshot(snapshot: SessionSnapshotResponse): DecisionGuidance | null {
+  const latest = pickLatestDecision(snapshot.turn_decisions ?? []);
+  if (!latest) {
+    return null;
+  }
+
+  return deriveDecisionGuidance(latest);
 }
 
 function normalizeMessages(messages: ConversationMessage[]): WorkspaceMessage[] {
@@ -238,6 +354,7 @@ function createInitialState(): Omit<
     selectedHistoryGroupId: null,
     selectedHistoryVersionId: null,
     streamPhase: "idle",
+    decisionGuidance: null,
   };
 }
 
@@ -619,6 +736,7 @@ export function createWorkspaceStore() {
         selectedHistoryGroupId: null,
         selectedHistoryVersionId: null,
         streamPhase: "idle",
+        decisionGuidance: deriveGuidanceFromSnapshot(snapshot),
       })),
     markInterrupted: () =>
       set((state) => ({

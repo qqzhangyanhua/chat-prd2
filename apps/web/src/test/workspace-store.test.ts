@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
 
+import type { AgentTurnDecision, SessionSnapshotResponse } from "../lib/types";
 import { parseEventStream } from "../lib/sse";
 import { createWorkspaceStore } from "../store/workspace-store";
+
+function buildSnapshotWithDecisions(decisions?: AgentTurnDecision[]): SessionSnapshotResponse {
+  return {
+    session: {
+      id: "session-1",
+      user_id: "user-1",
+      title: "AI Co-founder",
+      initial_idea: "idea",
+      created_at: "2026-04-05T00:00:00Z",
+      updated_at: "2026-04-05T00:00:00Z",
+    },
+    state: {},
+    prd_snapshot: {
+      sections: {},
+    },
+    messages: [],
+    assistant_reply_groups: [],
+    turn_decisions: decisions,
+  };
+}
 
 describe("workspace store", () => {
   it("updates prd panel when prd.updated event arrives", () => {
@@ -686,6 +707,275 @@ describe("workspace store", () => {
 
     expect(store.getState().activeAssistantVersionId).toBe("version-2");
     expect(store.getState().replyGroups["group-1"]?.latestVersionId).not.toBe("version-1");
+  });
+});
+
+describe("decision guidance", () => {
+  it("hydrates guidance from judgement and next_step sections", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-1",
+        session_id: "session-1",
+        created_at: "2026-04-07T10:00:00Z",
+        decision_sections: [
+          {
+            key: "judgement",
+            meta: {
+              conversation_strategy: "converge",
+              strategy_label: "收敛中",
+              strategy_reason: "先收敛核心假设",
+            },
+          },
+          {
+            key: "next_step",
+            meta: {
+              next_best_questions: ["如果只能选一个主线怎么办？", "请告诉我下一步动作"],
+            },
+          },
+        ],
+        state_patch_json: {
+          conversation_strategy: "choose",
+          strategy_reason: "不应该使用",
+        },
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "converge",
+      strategyLabel: "收敛中",
+      strategyReason: "先收敛核心假设",
+      nextBestQuestions: [
+        "如果只能选一个主线怎么办？",
+        "请告诉我下一步动作",
+      ],
+    });
+  });
+
+  it("falls back to state_patch_json when sections are incomplete and prefers judgement reason", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-2",
+        session_id: "session-1",
+        created_at: "2026-04-07T11:00:00Z",
+        decision_sections: [
+          {
+            key: "judgement",
+            meta: {
+              strategy_reason: "判断来自 meta",
+            },
+          },
+        ],
+        state_patch_json: {
+          conversation_strategy: "choose",
+          next_best_questions: [
+            " 先明确主线 ",
+            "再问对方的关键指标",
+            "再问对方的关键指标",
+            "",
+            "再确认细节",
+          ],
+        },
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "choose",
+      strategyLabel: "取舍中",
+      strategyReason: "判断来自 meta",
+      nextBestQuestions: [
+        "先明确主线",
+        "再问对方的关键指标",
+        "再确认细节",
+      ],
+    });
+  });
+
+  it("selects the latest decision by created_at and falls back to the last entry when timestamps are invalid", () => {
+    const newestStore = createWorkspaceStore();
+    const newestSnapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-old",
+        session_id: "session-1",
+        created_at: "2026-04-07T09:00:00Z",
+        state_patch_json: {
+          conversation_strategy: "clarify",
+          strategy_reason: "老决策",
+          next_best_questions: ["老推荐"],
+        },
+      },
+      {
+        id: "decision-new",
+        session_id: "session-1",
+        created_at: "2026-04-07T12:00:00Z",
+        decision_sections: [
+          {
+            key: "judgement",
+            meta: {
+              conversation_strategy: "confirm",
+              strategy_label: "确认中",
+              strategy_reason: "最新决策",
+            },
+          },
+          {
+            key: "next_step",
+            meta: {
+              next_best_questions: ["请确认这个需求清单"],
+            },
+          },
+        ],
+      },
+    ]);
+
+    newestStore.getState().hydrateSession(newestSnapshot);
+    expect(newestStore.getState().decisionGuidance?.strategyReason).toBe("最新决策");
+    expect(newestStore.getState().decisionGuidance?.conversationStrategy).toBe("confirm");
+
+    const mixStore = createWorkspaceStore();
+    const mixSnapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-mix-old",
+        session_id: "session-1",
+        created_at: null,
+        state_patch_json: {
+          conversation_strategy: "clarify",
+          strategy_reason: "不带时间戳",
+        },
+      },
+      {
+        id: "decision-mix-new",
+        session_id: "session-1",
+        created_at: "2026-04-07T20:00:00Z",
+        state_patch_json: {
+          conversation_strategy: "converge",
+          strategy_reason: "最新时间",
+          next_best_questions: ["继续推进"],
+        },
+      },
+    ]);
+
+    mixStore.getState().hydrateSession(mixSnapshot);
+    expect(mixStore.getState().decisionGuidance?.strategyReason).toBe("最新时间");
+
+    const fallbackStore = createWorkspaceStore();
+    const fallbackSnapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-invalid",
+        session_id: "session-1",
+        created_at: "not-a-date",
+        state_patch_json: {
+          conversation_strategy: "choose",
+          strategy_reason: "坏时间戳",
+          next_best_questions: ["从最后一个决策"],
+        },
+      },
+      {
+        id: "decision-last",
+        session_id: "session-1",
+        state_patch_json: {
+          conversation_strategy: "converge",
+          strategy_reason: "数组尾部",
+          next_best_questions: ["优先参考最后一条"],
+        },
+        decision_sections: [
+          {
+            key: "next_step",
+            meta: {
+              next_best_questions: ["优先参考最后一条"],
+            },
+          },
+        ],
+      },
+    ]);
+
+    fallbackStore.getState().hydrateSession(fallbackSnapshot);
+    expect(fallbackStore.getState().decisionGuidance?.strategyReason).toBe("数组尾部");
+  });
+
+  it("normalizes next best questions, filters/reduces duplicates, and defaults strategy values", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-normalize",
+        session_id: "session-1",
+        created_at: "2026-04-07T13:00:00Z",
+        state_patch_json: {
+          next_best_questions: [
+            " 先问对方的关键指标  ",
+            "",
+            "先问对方的关键指标",
+            "再确认痛点",
+            "再确认预算",
+            "再确认交付",
+            "保持开放",
+          ],
+        },
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "clarify",
+      strategyLabel: "澄清中",
+      strategyReason: null,
+      nextBestQuestions: [
+        "先问对方的关键指标",
+        "再确认痛点",
+        "再确认预算",
+        "再确认交付",
+      ],
+    });
+  });
+
+  it("drops non-string recommendations instead of throwing", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-non-string",
+        session_id: "session-1",
+        created_at: "2026-04-07T16:00:00Z",
+        state_patch_json: {
+          next_best_questions: [
+            "可用问题",
+            null,
+            42,
+            { text: "结构体" },
+            "最后一个",
+          ],
+        },
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance?.nextBestQuestions).toEqual([
+      "可用问题",
+      "最后一个",
+    ]);
+  });
+
+  it("does not generate guidance when normalized recommendations are empty", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-empty",
+        session_id: "session-1",
+        created_at: "2026-04-07T14:00:00Z",
+        state_patch_json: {
+          next_best_questions: ["", "   "],
+        },
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance).toBeNull();
   });
 });
 
