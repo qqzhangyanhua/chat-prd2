@@ -320,4 +320,71 @@ describe("WorkspaceSessionShell", () => {
       expect(workspaceStore.getState().replyGroups["group-1"]?.latestVersionId).toBe("version-2");
     });
   });
+
+  it("hydrates turn decision guidance from the session snapshot", async () => {
+    getSessionMock.mockResolvedValueOnce({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+      turn_decisions: [
+        {
+          id: "decision-1",
+          session_id: "session-1",
+          created_at: "2026-04-07T10:00:00Z",
+          decision_sections: [
+            {
+              key: "judgement",
+              meta: {
+                conversation_strategy: "confirm",
+                strategy_label: "确认中",
+                strategy_reason: "需要先确认边界",
+              },
+            },
+            {
+              key: "next_step",
+              meta: {
+                next_best_questions: [
+                  "确认当前目标用户是哪个人群？",
+                  "确认下一步验证的关键假设。",
+                ],
+              },
+            },
+          ],
+          state_patch_json: {
+            conversation_strategy: "confirm",
+            strategy_reason: "回退原因",
+            next_best_questions: ["回退推荐"],
+          },
+        },
+      ],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().decisionGuidance).toEqual({
+        conversationStrategy: "confirm",
+        strategyLabel: "确认中",
+        strategyReason: "需要先确认边界",
+        nextBestQuestions: [
+          "确认当前目标用户是哪个人群？",
+          "确认下一步验证的关键假设。",
+        ],
+      });
+    });
+  });
 });

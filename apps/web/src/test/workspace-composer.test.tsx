@@ -469,3 +469,66 @@ describe("ConversationPanel regenerate", () => {
     });
   });
 });
+
+describe("ConversationPanel decision guidance", () => {
+  const openaiConfig = {
+    id: "model-openai",
+    name: "OpenAI GPT-4.1",
+    model: "gpt-4.1",
+  };
+
+  beforeEach(() => {
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setAvailableModelConfigs([openaiConfig]);
+  });
+
+  it("shows the latest guidance and populates the input when a recommendation is clicked", () => {
+    const guidance = {
+      conversationStrategy: "choose",
+      strategyLabel: "取舍中",
+      strategyReason: "需要先确定空之间的优先级",
+      nextBestQuestions: [
+        "确认当前目标用户是哪个人群？",
+        "确认下一步验证的关键假设。",
+      ],
+    };
+
+    workspaceStore.setState({
+      messages: [
+        { id: "user-1", role: "user", content: "先讲清问题" },
+        { id: "assistant-1", role: "assistant", content: "我们先判断取舍" },
+      ],
+      decisionGuidance: guidance,
+    });
+    workspaceStore.getState().setInputValue("已有草稿");
+
+    render(<ConversationPanel sessionId="session-1" />);
+
+    expect(screen.getByText("下一步建议")).toBeInTheDocument();
+    expect(screen.getByText("取舍中")).toBeInTheDocument();
+    expect(screen.getByText(guidance.strategyReason!)).toBeInTheDocument();
+    guidance.nextBestQuestions.forEach((question) => {
+      expect(screen.getByRole("button", { name: question })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: guidance.nextBestQuestions[0] }));
+    expect(openaiConfig).toBeDefined();
+    expect(workspaceStore.getState().inputValue).toBe(guidance.nextBestQuestions[0]);
+  });
+
+  it("keeps existing history and controls when no guidance is available", () => {
+    workspaceStore.setState({
+      messages: [
+        { id: "user-1", role: "user", content: "先讲清问题" },
+        { id: "assistant-1", role: "assistant", content: "我们先判断取舍" },
+      ],
+      decisionGuidance: null,
+    });
+
+    render(<ConversationPanel sessionId="session-1" />);
+
+    expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
+    expect(screen.getByText("先讲清问题")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送消息" })).toBeInTheDocument();
+  });
+});
