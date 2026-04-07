@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StateSnapshot(BaseModel):
@@ -21,3 +21,15 @@ class StateSnapshot(BaseModel):
     decisions: list[str]
     open_questions: list[str]
     prd_snapshot: dict[str, Any]
+    current_phase: str = Field(default="idea_clarification")
+    conversation_strategy: str = Field(default="clarify")
+    strategy_reason: str | None = None
+    phase_goal: str | None = None
+    working_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    decision_readiness: str | None = None
+    pm_risk_flags: list[str] = Field(default_factory=list)
+    recommended_directions: list[dict[str, Any]] = Field(default_factory=list)
+    pending_confirmations: list[str] = Field(default_factory=list)
+    rejected_options: list[str] = Field(default_factory=list)
+    next_best_questions: list[str] = Field(default_factory=list)

@@ -167,6 +167,37 @@ class AssistantReplyVersion(Base):
     )
 
 
+class AgentTurnDecision(Base):
+    __tablename__ = "agent_turn_decisions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("project_sessions.id"),
+        index=True,
+    )
+    user_message_id: Mapped[str] = mapped_column(
+        ForeignKey("conversation_messages.id"),
+        index=True,
+        unique=True,
+    )
+    phase: Mapped[str] = mapped_column(String)
+    phase_goal: Mapped[str | None] = mapped_column(String, nullable=True)
+    understanding_summary: Mapped[str] = mapped_column(Text)
+    assumptions_json: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    risk_flags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    next_move: Mapped[str] = mapped_column(String)
+    suggestions_json: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    recommendation_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    needs_confirmation_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    confidence: Mapped[str] = mapped_column(String)
+    state_patch_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    prd_patch_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class LLMModelConfig(Base):
     __tablename__ = "llm_model_configs"
 

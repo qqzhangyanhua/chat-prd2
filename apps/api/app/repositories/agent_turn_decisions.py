@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+from uuid import uuid4
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.agent.types import TurnDecision
+from app.db.models import AgentTurnDecision, ConversationMessage
+
+
+def create_turn_decision(
+    db: Session,
+    session_id: str,
+    user_message_id: str,
+    turn_decision: TurnDecision,
+) -> AgentTurnDecision:
+    user_message = db.execute(
+        select(ConversationMessage).where(ConversationMessage.id == user_message_id)
+    ).scalar_one_or_none()
+    if user_message is None:
+        raise ValueError("User message does not exist")
+    if user_message.session_id != session_id:
+        raise ValueError("User message does not belong to session")
+    if user_message.role != "user":
+        raise ValueError("User message must have user role")
+
+    decision = AgentTurnDecision(
+        id=str(uuid4()),
+        session_id=session_id,
+        user_message_id=user_message_id,
+        phase=turn_decision.phase,
+        phase_goal=turn_decision.phase_goal,
+        understanding_summary=str(turn_decision.understanding.get("summary") or ""),
+        assumptions_json=turn_decision.assumptions,
+        risk_flags_json=turn_decision.pm_risk_flags,
+        next_move=turn_decision.next_move,
+        suggestions_json=[asdict(suggestion) for suggestion in turn_decision.suggestions],
+        recommendation_json=turn_decision.recommendation,
+        needs_confirmation_json=turn_decision.needs_confirmation,
+        confidence=turn_decision.confidence,
+        state_patch_json=turn_decision.state_patch,
+        prd_patch_json=turn_decision.prd_patch,
+    )
+    db.add(decision)
+    db.flush()
+    return decision
+
+
+def get_latest_for_user_message(db: Session, user_message_id: str) -> AgentTurnDecision | None:
+    statement = (
+        select(AgentTurnDecision)
+        .where(AgentTurnDecision.user_message_id == user_message_id)
+        .order_by(AgentTurnDecision.created_at.desc())
+        .limit(1)
+    )
+    return db.execute(statement).scalar_one_or_none()

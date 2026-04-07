@@ -155,6 +155,25 @@ def _extract_chat_completion_content(body: Any) -> str | None:
     return _extract_text_content(message.get("content"))
 
 
+def _extract_json_object_content(body: Any) -> dict[str, Any]:
+    content = _extract_chat_completion_content(body)
+    if not isinstance(content, str):
+        logger.warning("上游结构化提取响应结构不兼容: body_preview=%s", _preview_body(body))
+        raise ModelGatewayError("上游结构化提取响应格式不兼容")
+
+    try:
+        parsed = json.loads(content)
+    except ValueError as exc:
+        logger.warning("上游结构化提取结果不是合法 JSON: content_preview=%s", _preview_text(content))
+        raise ModelGatewayError("上游结构化提取结果不是合法 JSON") from exc
+
+    if not isinstance(parsed, dict):
+        logger.warning("上游结构化提取结果不是对象: content_preview=%s", _preview_body(parsed))
+        raise ModelGatewayError("上游结构化提取结果不是对象")
+
+    return parsed
+
+
 def _extract_stream_delta(body: Any) -> str:
     if not isinstance(body, dict):
         return ""
@@ -336,3 +355,63 @@ def generate_reply(
         raise ModelGatewayError("上游响应没有可用文本")
 
     return content
+
+
+def generate_structured_extraction(
+    base_url: str,
+    api_key: str,
+    model: str,
+    state: dict[str, Any],
+    target_section: str | None,
+    user_input: str,
+) -> dict[str, Any]:
+    url = _build_chat_completions_url(base_url)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 PRD 结构化提取器。"
+                "你只能返回 JSON object。"
+                "输出字段只允许 should_update、confidence、reasoning_summary、state_patch、prd_patch。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "state": state,
+                    "target_section": target_section,
+                    "user_input": user_input,
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+    payload = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        response = httpx.post(url, headers=headers, json=payload, timeout=30.0)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_for_gateway_http_error(exc, url)
+    except httpx.TimeoutException as exc:
+        logger.warning("调用上游结构化提取超时: url=%s error=%s", url, exc)
+        raise ModelGatewayError("调用上游结构化提取超时") from exc
+    except httpx.RequestError as exc:
+        logger.warning("调用上游结构化提取网络异常: url=%s error=%s", url, exc)
+        raise ModelGatewayError("调用上游结构化提取网络异常") from exc
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        _raise_for_non_json_response(response, url, exc)
+
+    return _extract_json_object_content(body)

@@ -9,10 +9,12 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.agent.runtime import run_agent
+from app.agent.extractor import first_missing_section, normalize_model_extraction_result
 from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
 from app.db.models import LLMModelConfig
 from app.db.models import ProjectSession
+from app.repositories import agent_turn_decisions as agent_turn_decisions_repository
 from app.repositories import assistant_reply_groups as assistant_reply_groups_repository
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
 from app.repositories import messages as messages_repository
@@ -23,8 +25,10 @@ from app.schemas.message import AssistantDeltaEventData
 from app.schemas.message import AssistantDoneEventData
 from app.schemas.message import AssistantVersionStartedEventData
 from app.schemas.message import MessageAcceptedEventData
+from app.schemas.message import PrdUpdatedEventData
 from app.schemas.message import ReplyGroupCreatedEventData
 from app.services.model_gateway import ModelGatewayError, generate_reply
+from app.services.model_gateway import generate_structured_extraction
 from app.services.model_gateway import open_reply_stream
 
 
@@ -54,6 +58,7 @@ class PreparedMessageStream:
     assistant_version_id: str
     next_version_no: int
     action: dict
+    turn_decision: object
     state: dict
     state_patch: dict
     prd_patch: dict
@@ -78,6 +83,91 @@ def apply_prd_patch(current_state: dict, patch: dict) -> dict:
     sections = current_state.get("prd_snapshot", {}).get("sections", {})
     current_state["prd_snapshot"]["sections"] = {**sections, **patch}
     return current_state
+
+
+def _preview_prd_sections(state: dict, patch: dict) -> dict:
+    sections = state.get("prd_snapshot", {}).get("sections", {})
+    if not patch:
+        return sections
+    return {**sections, **patch}
+
+
+def _require_turn_decision(agent_result: object) -> object:
+    turn_decision = getattr(agent_result, "turn_decision", None)
+    if turn_decision is None:
+        raise RuntimeError("Agent result must include turn_decision")
+    return turn_decision
+
+
+def _dedupe_str_list(items: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def _build_decision_state_patch(turn_decision: object) -> dict:
+    suggestions = getattr(turn_decision, "suggestions", []) or []
+    recommendation = getattr(turn_decision, "recommendation", None)
+    recommended_directions = [asdict(item) for item in suggestions]
+    if recommendation and not any(
+        item.get("label") == recommendation.get("label")
+        for item in recommended_directions
+    ):
+        recommended_directions.insert(0, recommendation)
+
+    assumptions = getattr(turn_decision, "assumptions", []) or []
+    return {
+        "current_phase": getattr(turn_decision, "phase", "idea_clarification"),
+        "conversation_strategy": getattr(turn_decision, "conversation_strategy", "clarify"),
+        "strategy_reason": getattr(turn_decision, "strategy_reason", None),
+        "phase_goal": getattr(turn_decision, "phase_goal", None),
+        "working_hypotheses": assumptions,
+        "pm_risk_flags": _dedupe_str_list(list(getattr(turn_decision, "pm_risk_flags", []) or [])),
+        "recommended_directions": recommended_directions,
+        "pending_confirmations": list(getattr(turn_decision, "needs_confirmation", []) or []),
+        "next_best_questions": list(getattr(turn_decision, "next_best_questions", []) or []),
+    }
+
+
+def _merge_state_patch_with_decision(state_patch: dict, turn_decision: object) -> dict:
+    decision_patch = _build_decision_state_patch(turn_decision)
+    return {**decision_patch, **state_patch}
+
+
+def _resolve_model_extraction_result(
+    state: dict,
+    user_input: str,
+    model_config: LLMModelConfig,
+) -> object | None:
+    target_section = first_missing_section(state)
+    if target_section is None:
+        return None
+
+    try:
+        payload = generate_structured_extraction(
+            base_url=model_config.base_url,
+            api_key=model_config.api_key,
+            model=model_config.model,
+            state=state,
+            target_section=target_section,
+            user_input=user_input,
+        )
+    except ModelGatewayError as exc:
+        logger.warning(
+            "结构化提取失败，回退规则结果: model_config_id=%s model=%s base_url=%s detail=%s",
+            model_config.id,
+            model_config.model,
+            model_config.base_url,
+            exc,
+        )
+        return None
+
+    return normalize_model_extraction_result(payload)
 
 
 def _get_enabled_model_config(db: Session, model_config_id: str) -> LLMModelConfig:
@@ -162,11 +252,13 @@ def _persist_assistant_reply_and_version(
     reply: str,
     model_meta: dict[str, str],
     action: dict,
+    turn_decision: object,
     state: dict,
     state_patch: dict,
     prd_patch: dict,
 ) -> tuple[str, str, int, str, int]:
-    new_state = apply_state_patch(state, state_patch)
+    merged_state_patch = _merge_state_patch_with_decision(state_patch, turn_decision)
+    new_state = apply_state_patch(state, merged_state_patch)
     new_state = apply_prd_patch(new_state, prd_patch)
 
     latest_state_version = state_repository.get_latest_state_version(db, session_id)
@@ -210,6 +302,12 @@ def _persist_assistant_reply_and_version(
     db.flush()
     reply_group.latest_version_id = assistant_version_id
     db.add(reply_group)
+    agent_turn_decisions_repository.create_turn_decision(
+        db=db,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        turn_decision=turn_decision,
+    )
     messages_repository.touch_session_activity(db, session)
     db.commit()
     return (
@@ -242,7 +340,9 @@ def _prepare_message_stream(
         messages_repository.touch_session_activity(db, session)
 
         state = state_repository.get_latest_state(db, session_id)
-        agent_result = run_agent(state, content)
+        model_extraction_result = _resolve_model_extraction_result(state, content, model_config)
+        agent_result = run_agent(state, content, model_result=model_extraction_result)
+        turn_decision = _require_turn_decision(agent_result)
         reply_stream = open_reply_stream(
             base_url=model_config.base_url,
             api_key=model_config.api_key,
@@ -274,6 +374,7 @@ def _prepare_message_stream(
         assistant_version_id=str(uuid4()),
         next_version_no=1,
         action=asdict(agent_result.action),
+        turn_decision=turn_decision,
         state=state,
         state_patch=agent_result.state_patch,
         prd_patch=agent_result.prd_patch,
@@ -311,7 +412,8 @@ def _prepare_regenerate_stream(
 
     try:
         state = state_repository.get_latest_state(db, session_id)
-        agent_result = run_agent(state, user_message.content)
+        agent_result = run_agent(state, "继续")
+        turn_decision = _require_turn_decision(agent_result)
         reply_stream = open_reply_stream(
             base_url=model_config.base_url,
             api_key=model_config.api_key,
@@ -343,6 +445,7 @@ def _prepare_regenerate_stream(
         assistant_version_id=str(uuid4()),
         next_version_no=next_version_no,
         action=asdict(agent_result.action),
+        turn_decision=turn_decision,
         state=state,
         state_patch=agent_result.state_patch,
         prd_patch=agent_result.prd_patch,
@@ -373,7 +476,9 @@ def handle_user_message(
         messages_repository.touch_session_activity(db, session)
 
         state = state_repository.get_latest_state(db, session_id)
-        agent_result = run_agent(state, content)
+        model_extraction_result = _resolve_model_extraction_result(state, content, model_config)
+        agent_result = run_agent(state, content, model_result=model_extraction_result)
+        turn_decision = _require_turn_decision(agent_result)
         reply = generate_reply(
             base_url=model_config.base_url,
             api_key=model_config.api_key,
@@ -392,6 +497,7 @@ def handle_user_message(
             reply=reply,
             model_meta=model_meta,
             action=asdict(agent_result.action),
+            turn_decision=turn_decision,
             state=state,
             state_patch=agent_result.state_patch,
             prd_patch=agent_result.prd_patch,
@@ -519,6 +625,7 @@ def stream_user_message_events(
                 reply="".join(reply_parts),
                 model_meta=prepared.model_meta,
                 action=prepared.action,
+                turn_decision=prepared.turn_decision,
                 state=prepared.state,
                 state_patch=prepared.state_patch,
                 prd_patch=prepared.prd_patch,
@@ -527,6 +634,12 @@ def stream_user_message_events(
             db.rollback()
             raise
 
+        yield MessageStreamEvent(
+            type="prd.updated",
+            data=PrdUpdatedEventData(
+                sections=_preview_prd_sections(prepared.state, prepared.prd_patch),
+            ).model_dump(),
+        )
         yield MessageStreamEvent(
             type="assistant.done",
             data=AssistantDoneEventData(
@@ -562,18 +675,12 @@ def _persist_regenerated_reply_version(
     state_patch: dict,
     prd_patch: dict,
 ) -> tuple[str, int, int]:
-    new_state = apply_state_patch(state, state_patch)
-    new_state = apply_prd_patch(new_state, prd_patch)
-
     latest_state_version = state_repository.get_latest_state_version(db, session_id)
-    next_state_version_no = (latest_state_version.version + 1) if latest_state_version else 1
-    state_version = state_repository.create_state_version(db, session_id, next_state_version_no, new_state)
-    prd_repository.create_prd_snapshot(
-        db,
-        session_id,
-        next_state_version_no,
-        new_state.get("prd_snapshot", {}).get("sections", {}),
-    )
+    if latest_state_version is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="State snapshot not found")
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
+    if latest_prd_snapshot is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PRD snapshot not found")
 
     reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(db=db, user_message_id=user_message_id)
     if reply_group is None:
@@ -597,8 +704,8 @@ def _persist_regenerated_reply_version(
         content=reply,
         action_snapshot=action,
         model_meta=model_meta,
-        state_version_id=state_version.id,
-        prd_snapshot_version=next_state_version_no,
+        state_version_id=latest_state_version.id,
+        prd_snapshot_version=latest_prd_snapshot.version,
     )
     db.add(created_version)
     db.flush()
@@ -614,7 +721,7 @@ def _persist_regenerated_reply_version(
     db.add(assistant_message)
     messages_repository.touch_session_activity(db, session)
     db.commit()
-    return assistant_version_id, version_no, next_state_version_no
+    return assistant_version_id, version_no, latest_prd_snapshot.version
 
 
 def stream_regenerate_message_events(

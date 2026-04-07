@@ -1,8 +1,12 @@
+from types import SimpleNamespace
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.db.models import AssistantReplyGroup
+from app.agent.reply_composer import build_reply_sections
+from app.db.models import AgentTurnDecision, AssistantReplyGroup
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
 from app.repositories import messages as messages_repository
 from app.repositories import prd as prd_repository
@@ -10,6 +14,8 @@ from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 from app.schemas.message import AssistantReplyGroupResponse
 from app.schemas.message import AssistantReplyVersionResponse
+from app.schemas.message import AgentTurnDecisionResponse
+from app.schemas.message import AgentTurnDecisionSectionResponse
 from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
 from app.schemas.session import (
@@ -22,14 +28,37 @@ from app.schemas.session import (
 from app.schemas.state import StateSnapshot
 
 
-def _list_assistant_reply_groups(db: Session, session_id: str) -> list[AssistantReplyGroupResponse]:
-    groups = list(
-        db.execute(
-            select(AssistantReplyGroup)
-            .where(AssistantReplyGroup.session_id == session_id)
-            .order_by(AssistantReplyGroup.created_at.asc()),
-        ).scalars().all(),
+SCHEMA_OUTDATED_DETAIL = "数据库结构版本过旧，请先执行 alembic upgrade head"
+
+
+def _raise_if_schema_outdated(error: Exception) -> None:
+    normalized_message = str(error).lower()
+    schema_markers = (
+        "agent_turn_decisions",
+        "assistant_reply_groups",
+        "assistant_reply_versions",
+        "undefinedtable",
+        "no such table",
     )
+    if any(marker in normalized_message for marker in schema_markers):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SCHEMA_OUTDATED_DETAIL,
+        ) from error
+
+
+def _list_assistant_reply_groups(db: Session, session_id: str) -> list[AssistantReplyGroupResponse]:
+    try:
+        groups = list(
+            db.execute(
+                select(AssistantReplyGroup)
+                .where(AssistantReplyGroup.session_id == session_id)
+                .order_by(AssistantReplyGroup.created_at.asc()),
+            ).scalars().all(),
+        )
+    except (OperationalError, ProgrammingError) as error:
+        _raise_if_schema_outdated(error)
+        raise
     result: list[AssistantReplyGroupResponse] = []
     for group in groups:
         versions = assistant_reply_versions_repository.list_versions_for_group(
@@ -107,6 +136,121 @@ def _build_timeline_messages(
     return timeline
 
 
+def _list_turn_decisions(db: Session, session_id: str) -> list[AgentTurnDecisionResponse]:
+    try:
+        decisions = list(
+            db.execute(
+                select(AgentTurnDecision)
+                .where(AgentTurnDecision.session_id == session_id)
+                .order_by(AgentTurnDecision.created_at.asc()),
+            ).scalars().all(),
+        )
+    except (OperationalError, ProgrammingError) as error:
+        _raise_if_schema_outdated(error)
+        raise
+    return [
+        AgentTurnDecisionResponse.model_validate(item).model_copy(
+            update={
+                "decision_summary": _build_turn_decision_summary(item),
+                "decision_sections": _build_turn_decision_sections(item),
+            },
+        )
+        for item in decisions
+    ]
+
+
+def _build_turn_decision_sections(
+    decision: AgentTurnDecision,
+) -> list[AgentTurnDecisionSectionResponse]:
+    conversation_strategy = _infer_conversation_strategy(decision)
+    strategy_reason = _infer_strategy_reason(decision, conversation_strategy)
+    next_best_questions = _infer_next_best_questions(decision, conversation_strategy)
+    snapshot = SimpleNamespace(
+        phase=decision.phase,
+        phase_goal=decision.phase_goal,
+        assumptions=decision.assumptions_json or [],
+        next_move=decision.next_move,
+        suggestions=decision.suggestions_json or [],
+        recommendation=decision.recommendation_json,
+        needs_confirmation=decision.needs_confirmation_json or [],
+        conversation_strategy=conversation_strategy,
+        strategy_reason=strategy_reason,
+        next_best_questions=next_best_questions,
+        gaps=[],
+    )
+    sections: list[AgentTurnDecisionSectionResponse] = []
+    for section in build_reply_sections(snapshot):
+        meta: dict = {}
+        if section["key"] == "judgement":
+            meta = {
+                "conversation_strategy": conversation_strategy,
+                "strategy_label": _conversation_strategy_label(conversation_strategy),
+                "strategy_reason": strategy_reason,
+            }
+        elif section["key"] == "next_step":
+            meta = {"next_best_questions": next_best_questions}
+        sections.append(
+            AgentTurnDecisionSectionResponse.model_validate({**section, "meta": meta})
+        )
+    return sections
+
+
+def _infer_conversation_strategy(decision: AgentTurnDecision) -> str:
+    if decision.next_move == "force_rank_or_choose":
+        return "choose"
+    if decision.next_move == "assume_and_advance":
+        return "converge"
+    if decision.next_move == "summarize_and_confirm":
+        return "confirm"
+    return "clarify"
+
+
+def _conversation_strategy_label(strategy: str) -> str:
+    labels = {
+        "clarify": "继续澄清",
+        "choose": "推动取舍",
+        "converge": "收敛推进",
+        "confirm": "确认共识",
+    }
+    return labels.get(strategy, "继续推进")
+
+
+def _infer_next_best_questions(decision: AgentTurnDecision, strategy: str) -> list[str]:
+    confirmations = decision.needs_confirmation_json or []
+    if strategy == "confirm":
+        return confirmations or ["请确认当前理解是否准确"]
+    if strategy == "choose":
+        return ["如果只能先选一个主线，你更愿意先收敛用户还是问题？"]
+    if strategy == "converge":
+        return ["基于当前信息，你最想先验证哪一项：频率、付费意愿，还是转化阻力？"]
+    if decision.next_move == "challenge_and_reframe":
+        return ["如果我对问题的判断不对，你最想先纠正用户、问题，还是方案？"]
+    return ["为了继续推进，你先补一个最具体的真实场景。"]
+
+
+def _infer_strategy_reason(decision: AgentTurnDecision, strategy: str) -> str:
+    risk_flags = decision.risk_flags_json or []
+    if strategy == "choose":
+        return "目标用户仍然过泛，当前先推动你做主线取舍。"
+    if strategy == "converge":
+        return "已有方向信号，但仍有关键缺口，当前继续 converge。"
+    if strategy == "confirm":
+        if decision.needs_confirmation_json:
+            return "核心信息已基本齐备，当前进入 confirm 锁定共识。"
+        return "这轮没有新增风险，当前继续停留在 confirm 锁定共识。"
+    if "solution_before_problem" in risk_flags:
+        return "方案先于问题，当前需要回到 clarify 重构问题定义。"
+    if "problem_too_vague" in risk_flags:
+        return "当前问题描述仍然过于模糊，需要继续 clarify。"
+    return "当前关键信息仍不够具体，需要继续 clarify。"
+
+
+def _build_turn_decision_summary(decision: AgentTurnDecision) -> str:
+    return "；".join(
+        f"{section.title}{section.content}" for section in _build_turn_decision_sections(decision)
+    )
+
+
 def build_initial_state(initial_idea: str) -> dict:
     return {
         "idea": initial_idea,
@@ -126,6 +270,18 @@ def build_initial_state(initial_idea: str) -> dict:
         "decisions": [],
         "open_questions": [],
         "prd_snapshot": {"sections": {}},
+        "current_phase": "idea_clarification",
+        "conversation_strategy": "clarify",
+        "strategy_reason": None,
+        "phase_goal": None,
+        "working_hypotheses": [],
+        "evidence": [],
+        "decision_readiness": None,
+        "pm_risk_flags": [],
+        "recommended_directions": [],
+        "pending_confirmations": [],
+        "rejected_options": [],
+        "next_best_questions": [],
     }
 
 
@@ -166,6 +322,7 @@ def create_session(
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
         messages=[],
         assistant_reply_groups=[],
+        turn_decisions=[],
     )
 
 
@@ -193,6 +350,7 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
 
     raw_messages = messages_repository.get_messages_for_session(db, session_id)
     assistant_reply_groups = _list_assistant_reply_groups(db, session_id)
+    turn_decisions = _list_turn_decisions(db, session_id)
 
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
@@ -200,6 +358,7 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
         messages=_build_timeline_messages(raw_messages, assistant_reply_groups),
         assistant_reply_groups=assistant_reply_groups,
+        turn_decisions=turn_decisions,
     )
 
 
@@ -239,6 +398,7 @@ def update_session(
 
     raw_messages = messages_repository.get_messages_for_session(db, session_id)
     assistant_reply_groups = _list_assistant_reply_groups(db, session_id)
+    turn_decisions = _list_turn_decisions(db, session_id)
 
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
@@ -246,6 +406,7 @@ def update_session(
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
         messages=_build_timeline_messages(raw_messages, assistant_reply_groups),
         assistant_reply_groups=assistant_reply_groups,
+        turn_decisions=turn_decisions,
     )
 
 

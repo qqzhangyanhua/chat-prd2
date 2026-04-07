@@ -62,6 +62,10 @@ class AssistantDoneEventData(BaseModel):
     is_latest: bool
 
 
+class PrdUpdatedEventData(BaseModel):
+    sections: dict
+
+
 class ConversationMessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -102,3 +106,33 @@ class AssistantReplyGroupResponse(BaseModel):
     created_at: object
     updated_at: object
     versions: list[AssistantReplyVersionResponse] = Field(default_factory=list)
+
+
+class AgentTurnDecisionSectionResponse(BaseModel):
+    key: str
+    title: str
+    content: str
+    meta: dict = Field(default_factory=dict)
+
+
+class AgentTurnDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    session_id: str
+    user_message_id: str
+    phase: str
+    phase_goal: str | None
+    understanding_summary: str
+    assumptions_json: list[dict]
+    risk_flags_json: list[str]
+    next_move: str
+    suggestions_json: list[dict]
+    recommendation_json: dict | None
+    needs_confirmation_json: list[str]
+    confidence: str
+    state_patch_json: dict
+    prd_patch_json: dict
+    created_at: object
+    decision_summary: str = ""
+    decision_sections: list[AgentTurnDecisionSectionResponse] = Field(default_factory=list)
