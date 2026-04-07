@@ -308,6 +308,16 @@ Set-ExecutionPolicy -Scope Process Bypass
 - 后端是否已经启动在 `http://127.0.0.1:8000`
 - [`apps/web/.env.local`](D:/AI/chat-prd2/apps/web/.env.local) 的 `NEXT_PUBLIC_API_BASE_URL` 是否正确
 
+如果你能登录、也能创建会话，但进入会话页时看到 `Failed to fetch`、`当前会话加载失败`，或者浏览器控制台里出现看起来像 CORS 的报错，优先先执行一次数据库迁移：
+
+```powershell
+Set-Location .\apps\api
+alembic upgrade head
+Set-Location ..\..
+```
+
+这是因为最近新增了 `agent_turn_decisions` 等表，如果本地数据库还停在旧 revision，后端在读取会话快照时会失败，前端往往只会表现成加载失败。
+
 ## 13. 一键理解版
 
 如果你现在就是要本地跑起来，最短路径是：

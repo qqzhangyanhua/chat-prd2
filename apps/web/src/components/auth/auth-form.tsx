@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
-import { login, register } from "../../lib/api";
-import type { AuthMode } from "../../lib/types";
+import { getHealthStatus, login, register, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import type { AuthMode, HealthStatusResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
+import { SchemaOutdatedNotice } from "../workspace/schema-outdated-notice";
 
 
 interface AuthFormProps {
@@ -21,6 +22,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
 
   const titleLabelCn = mode === "login" ? "登录你的账号" : "创建你的账号";
   const subtitleLabelCn = mode === "login" ? "登录以继续使用 AI Co-founder" : "注册以继续使用 AI Co-founder";
@@ -33,6 +35,7 @@ export function AuthForm({ mode }: AuthFormProps) {
     event.preventDefault();
     setIsSubmitting(true);
     setErrorMessage(null);
+    setSchemaHealth(null);
 
     try {
       const response = await submitAction(email, password);
@@ -40,6 +43,14 @@ export function AuthForm({ mode }: AuthFormProps) {
         accessToken: response.access_token,
         user: response.user,
       });
+
+      const health = await getHealthStatus().catch(() => null);
+
+      if (health?.schema === "outdated") {
+        setSchemaHealth(health);
+        return;
+      }
+
       router.push("/workspace");
     } catch (error) {
       setErrorMessage(
@@ -94,6 +105,13 @@ export function AuthForm({ mode }: AuthFormProps) {
             </svg>
             <p className="text-sm text-red-400">{errorMessage}</p>
           </div>
+        ) : null}
+
+        {schemaHealth?.schema === "outdated" ? (
+          <SchemaOutdatedNotice
+            detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
+            missingTables={schemaHealth.missing_tables}
+          />
         ) : null}
 
         <button
