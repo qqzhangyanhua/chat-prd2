@@ -1,9 +1,16 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AssistantTurnCard } from "../components/workspace/assistant-turn-card";
+import { workspaceStore } from "../store/workspace-store";
+import type { DecisionGuidance } from "../lib/types";
 
 describe("AssistantTurnCard", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    workspaceStore.setState((state) => ({ ...state, inputValue: "" }));
+  });
+
   it("shows an interrupted marker when the latest round was manually stopped", () => {
     render(
       <AssistantTurnCard
@@ -78,5 +85,97 @@ describe("AssistantTurnCard", () => {
     expect(within(dialog).getAllByText("当前版本")).toHaveLength(2);
     expect(within(dialog).getByRole("button", { name: "查看版本 1" })).toBeInTheDocument();
     expect(within(dialog).getByText("第二版回复")).toBeInTheDocument();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    workspaceStore.setState((state) => ({ ...state, inputValue: "" }));
+  });
+
+  it("renders decision guidance with stage label, reason, and recommendation buttons", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "choose",
+      strategyLabel: "推动取舍",
+      strategyReason: "目标用户过泛，先确定主线取舍。",
+      nextBestQuestions: [
+        "你愿意先收敛用户还是首个场景？",
+        "最佳主线是聚焦哪个核心问题？",
+      ],
+    };
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
+      />,
+    );
+
+    expect(screen.getByText("下一步建议")).toBeInTheDocument();
+    expect(screen.getByText("推动取舍")).toBeInTheDocument();
+    expect(screen.getByText("目标用户过泛，先确定主线取舍。"))
+      .toBeInTheDocument();
+    guidance.nextBestQuestions.forEach((question) => {
+      expect(screen.getByRole("button", { name: question })).toBeInTheDocument();
+    });
+  });
+
+  it("still shows stage label and buttons when strategy reason is missing", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "choose",
+      strategyLabel: "推动取舍",
+      strategyReason: null,
+      nextBestQuestions: ["先确定主线再调整方案"],
+    };
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
+      />,
+    );
+
+    expect(screen.getByText("推动取舍")).toBeInTheDocument();
+    expect(screen.queryByText("我先帮你收敛 MVP 的首个关键场景。"))
+      .toBeInTheDocument();
+    expect(screen.queryByText("无策略原因"))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "先确定主线再调整方案" }))
+      .toBeInTheDocument();
+  });
+
+  it("populates the input when a recommendation is clicked", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "choose",
+      strategyLabel: "推动取舍",
+      strategyReason: "目标用户过泛，先确定主线取舍。",
+      nextBestQuestions: ["你愿意先收敛用户还是首个场景？"],
+    };
+    const onSelect = vi.fn();
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        onSelectDecisionGuidanceQuestion={onSelect}
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: guidance.nextBestQuestions[0] }));
+
+    expect(onSelect).toHaveBeenCalledWith("你愿意先收敛用户还是首个场景？");
+  });
+
+  it("does not render guidance when no decision guidance is provided", () => {
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        latestAssistantMessage="我先帮你收敛 MVP 的首个关键场景。"
+      />,
+    );
+
+    expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
   });
 });

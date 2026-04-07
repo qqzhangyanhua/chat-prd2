@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { RefreshCw, AlertTriangle, ChevronRight, Layers } from "lucide-react";
-import type { NextAction } from "../../lib/types";
+import type { DecisionGuidance, NextAction } from "../../lib/types";
 import { workspaceStore } from "../../store/workspace-store";
 import { ActionOptions } from "./action-options";
 import {
@@ -17,6 +17,8 @@ interface AssistantTurnCardProps {
   onRegenerate?: () => void;
   replyVersions?: AssistantReplyVersionItem[];
   showInterruptedMarker?: boolean;
+  decisionGuidance?: DecisionGuidance | null;
+  onSelectDecisionGuidanceQuestion?: (question: string) => void;
 }
 
 const defaultOptions = [
@@ -34,6 +36,8 @@ export function AssistantTurnCard({
   onRegenerate,
   replyVersions = [],
   showInterruptedMarker = false,
+  decisionGuidance = null,
+  onSelectDecisionGuidanceQuestion,
 }: AssistantTurnCardProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
@@ -91,15 +95,15 @@ export function AssistantTurnCard({
         </div>
       </div>
 
-      <div className="flex flex-col gap-px p-5">
-        <div className="rounded-xl bg-stone-50 p-4">
-          <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
-            <Layers className="h-3.5 w-3.5 text-stone-400" />
-            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-              AI 回复
-            </p>
-          </div>
-          {isWaiting || (!latestAssistantMessage && isRegenerating) ? (
+        <div className="flex flex-col gap-px p-5">
+          <div className="rounded-xl bg-stone-50 p-4">
+            <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
+              <Layers className="h-3.5 w-3.5 text-stone-400" />
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                AI 回复
+              </p>
+            </div>
+            {isWaiting || (!latestAssistantMessage && isRegenerating) ? (
             <div className="mt-3 flex items-center gap-2 py-1 text-sm text-stone-500">
               <span className="flex items-center gap-1">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '0ms' }} />
@@ -108,18 +112,44 @@ export function AssistantTurnCard({
               </span>
               正在深度思考并组织回复...
             </div>
-          ) : (
-            <p className="mt-3 text-sm leading-7 text-stone-800 whitespace-pre-wrap">
-              {latestAssistantMessage || "正在思考并准备回复..."}
-            </p>
-          )}
-          {showInterruptedMarker ? (
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              本轮已手动中断
+            ) : (
+              <p className="mt-3 text-sm leading-7 text-stone-800 whitespace-pre-wrap">
+                {latestAssistantMessage || "正在思考并准备回复..."}
+              </p>
+            )}
+            {showInterruptedMarker ? (
+              <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                本轮已手动中断
+              </div>
+            ) : null}
+          </div>
+
+          {decisionGuidance ? (
+            <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+              <div className="flex items-center gap-2 border-b border-amber-100 pb-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-500">
+                  下一步建议
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-stone-900">{decisionGuidance.strategyLabel}</p>
+              {decisionGuidance.strategyReason ? (
+                <p className="mt-2 text-sm text-stone-700">{decisionGuidance.strategyReason}</p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {decisionGuidance.nextBestQuestions.map((question, index) => (
+                  <button
+                    key={`${index}-${question}`}
+                    onClick={() => onSelectDecisionGuidanceQuestion?.(question)}
+                    type="button"
+                    className="rounded-full border border-amber-200 bg-white px-3 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
-        </div>
 
         {showAnalysis ? (
           <>
