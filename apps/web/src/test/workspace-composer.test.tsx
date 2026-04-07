@@ -7,6 +7,7 @@ import { regenerateMessage } from "../lib/api";
 import { sendMessage } from "../lib/api";
 import { useToastStore } from "../store/toast-store";
 import { workspaceStore } from "../store/workspace-store";
+import type { DecisionGuidance } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
   sendMessage: vi.fn(),
@@ -487,7 +488,7 @@ describe("ConversationPanel decision guidance", () => {
   });
 
   it("shows the latest guidance and populates the input when a recommendation is clicked", async () => {
-    const guidance = {
+    const guidance: DecisionGuidance = {
       conversationStrategy: "choose",
       strategyLabel: "取舍中",
       strategyReason: "需要先确定空之间的优先级",
