@@ -30,7 +30,7 @@
 
 - 前端可消费会话快照中的 `turn_decisions`
 - 用户能看到当前会话最近一轮的推进策略和推进原因
-- 用户能看到 2 到 4 个推荐下一问/快捷回答
+- 用户能看到 1 到 4 个推荐下一问/快捷回答，理想情况为 2 到 4 个
 - 点击推荐项只填入输入框，不自动发送
 - 交互与现有聊天流兼容，不打断消息、重生成、版本历史等能力
 
@@ -131,7 +131,7 @@
 
 - 阶段标签：如 `澄清中`、`取舍中`、`收敛中`、`确认中`
 - 推进原因：用一句话解释“为什么现在建议这样聊”
-- 推荐下一问：2 到 4 个可点击按钮
+- 推荐下一问：1 到 4 个可点击按钮，优先期望后端给出 2 到 4 个
 
 按钮点击后：
 
@@ -145,6 +145,59 @@
 - 保持现有界面行为不变
 
 ## 6. 数据设计
+
+### 6.0 后端快照最小响应形态
+
+当前前端应以会话快照中 `turn_decisions[*]` 的真实返回形态为准，最小可用结构如下：
+
+```json
+{
+  "id": "decision_x",
+  "session_id": "session_x",
+  "user_message_id": "message_x",
+  "phase": "problem_validation",
+  "next_move": "force_rank_or_choose",
+  "state_patch_json": {
+    "conversation_strategy": "choose",
+    "strategy_reason": "目标用户仍然过泛，当前先推动你做主线取舍。",
+    "next_best_questions": [
+      "如果只能先选一个主线，你更愿意先收敛用户还是问题？"
+    ]
+  },
+  "created_at": "2026-04-07T10:00:00Z",
+  "decision_sections": [
+    {
+      "key": "judgement",
+      "title": "当前判断",
+      "content": "当前更需要先做主线取舍。",
+      "meta": {
+        "conversation_strategy": "choose",
+        "strategy_label": "推动取舍",
+        "strategy_reason": "目标用户仍然过泛，当前先推动你做主线取舍。"
+      }
+    },
+    {
+      "key": "next_step",
+      "title": "下一步动作",
+      "content": "请先选定一条主线。",
+      "meta": {
+        "next_best_questions": [
+          "如果只能先选一个主线，你更愿意先收敛用户还是问题？"
+        ]
+      }
+    }
+  ]
+}
+```
+
+本次前端实现要以 `decision_sections[].meta` 作为主读取路径，以 `state_patch_json` 作为兼容兜底路径。
+
+本次假设后端返回的 `decision_sections.key` 至少稳定包含：
+
+- `judgement`
+- `next_step`
+
+如果未来 key 变化或缺失，前端应回退到 `state_patch_json` 派生 guidance，而不是报错或展示空白异常态。
 
 ### 6.1 前端类型扩展
 
@@ -160,7 +213,7 @@
 类型至少要覆盖以下字段：
 
 - 决策 ID、会话 ID、消息 ID、创建时间
-- `conversation_strategy`
+- `state_patch_json`
 - `decision_sections`
 - 每个 section 的 `key`、`title`、`content`
 - `meta` 中的 `strategy_label`、`strategy_reason`、`next_best_questions`
@@ -181,9 +234,20 @@
 
 派生规则：
 
-- 优先使用最新一条 `turn_decisions`
+- latest decision 由前端按 `created_at` 最大值判定
+- 如果 `created_at` 缺失或无法解析，再回退到数组最后一项
 - 如果缺失，返回 `null`
-- 如果 `nextBestQuestions` 为空数组，也视为“不展示引导卡”
+- guidance 字段来源优先级如下：
+  - `conversationStrategy`: `judgement.meta.conversation_strategy` -> `state_patch_json.conversation_strategy` -> 前端默认 `clarify`
+  - `strategyLabel`: `judgement.meta.strategy_label` -> 前端根据 `conversationStrategy` 映射
+  - `strategyReason`: `judgement.meta.strategy_reason` -> `state_patch_json.strategy_reason` -> `null`
+  - `nextBestQuestions`: `next_step.meta.next_best_questions` -> `state_patch_json.next_best_questions` -> `[]`
+- `nextBestQuestions` 进入 UI 前需要：
+  - 过滤非字符串和空字符串
+  - 按原顺序去重
+  - 最多保留前 4 条
+- 如果裁剪后 `nextBestQuestions` 为空数组，则整个引导卡不展示
+- 如果裁剪后只剩 1 条，仍展示引导卡和该 1 个按钮
 
 ### 6.3 Hydrate 规则
 
@@ -212,7 +276,7 @@
 
 - 上方一行阶段标签
 - 中间一段推进原因
-- 下方 2 到 4 个按钮式建议
+- 下方 1 到 4 个按钮式建议，理想情况为 2 到 4 个
 
 视觉要求：
 
@@ -229,7 +293,11 @@
 - `converge` -> `收敛中`
 - `confirm` -> `确认中`
 
-如果后端已提供 `strategy_label`，优先使用后端值；前端映射作为兜底。
+具体优先级为：
+
+- 先读取 `decision_sections` 中 `key === "judgement"` 的 `meta.strategy_label`
+- 若不存在，则按 `conversationStrategy` 使用前端映射
+- 若 `conversationStrategy` 也缺失，则最终兜底为 `继续推进`
 
 ## 8. 交互与状态流
 
@@ -282,6 +350,9 @@
 
 - 读取 `turn_decisions`
 - 生成最新 guidance
+- 在多条决策存在时按 `created_at` 选择最新一条
+- 按既定优先级从 `decision_sections[].meta` 和 `state_patch_json` 派生 guidance
+- 对推荐项做去重与 `slice(0, 4)` 截断
 - 在无数据时返回空态
 
 ### 10.2 组件测试
@@ -290,7 +361,7 @@
 
 - 阶段标签
 - 推进原因
-- 推荐按钮
+- 1 到 4 个推荐按钮
 
 并验证按钮点击会把内容写入输入框。
 
