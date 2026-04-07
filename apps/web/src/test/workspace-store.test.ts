@@ -897,6 +897,34 @@ describe("decision guidance", () => {
     expect(fallbackStore.getState().decisionGuidance?.strategyReason).toBe("数组尾部");
   });
 
+  it("chooses last entry when final decision lacks a valid created_at", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-old-valid",
+        session_id: "session-1",
+        created_at: "2026-04-07T08:00:00Z",
+        state_patch_json: {
+          conversation_strategy: "clarify",
+          strategy_reason: "有效时间",
+        },
+      },
+      {
+        id: "decision-last-bad",
+        session_id: "session-1",
+        created_at: "not-a-date",
+        state_patch_json: {
+          conversation_strategy: "converge",
+          strategy_reason: "最后一条",
+          next_best_questions: ["看最后"],
+        },
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+    expect(store.getState().decisionGuidance?.strategyReason).toBe("最后一条");
+  });
+
   it("normalizes next best questions, filters/reduces duplicates, and defaults strategy values", () => {
     const store = createWorkspaceStore();
     const snapshot = buildSnapshotWithDecisions([

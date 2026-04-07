@@ -4,6 +4,7 @@ import { createStore } from "zustand/vanilla";
 import type {
   AgentTurnDecision,
   DecisionGuidance,
+  DecisionStrategy,
   AssistantReplyGroup,
   AssistantReplyVersion,
   ConversationMessage,
@@ -163,24 +164,21 @@ function pickLatestDecision(decisions?: AgentTurnDecision[]): AgentTurnDecision 
     return null;
   }
 
-  const parsedDecisions = decisions.map((decision, index) => {
-    const parsed = decision.created_at ? Date.parse(decision.created_at) : NaN;
-    return { decision, timestamp: Number.isFinite(parsed) ? parsed : NaN, fallbackIndex: index };
-  });
+  const lastDecision = decisions[decisions.length - 1];
+  const lastTimestamp = lastDecision.created_at ? Date.parse(lastDecision.created_at) : NaN;
+  if (!Number.isFinite(lastTimestamp)) {
+    return lastDecision;
+  }
 
-  const sorted = [...parsedDecisions].sort((a, b) => {
-    const aValid = Number.isFinite(a.timestamp);
-    const bValid = Number.isFinite(b.timestamp);
-    if (aValid && bValid) {
-      return b.timestamp - a.timestamp;
-    }
-    if (!aValid && !bValid) {
-      return b.fallbackIndex - a.fallbackIndex;
-    }
-    return aValid ? -1 : 1;
-  });
+  const parsedDecisions = decisions
+    .map((decision) => ({
+      decision,
+      timestamp: decision.created_at ? Date.parse(decision.created_at) : NaN,
+    }))
+    .filter(({ timestamp }) => Number.isFinite(timestamp))
+    .sort((a, b) => b.timestamp - a.timestamp);
 
-  return sorted[0].decision;
+  return parsedDecisions[0]?.decision ?? lastDecision;
 }
 
 function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance | null {
@@ -474,7 +472,7 @@ export function createWorkspaceStore() {
               }
 
               const lastMessage = state.messages.at(-1);
-              const messages =
+              const messages: WorkspaceMessage[] =
                 lastMessage?.role === "assistant"
                   ? [
                       ...state.messages.slice(0, -1),
