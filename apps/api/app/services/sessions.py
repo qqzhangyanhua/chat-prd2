@@ -6,6 +6,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.agent.reply_composer import build_reply_sections
+from app.core.api_error import raise_api_error
 from app.db.models import AgentTurnDecision, AssistantReplyGroup
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
 from app.repositories import messages as messages_repository
@@ -41,10 +42,45 @@ def _raise_if_schema_outdated(error: Exception) -> None:
         "no such table",
     )
     if any(marker in normalized_message for marker in schema_markers):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=SCHEMA_OUTDATED_DETAIL,
-        ) from error
+        try:
+            raise_api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="SCHEMA_OUTDATED",
+                message=SCHEMA_OUTDATED_DETAIL,
+                recovery_action={
+                    "type": "run_migration",
+                    "label": "执行数据库迁移",
+                    "target": "cd apps/api && alembic upgrade head",
+                },
+            )
+        except Exception as api_error:
+            raise api_error from error
+
+
+def _raise_session_not_found() -> None:
+    raise_api_error(
+        status_code=status.HTTP_404_NOT_FOUND,
+        code="SESSION_NOT_FOUND",
+        message="Session not found",
+        recovery_action={
+            "type": "open_workspace_home",
+            "label": "返回工作台首页",
+            "target": "/workspace",
+        },
+    )
+
+
+def _raise_session_snapshot_missing() -> None:
+    raise_api_error(
+        status_code=status.HTTP_404_NOT_FOUND,
+        code="SESSION_SNAPSHOT_MISSING",
+        message="Session snapshot not found",
+        recovery_action={
+            "type": "open_workspace_home",
+            "label": "返回工作台首页",
+            "target": "/workspace",
+        },
+    )
 
 
 def _list_assistant_reply_groups(db: Session, session_id: str) -> list[AssistantReplyGroupResponse]:
@@ -329,16 +365,13 @@ def create_session(
 def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionCreateResponse:
     session = sessions_repository.get_session_for_user(db, session_id, user_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        _raise_session_not_found()
 
     state_version = state_repository.get_latest_state_version(db, session_id)
     prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
 
     if state_version is None or prd_snapshot is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session snapshot not found",
-        )
+        _raise_session_snapshot_missing()
 
     try:
         sessions_repository.touch_session(db, session)
@@ -377,16 +410,13 @@ def update_session(
 ) -> SessionCreateResponse:
     session = sessions_repository.get_session_for_user(db, session_id, user_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        _raise_session_not_found()
 
     state_version = state_repository.get_latest_state_version(db, session_id)
     prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
 
     if state_version is None or prd_snapshot is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session snapshot not found",
-        )
+        _raise_session_snapshot_missing()
 
     try:
         session = sessions_repository.update_session_title(db, session, payload.title)

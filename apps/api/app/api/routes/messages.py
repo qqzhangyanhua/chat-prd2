@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import get_current_user, get_db
+from app.core.api_error import raise_api_error
 from app.db.models import User
 from app.repositories import sessions as sessions_repository
 from app.schemas.message import MessageCreateRequest
@@ -25,7 +26,16 @@ def create_message(
 ) -> EventSourceResponse:
     session = sessions_repository.get_session_for_user(db, session_id, current_user.id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="SESSION_NOT_FOUND",
+            message="Session not found",
+            recovery_action={
+                "type": "open_workspace_home",
+                "label": "返回工作台首页",
+                "target": "/workspace",
+            },
+        )
 
     event_stream = messages_service.stream_user_message_events(
         db,
@@ -55,7 +65,16 @@ def regenerate_message(
 ) -> EventSourceResponse:
     session = sessions_repository.get_session_for_user(db, session_id, current_user.id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="SESSION_NOT_FOUND",
+            message="Session not found",
+            recovery_action={
+                "type": "open_workspace_home",
+                "label": "返回工作台首页",
+                "target": "/workspace",
+            },
+        )
 
     event_stream = messages_service.stream_regenerate_message_events(
         db,

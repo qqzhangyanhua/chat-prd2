@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect
@@ -10,6 +10,7 @@ from .api.routes.messages import router as messages_router
 from .api.routes.model_configs import router as model_configs_router
 from .api.routes.sessions import router as sessions_router
 from .core.config import settings
+from .core.api_error import ApiError, build_api_error_payload
 from .db.models import AgentTurnDecision, AssistantReplyGroup, AssistantReplyVersion
 from .db.session import engine
 from .services.sessions import SCHEMA_OUTDATED_DETAIL
@@ -29,6 +30,11 @@ app.include_router(messages_router)
 app.include_router(exports_router)
 app.include_router(admin_model_configs_router)
 app.include_router(model_configs_router)
+
+
+@app.exception_handler(ApiError)
+async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
+    return exc.to_response()
 
 
 def get_schema_health(bind) -> dict[str, str | list[str]]:
@@ -55,7 +61,15 @@ def healthcheck():
             content={
                 "status": "degraded",
                 "schema": "outdated",
-                "detail": SCHEMA_OUTDATED_DETAIL,
+                **build_api_error_payload(
+                    code="SCHEMA_OUTDATED",
+                    message=SCHEMA_OUTDATED_DETAIL,
+                    recovery_action={
+                        "type": "run_migration",
+                        "label": "执行数据库迁移",
+                        "target": "cd apps/api && alembic upgrade head",
+                    },
+                ),
                 "missing_tables": schema_health["missing_tables"],
             },
         )

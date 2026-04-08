@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.runtime import run_agent
 from app.agent.extractor import first_missing_section, normalize_model_extraction_result
+from app.core.api_error import raise_api_error
 from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
 from app.db.models import LLMModelConfig
@@ -170,13 +171,98 @@ def _resolve_model_extraction_result(
     return normalize_model_extraction_result(payload)
 
 
+def _serialize_model_option(model_config: LLMModelConfig) -> dict[str, str]:
+    return {
+        "id": model_config.id,
+        "name": model_config.name,
+        "model": model_config.model,
+    }
+
+
+def _build_select_available_model_details(
+    db: Session,
+    *,
+    requested_model_config_id: str,
+    requested_model_name: str | None = None,
+) -> dict[str, object]:
+    enabled_models = model_configs_repository.list_enabled_model_configs(db)
+    available_model_configs = [_serialize_model_option(item) for item in enabled_models]
+    details: dict[str, object] = {
+        "available_model_configs": available_model_configs,
+        "requested_model_config_id": requested_model_config_id,
+    }
+
+    if requested_model_name:
+        details["requested_model_name"] = requested_model_name
+
+    recommended_model = available_model_configs[0] if available_model_configs else None
+    if recommended_model is not None:
+        details["recommended_model_config_id"] = recommended_model["id"]
+        details["recommended_model_name"] = recommended_model["name"]
+
+    return details
+
+
 def _get_enabled_model_config(db: Session, model_config_id: str) -> LLMModelConfig:
     model_config = model_configs_repository.get_model_config_by_id(db, model_config_id)
     if model_config is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model config not found")
+        raise_api_error(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="MODEL_CONFIG_NOT_FOUND",
+            message="Model config not found",
+            recovery_action={
+                "type": "select_available_model",
+                "label": "选择可用模型",
+                "target": None,
+            },
+            details=_build_select_available_model_details(
+                db,
+                requested_model_config_id=model_config_id,
+            ),
+        )
     if not model_config.enabled:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Model config is disabled")
+        raise_api_error(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="MODEL_CONFIG_DISABLED",
+            message="Model config is disabled",
+            recovery_action={
+                "type": "select_available_model",
+                "label": "选择可用模型",
+                "target": None,
+            },
+            details=_build_select_available_model_details(
+                db,
+                requested_model_config_id=model_config.id,
+                requested_model_name=model_config.name,
+            ),
+        )
     return model_config
+
+
+def _raise_model_gateway_unavailable(error: ModelGatewayError) -> None:
+    raise_api_error(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        code="MODEL_GATEWAY_UNAVAILABLE",
+        message=str(error),
+        recovery_action={
+            "type": "retry",
+            "label": "稍后重试",
+            "target": None,
+        },
+    )
+
+
+def _raise_regeneration_conflict(code: str, message: str) -> None:
+    raise_api_error(
+        status_code=status.HTTP_409_CONFLICT,
+        code=code,
+        message=message,
+        recovery_action={
+            "type": "reload_session",
+            "label": "重新加载会话",
+            "target": None,
+        },
+    )
 
 
 def _build_model_meta(model_config: LLMModelConfig) -> dict[str, str]:
@@ -360,10 +446,10 @@ def _prepare_message_stream(
             exc,
         )
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+        try:
+            _raise_model_gateway_unavailable(exc)
+        except Exception as api_error:
+            raise api_error from exc
     except Exception:
         db.rollback()
         raise
@@ -401,13 +487,16 @@ def _prepare_regenerate_stream(
         user_message_id=user_message_id,
     )
     if reply_group is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reply group not found")
+        _raise_regeneration_conflict("REPLY_GROUP_NOT_FOUND", "Reply group not found")
     latest_version = assistant_reply_versions_repository.get_latest_version_for_group(
         db=db,
         reply_group_id=reply_group.id,
     )
     if latest_version is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reply version history not found")
+        _raise_regeneration_conflict(
+            "REPLY_VERSION_HISTORY_MISSING",
+            "Reply version history not found",
+        )
     next_version_no = latest_version.version_no + 1
 
     try:
@@ -431,10 +520,10 @@ def _prepare_regenerate_stream(
             exc,
         )
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+        try:
+            _raise_model_gateway_unavailable(exc)
+        except Exception as api_error:
+            raise api_error from exc
     except Exception:
         db.rollback()
         raise
@@ -512,10 +601,10 @@ def handle_user_message(
             exc,
         )
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+        try:
+            _raise_model_gateway_unavailable(exc)
+        except Exception as api_error:
+            raise api_error from exc
     except Exception:
         db.rollback()
         raise
@@ -677,24 +766,30 @@ def _persist_regenerated_reply_version(
 ) -> tuple[str, int, int]:
     latest_state_version = state_repository.get_latest_state_version(db, session_id)
     if latest_state_version is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="State snapshot not found")
+        _raise_regeneration_conflict("STATE_SNAPSHOT_MISSING", "State snapshot not found")
     latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
     if latest_prd_snapshot is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PRD snapshot not found")
+        _raise_regeneration_conflict("PRD_SNAPSHOT_MISSING", "PRD snapshot not found")
 
     reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(db=db, user_message_id=user_message_id)
     if reply_group is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reply group not found")
+        _raise_regeneration_conflict("REPLY_GROUP_NOT_FOUND", "Reply group not found")
     if reply_group.id != reply_group_id:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reply group mismatch")
+        _raise_regeneration_conflict("REPLY_GROUP_MISMATCH", "Reply group mismatch")
     latest_version = assistant_reply_versions_repository.get_latest_version_for_group(
         db=db,
         reply_group_id=reply_group.id,
     )
     if latest_version is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reply version history not found")
+        _raise_regeneration_conflict(
+            "REPLY_VERSION_HISTORY_MISSING",
+            "Reply version history not found",
+        )
     if latest_version.version_no + 1 != version_no:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reply version sequence mismatch")
+        _raise_regeneration_conflict(
+            "REPLY_VERSION_SEQUENCE_MISMATCH",
+            "Reply version sequence mismatch",
+        )
     created_version = AssistantReplyVersion(
         id=assistant_version_id,
         reply_group_id=reply_group.id,

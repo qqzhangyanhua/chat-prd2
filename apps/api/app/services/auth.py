@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.api_error import raise_api_error
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -51,25 +52,43 @@ def login(db: Session, email: str, password: str) -> User:
 def get_current_user_from_token(db: Session, token: str) -> User:
     payload = decode_access_token(token)
     if payload is None:
-        raise HTTPException(
+        raise_api_error(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            code="AUTH_INVALID",
+            message="Invalid authentication credentials",
+            recovery_action={
+                "type": "login",
+                "label": "重新登录",
+                "target": "/login",
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     user_id = payload.get("sub")
     if not isinstance(user_id, str) or not user_id:
-        raise HTTPException(
+        raise_api_error(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            code="AUTH_INVALID",
+            message="Invalid authentication credentials",
+            recovery_action={
+                "type": "login",
+                "label": "重新登录",
+                "target": "/login",
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     user = auth_repository.get_user_by_id(db, user_id)
     if user is None:
-        raise HTTPException(
+        raise_api_error(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            code="AUTH_INVALID",
+            message="Invalid authentication credentials",
+            recovery_action={
+                "type": "login",
+                "label": "重新登录",
+                "target": "/login",
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
