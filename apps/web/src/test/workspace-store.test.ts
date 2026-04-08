@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { AgentTurnDecision, SessionSnapshotResponse } from "../lib/types";
+import type { AgentTurnDecision, SessionSnapshotResponse, StateSnapshotResponse } from "../lib/types";
 import { parseEventStream } from "../lib/sse";
 import { createWorkspaceStore } from "../store/workspace-store";
 
-function buildSnapshotWithDecisions(decisions?: AgentTurnDecision[]): SessionSnapshotResponse {
+function buildSnapshotWithDecisions(
+  decisions?: AgentTurnDecision[],
+  state?: StateSnapshotResponse,
+): SessionSnapshotResponse {
   return {
     session: {
       id: "session-1",
@@ -14,7 +17,7 @@ function buildSnapshotWithDecisions(decisions?: AgentTurnDecision[]): SessionSna
       created_at: "2026-04-05T00:00:00Z",
       updated_at: "2026-04-05T00:00:00Z",
     },
-    state: {},
+    state: state ?? {},
     prd_snapshot: {
       sections: {},
     },
@@ -335,6 +338,35 @@ describe("workspace store", () => {
     expect(store.getState().lastInterrupted).toBe(false);
     expect(store.getState().lastSubmittedInput).toBeNull();
     expect(store.getState().prd.sections.target_user?.content).toBe("独立开发者");
+  });
+
+  it("hydrates runtime model scene and collaboration label from snapshot state", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+        current_model_scene: "reasoning",
+        collaboration_mode_label: "深度推演模式",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().currentModelScene).toBe("reasoning");
+    expect(store.getState().collaborationModeLabel).toBe("深度推演模式");
   });
 
   it("hydrates legacy snapshot when assistant_reply_groups is missing", () => {
@@ -824,6 +856,7 @@ describe("decision guidance", () => {
         "如果只能选一个主线怎么办？",
         "请告诉我下一步动作",
       ],
+      confirmQuickReplies: [],
     });
   });
 
@@ -865,6 +898,52 @@ describe("decision guidance", () => {
         "先明确主线",
         "再问对方的关键指标",
         "再确认细节",
+      ],
+      confirmQuickReplies: [],
+    });
+  });
+
+  it("hydrates confirm quick replies from next_step meta", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-confirm",
+        session_id: "session-1",
+        created_at: "2026-04-07T12:00:00Z",
+        decision_sections: [
+          {
+            key: "judgement",
+            meta: {
+              conversation_strategy: "confirm",
+              strategy_label: "确认中",
+            },
+          },
+          {
+            key: "next_step",
+            meta: {
+              next_best_questions: ["请确认当前理解是否准确"],
+              confirm_quick_replies: [
+                "确认，继续下一步",
+                "不对，先改目标用户",
+                "不对，先改核心问题",
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "confirm",
+      strategyLabel: "确认中",
+      strategyReason: null,
+      nextBestQuestions: ["请确认当前理解是否准确"],
+      confirmQuickReplies: [
+        "确认，继续下一步",
+        "不对，先改目标用户",
+        "不对，先改核心问题",
       ],
     });
   });
@@ -1031,6 +1110,7 @@ describe("decision guidance", () => {
         "再确认预算",
         "再确认交付",
       ],
+      confirmQuickReplies: [],
     });
   });
 

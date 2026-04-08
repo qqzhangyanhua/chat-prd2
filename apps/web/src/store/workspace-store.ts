@@ -11,6 +11,7 @@ import type {
   EnabledModelConfigItem,
   NextAction,
   PrdState,
+  RecommendedScene,
   SessionSnapshotResponse,
   WorkspaceEvent,
   WorkspaceMessage,
@@ -40,7 +41,9 @@ interface WorkspaceState {
   activeAssistantVersionId: string | null;
   activeReplyGroupId: string | null;
   availableModelConfigs: EnabledModelConfigItem[];
+  collaborationModeLabel: string | null;
   currentAction: NextAction | null;
+  currentModelScene: RecommendedScene | null;
   errorMessage: string | null;
   inputValue: string;
   isStreaming: boolean;
@@ -199,6 +202,7 @@ function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance |
   const metaNextQuestions = nextStepMeta?.next_best_questions;
   const fallbackNextQuestions = decision.state_patch_json?.next_best_questions;
   const nextBestQuestions = normalizeBestQuestions(metaNextQuestions ?? fallbackNextQuestions);
+  const confirmQuickReplies = normalizeBestQuestions(nextStepMeta?.confirm_quick_replies);
 
   if (!nextBestQuestions.length) {
     return null;
@@ -209,6 +213,7 @@ function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance |
     strategyLabel,
     strategyReason,
     nextBestQuestions,
+    confirmQuickReplies,
   };
 }
 
@@ -293,7 +298,17 @@ function buildHydratedSessionState(
     ...state,
     activeAssistantVersionId: null,
     activeReplyGroupId: null,
+    collaborationModeLabel:
+      typeof snapshot.state.collaboration_mode_label === "string"
+        ? snapshot.state.collaboration_mode_label
+        : null,
     currentAction: preserveCurrentAction ? state.currentAction : null,
+    currentModelScene:
+      snapshot.state.current_model_scene === "general" ||
+      snapshot.state.current_model_scene === "reasoning" ||
+      snapshot.state.current_model_scene === "fallback"
+        ? snapshot.state.current_model_scene
+        : null,
     errorMessage: null,
     inputValue: preserveInputValue ? state.inputValue : "",
     isStreaming: false,
@@ -370,11 +385,13 @@ function createInitialState(): Omit<
     activeAssistantVersionId: null,
     activeReplyGroupId: null,
     availableModelConfigs: [],
+    collaborationModeLabel: null,
     currentAction: {
       action: "probe_deeper",
       target: "target_user",
       reason: "先把最核心的目标用户讲清楚，后续问题、价值和 MVP 才能持续收敛。",
     },
+    currentModelScene: null,
     errorMessage: null,
     isLeftNavCollapsed: false,
     inputValue: "",

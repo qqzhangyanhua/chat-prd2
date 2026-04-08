@@ -142,6 +142,8 @@ def _phase1_state(**overrides):
         "prd_snapshot": {"sections": {}},
         "current_phase": "idea_clarification",
         "phase_goal": None,
+        "current_model_scene": "general",
+        "collaboration_mode_label": "通用协作模式",
         "working_hypotheses": [],
         "evidence": [],
         "decision_readiness": None,
@@ -157,9 +159,21 @@ def _phase1_state(**overrides):
 
 def test_handle_user_message_rejects_missing_model_config(db_session):
     session = _create_session_with_state(db_session)
+    reasoning_model = model_configs_repository.create_model_config(
+        db_session,
+        name="长文本模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=True,
+    )
     fallback_model = model_configs_repository.create_model_config(
         db_session,
         name="推荐模型",
+        recommended_scene="general",
+        recommended_usage="适合继续通用产品对话。",
         base_url="https://gateway.example.com/v1",
         api_key="secret",
         model="gpt-4o-mini",
@@ -191,11 +205,58 @@ def test_handle_user_message_rejects_missing_model_config(db_session):
                 "name": "推荐模型",
                 "model": "gpt-4o-mini",
             },
+            {
+                "id": reasoning_model.id,
+                "name": "长文本模型",
+                "model": "claude-3-7-sonnet",
+            },
         ],
         "recommended_model_config_id": fallback_model.id,
+        "recommended_model_scene": "general",
         "recommended_model_name": "推荐模型",
+        "recommended_model_reason": "原先选择的模型已不存在，建议先切换到这个可用模型继续对话。适合继续通用产品对话。",
         "requested_model_config_id": "missing-config",
     }
+
+
+def test_handle_user_message_missing_model_prefers_general_scene_recommendation_over_latest(db_session):
+    session = _create_session_with_state(db_session)
+    general_model = model_configs_repository.create_model_config(
+        db_session,
+        name="通用对话模型",
+        recommended_scene="general",
+        recommended_usage="适合继续通用产品对话。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    model_configs_repository.create_model_config(
+        db_session,
+        name="长文本模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=True,
+    )
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        handle_user_message(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            content="帮我分析用户画像",
+            model_config_id="missing-config",
+        )
+
+    details = getattr(exc_info.value, "details", None)
+    assert details is not None
+    assert details["recommended_model_config_id"] == general_model.id
+    assert details["recommended_model_scene"] == "general"
+    assert details["recommended_model_name"] == "通用对话模型"
 
 
 def test_handle_user_message_rejects_disabled_model_config(db_session):
@@ -203,14 +264,28 @@ def test_handle_user_message_rejects_disabled_model_config(db_session):
     model_config = model_configs_repository.create_model_config(
         db_session,
         name="禁用模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
         base_url="https://gateway.example.com/v1",
         api_key="secret",
         model="gpt-4o-mini",
         enabled=False,
     )
+    general_model = model_configs_repository.create_model_config(
+        db_session,
+        name="通用模型",
+        recommended_scene="general",
+        recommended_usage="适合继续通用产品对话。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
     fallback_model = model_configs_repository.create_model_config(
         db_session,
         name="推荐模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
         base_url="https://gateway.example.com/v1",
         api_key="secret",
         model="claude-3-7-sonnet",
@@ -242,12 +317,69 @@ def test_handle_user_message_rejects_disabled_model_config(db_session):
                 "name": "推荐模型",
                 "model": "claude-3-7-sonnet",
             },
+            {
+                "id": general_model.id,
+                "name": "通用模型",
+                "model": "gpt-4o-mini",
+            },
         ],
         "recommended_model_config_id": fallback_model.id,
+        "recommended_model_scene": "reasoning",
         "recommended_model_name": "推荐模型",
+        "recommended_model_reason": "原先选择的模型已停用，建议先切换到这个可用模型继续对话。适合承接长文本推理。",
         "requested_model_config_id": model_config.id,
         "requested_model_name": "禁用模型",
     }
+
+
+def test_handle_user_message_disabled_model_prefers_same_scene_recommendation(db_session):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="禁用长文本模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=False,
+    )
+    model_configs_repository.create_model_config(
+        db_session,
+        name="通用模型",
+        recommended_scene="general",
+        recommended_usage="适合继续通用产品对话。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    same_scene_model = model_configs_repository.create_model_config(
+        db_session,
+        name="长文本候选模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-5-sonnet",
+        enabled=True,
+    )
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        handle_user_message(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            content="帮我分析用户画像",
+            model_config_id=model_config.id,
+        )
+
+    details = getattr(exc_info.value, "details", None)
+    assert details is not None
+    assert details["recommended_model_config_id"] == same_scene_model.id
+    assert details["recommended_model_scene"] == "reasoning"
+    assert details["recommended_model_name"] == "长文本候选模型"
 
 
 def test_handle_user_message_uses_selected_model_and_persists_model_metadata(db_session, monkeypatch):
@@ -455,11 +587,46 @@ def test_handle_user_message_persists_phase1_state_fields(db_session, monkeypatc
     assert latest_state["phase_goal"] == "总结共识并确认下一步"
     assert latest_state["conversation_strategy"] == "confirm"
     assert "核心信息已基本齐备" in latest_state["strategy_reason"]
+    assert latest_state["current_model_scene"] == "general"
+    assert latest_state["collaboration_mode_label"] == "通用协作模式"
     assert latest_state["recommended_directions"]
     assert latest_state["pending_confirmations"] == ["请确认当前理解是否准确"]
     assert latest_state["next_best_questions"] == ["请确认当前理解是否准确"]
     assert latest_state["working_hypotheses"] == []
     assert latest_state["pm_risk_flags"] == []
+
+
+def test_handle_user_message_persists_runtime_model_scene_for_reasoning_model(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="深度推理模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合承接长文本推理。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "继续深挖")
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请继续拆解这个复杂输入",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert latest_state["current_model_scene"] == "reasoning"
+    assert latest_state["collaboration_mode_label"] == "深度推演模式"
 
 
 def test_handle_user_message_persists_conversation_strategy_converge(
@@ -603,6 +770,294 @@ def test_handle_user_message_falls_back_to_rule_extraction_when_model_extraction
     assert latest_state["target_user"] == "独立开发者"
     assert latest_prd_snapshot is not None
     assert latest_prd_snapshot.sections["target_user"]["content"] == "独立开发者"
+
+
+def test_handle_user_message_uses_local_correction_reply_and_rolls_back_target_user(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="修正模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="confirm",
+            pending_confirmations=["目标用户是否准确"],
+        ),
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        sections={
+            "target_user": {"title": "目标用户", "content": "独立创业者", "status": "confirmed"},
+            "problem": {"title": "核心问题", "content": "不知道先验证哪个需求", "status": "confirmed"},
+        },
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("correction command should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="不对，先改目标用户",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+
+    assert "我先回滚当前关于目标用户及其后续共识" in result.reply
+    assert latest_state["target_user"] is None
+    assert latest_state["problem"] is None
+    assert latest_state["solution"] is None
+    assert latest_state["mvp_scope"] == []
+    assert latest_state["pending_confirmations"] == []
+    assert latest_prd_snapshot is not None
+    assert latest_prd_snapshot.sections["target_user"]["status"] == "missing"
+    assert latest_prd_snapshot.sections["problem"]["status"] == "missing"
+
+
+def test_handle_user_message_uses_local_confirm_continue_reply_without_generate_reply(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="确认推进模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="confirm",
+            pending_confirmations=["目标用户是否准确"],
+        ),
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        sections={
+            "target_user": {"title": "目标用户", "content": "独立创业者", "status": "confirmed"},
+            "problem": {"title": "核心问题", "content": "不知道先验证哪个需求", "status": "confirmed"},
+            "solution": {"title": "解决方案", "content": "通过连续追问沉淀结构化 PRD", "status": "confirmed"},
+            "mvp_scope": {"title": "MVP 范围", "content": "创建会话、持续追问、导出 PRD", "status": "confirmed"},
+        },
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("confirm continue command should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="确认，继续下一步",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert "我先锁定当前关于目标用户、核心问题、解决方案、MVP 范围的共识" in result.reply
+    assert latest_state["conversation_strategy"] == "converge"
+    assert latest_state["pending_confirmations"] == []
+    assert latest_state["phase_goal"] == "明确首轮验证优先级"
+    assert latest_state["next_best_questions"] == [
+        "为了继续推进，请直接回答你现在最想先验证的是频率、付费意愿，还是转化阻力？"
+    ]
+
+
+def test_handle_user_message_uses_specific_local_confirm_reply_without_generate_reply(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="确认细分推进模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="confirm",
+            pending_confirmations=["目标用户是否准确"],
+        ),
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("specific confirm command should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="确认，先看付费意愿",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert "我会先把讨论推进到“付费意愿验证”" in result.reply
+    assert latest_state["conversation_strategy"] == "converge"
+    assert latest_state["phase_goal"] == "明确付费意愿是否成立"
+    assert latest_state["next_best_questions"] == [
+        "为了继续推进，请直接回答这类用户现在有没有为替代方案付费，或者愿不愿意为更好结果付费。"
+    ]
+
+
+def test_handle_user_message_keeps_frequency_validation_in_local_stable_flow(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="频率验证模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="converge",
+            phase_goal="明确问题发生频率是否足够高",
+            stage_hint="推进频率验证",
+            validation_focus="frequency",
+            validation_step=1,
+        ),
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("frequency validation follow-up should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="最近几乎每天都会发生，尤其在准备新需求评审时",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert "我先按你的描述把当前判断收成“这是一个高频信号候选”" in result.reply
+    assert latest_state["validation_focus"] == "frequency"
+    assert latest_state["validation_step"] == 2
+    assert latest_state["phase_goal"] == "确认高频问题是否造成真实损失"
+    assert latest_state["next_best_questions"] == [
+        "为了继续推进，请直接回答如果这件事持续发生，实际会多花什么时间、错过什么机会，或者带来什么损失。"
+    ]
+
+
+def test_handle_user_message_keeps_conversion_resistance_validation_in_local_stable_flow(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="转化阻力验证模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="converge",
+            phase_goal="明确转化阻力集中在哪一环",
+            stage_hint="推进转化阻力验证",
+            validation_focus="conversion_resistance",
+            validation_step=1,
+        ),
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("conversion resistance follow-up should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="大多数人会卡在第一次接入，不知道要准备什么资料",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert "我先按你的描述把当前阻力判断收成“首要阻力候选已经出现”" in result.reply
+    assert latest_state["validation_focus"] == "conversion_resistance"
+    assert latest_state["validation_step"] == 2
+    assert latest_state["phase_goal"] == "确认首要阻力是否直接打断转化"
+    assert latest_state["next_best_questions"] == [
+        "为了继续推进，请直接回答一旦卡在这里，用户最常见的结果是放弃、延后，还是转去其他替代方案。"
+    ]
 
 
 def test_handle_user_message_rolls_back_user_message_when_generate_reply_fails(db_session, monkeypatch):

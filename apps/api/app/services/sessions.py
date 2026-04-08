@@ -201,6 +201,7 @@ def _build_turn_decision_sections(
     conversation_strategy = _infer_conversation_strategy(decision)
     strategy_reason = _infer_strategy_reason(decision, conversation_strategy)
     next_best_questions = _infer_next_best_questions(decision, conversation_strategy)
+    confirm_quick_replies = _infer_confirm_quick_replies(decision, conversation_strategy)
     snapshot = SimpleNamespace(
         phase=decision.phase,
         phase_goal=decision.phase_goal,
@@ -224,7 +225,10 @@ def _build_turn_decision_sections(
                 "strategy_reason": strategy_reason,
             }
         elif section["key"] == "next_step":
-            meta = {"next_best_questions": next_best_questions}
+            meta = {
+                "next_best_questions": next_best_questions,
+                "confirm_quick_replies": confirm_quick_replies,
+            }
         sections.append(
             AgentTurnDecisionSectionResponse.model_validate({**section, "meta": meta})
         )
@@ -262,6 +266,35 @@ def _infer_next_best_questions(decision: AgentTurnDecision, strategy: str) -> li
     if decision.next_move == "challenge_and_reframe":
         return ["如果我对问题的判断不对，你最想先纠正用户、问题，还是方案？"]
     return ["为了继续推进，你先补一个最具体的真实场景。"]
+
+
+def _infer_confirm_quick_replies(decision: AgentTurnDecision, strategy: str) -> list[str]:
+    if strategy != "confirm":
+        return []
+
+    confirmations = decision.needs_confirmation_json or []
+    items = [
+        "确认，继续下一步",
+        "确认，先看频率",
+        "确认，先看付费意愿",
+        "确认，先看转化阻力",
+    ]
+    if any("目标用户" in item for item in confirmations):
+        items.append("不对，先改目标用户")
+    if any("问题" in item or "痛点" in item for item in confirmations):
+        items.append("不对，先改核心问题")
+
+    if len(items) == 4:
+        items.extend(["不对，先改目标用户", "不对，先改核心问题"])
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
 
 
 def _infer_strategy_reason(decision: AgentTurnDecision, strategy: str) -> str:
@@ -308,6 +341,8 @@ def build_initial_state(initial_idea: str) -> dict:
         "prd_snapshot": {"sections": {}},
         "current_phase": "idea_clarification",
         "conversation_strategy": "clarify",
+        "current_model_scene": "general",
+        "collaboration_mode_label": "通用协作模式",
         "strategy_reason": None,
         "phase_goal": None,
         "working_hypotheses": [],

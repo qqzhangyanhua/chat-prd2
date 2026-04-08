@@ -6,7 +6,11 @@ from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
 from app.db.models import AgentTurnDecision
 from app.db.models import ConversationMessage
+from app.db.models import ProjectSession
 from app.repositories import model_configs as model_configs_repository
+from app.repositories import prd as prd_repository
+from app.repositories import state as state_repository
+from app.services import sessions as session_service
 
 
 def _parse_sse_events(body: str) -> list[tuple[str, dict]]:
@@ -180,6 +184,329 @@ def test_message_stream_returns_404_for_other_users_session(client, auth_client,
     }
 
 
+def test_message_stream_uses_local_correction_reply_without_opening_gateway_stream(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="修正流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "confirm",
+                "pending_confirmations": ["目标用户是否准确"],
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("correction command should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "不对，先改目标用户",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "我先回滚当前关于目标用户及其后续共识" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_uses_local_confirm_continue_reply_without_opening_gateway_stream(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="确认推进流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "confirm",
+                "pending_confirmations": ["目标用户是否准确"],
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("confirm continue command should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "确认，继续下一步",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "我先锁定当前关于目标用户、核心问题、解决方案、MVP 范围的共识" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_uses_specific_local_confirm_reply_without_opening_gateway_stream(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="确认细分推进流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "confirm",
+                "pending_confirmations": ["目标用户是否准确"],
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("specific confirm command should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "确认，先看转化阻力",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "我会先把讨论推进到“转化阻力验证”" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_keeps_frequency_validation_in_local_stable_flow(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="频率验证流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "明确问题发生频率是否足够高",
+                "stage_hint": "推进频率验证",
+                "validation_focus": "frequency",
+                "validation_step": 1,
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("frequency validation follow-up should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "最近几乎每天都会发生，尤其在准备新需求评审时",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "我先按你的描述把当前判断收成“这是一个高频信号候选”" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_keeps_conversion_resistance_validation_in_local_stable_flow(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="转化阻力验证流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "明确转化阻力集中在哪一环",
+                "stage_hint": "推进转化阻力验证",
+                "validation_focus": "conversion_resistance",
+                "validation_step": 1,
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("conversion resistance follow-up should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "大多数人会卡在第一次接入，不知道要准备什么资料",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "我先按你的描述把当前阻力判断收成“首要阻力候选已经出现”" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
 def test_message_stream_rejects_missing_model_config_id(auth_client, seeded_session):
     response = auth_client.post(
         f"/api/sessions/{seeded_session}/messages",
@@ -203,14 +530,28 @@ def test_message_stream_rejects_disabled_model_config(
         model_config = model_configs_repository.create_model_config(
             db,
             name="禁用流式模型",
+            recommended_scene="reasoning",
+            recommended_usage="适合承接长文本推理。",
             base_url="https://gateway.example.com/v1",
             api_key="secret",
             model="gpt-4o-mini",
             enabled=False,
         )
+        general_model = model_configs_repository.create_model_config(
+            db,
+            name="通用候选模型",
+            recommended_scene="general",
+            recommended_usage="适合继续通用产品对话。",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
         fallback_model = model_configs_repository.create_model_config(
             db,
             name="推荐流式模型",
+            recommended_scene="reasoning",
+            recommended_usage="适合承接长文本推理。",
             base_url="https://gateway.example.com/v1",
             api_key="secret",
             model="claude-3-7-sonnet",
@@ -218,6 +559,7 @@ def test_message_stream_rejects_disabled_model_config(
         )
         db.commit()
         model_config_id = model_config.id
+        general_model_id = general_model.id
         fallback_model_id = fallback_model.id
     finally:
         db.close()
@@ -233,16 +575,23 @@ def test_message_stream_rejects_disabled_model_config(
         "error": {
             "code": "MODEL_CONFIG_DISABLED",
             "message": "Model config is disabled",
-            "details": {
-                "available_model_configs": [
-                    {
-                        "id": fallback_model_id,
-                        "name": "推荐流式模型",
-                        "model": "claude-3-7-sonnet",
-                    },
-                ],
-                "recommended_model_config_id": fallback_model_id,
-                "recommended_model_name": "推荐流式模型",
+                "details": {
+                    "available_model_configs": [
+                        {
+                            "id": fallback_model_id,
+                            "name": "推荐流式模型",
+                            "model": "claude-3-7-sonnet",
+                        },
+                        {
+                            "id": general_model_id,
+                            "name": "通用候选模型",
+                            "model": "gpt-4o-mini",
+                        },
+                    ],
+                    "recommended_model_config_id": fallback_model_id,
+                    "recommended_model_scene": "reasoning",
+                    "recommended_model_name": "推荐流式模型",
+                "recommended_model_reason": "原先选择的模型已停用，建议先切换到这个可用模型继续对话。适合承接长文本推理。",
                 "requested_model_config_id": model_config_id,
                 "requested_model_name": "禁用流式模型",
             },

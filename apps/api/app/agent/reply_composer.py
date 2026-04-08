@@ -170,10 +170,11 @@ def _build_next_step(decision: TurnDecision | object) -> str:
         return _append_next_best_question(message, next_best_question)
 
     if next_move == "summarize_and_confirm":
+        followup_label = recommendation_label or phase_goal or "当前共识"
         if primary_confirmation:
-            message = f"请你先确认{primary_confirmation}，确认后我就继续细化下一步"
+            message = f"请你先确认{primary_confirmation}，确认后我会继续按“{followup_label}”细化下一步"
         else:
-            message = "请你先确认当前共识，确认后我就继续细化下一步"
+            message = f"请你先确认当前共识，确认后我会继续按“{followup_label}”细化下一步"
         return _append_next_best_question(message, next_best_question)
 
     if next_move == "assume_and_advance":
@@ -197,4 +198,7 @@ def _build_next_step(decision: TurnDecision | object) -> str:
 def _append_next_best_question(message: str, next_best_question: str | None) -> str:
     if not next_best_question:
         return message
-    return f"{message}，我下一轮最建议你直接回答：{next_best_question}"
+    direct_reply_message = ""
+    if "确认" in next_best_question:
+        direct_reply_message = f"；你也可以直接回复：{next_best_question}"
+    return f"{message}，我下一轮最建议你直接回答：{next_best_question}{direct_reply_message}"

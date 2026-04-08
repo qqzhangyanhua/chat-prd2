@@ -89,6 +89,8 @@ def test_create_session_persists_phase1_default_state(auth_client, testing_sessi
 
     assert state_version.state_json["current_phase"] == "idea_clarification"
     assert state_version.state_json["conversation_strategy"] == "clarify"
+    assert state_version.state_json["current_model_scene"] == "general"
+    assert state_version.state_json["collaboration_mode_label"] == "通用协作模式"
     assert state_version.state_json["working_hypotheses"] == []
     assert state_version.state_json["recommended_directions"] == []
     assert state_version.state_json["pending_confirmations"] == []
@@ -467,8 +469,46 @@ def test_get_session_includes_messages_in_snapshot(
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
     assert data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"]
+    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][4]["meta"]
     assert isinstance(data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"], list)
     assert "建议" in data["turn_decisions"][0]["decision_summary"]
+
+
+def test_get_session_confirm_stage_includes_specific_positive_quick_replies(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(monkeypatch)
+
+    for content in [
+        "独立开发者",
+        "不知道先验证哪个需求",
+        "通过连续追问沉淀结构化 PRD",
+        "创建会话、持续追问、导出 PRD",
+    ]:
+        with auth_client.stream(
+            "POST",
+            f"/api/sessions/{seeded_session}/messages",
+            json={
+                "content": content,
+                "model_config_id": model_config_id,
+            },
+        ) as response:
+            assert response.status_code == 200
+            list(response.iter_text())
+
+    response = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert response.status_code == 200
+    data = response.json()
+    quick_replies = data["turn_decisions"][-1]["decision_sections"][4]["meta"]["confirm_quick_replies"]
+
+    assert "确认，继续下一步" in quick_replies
+    assert "确认，先看频率" in quick_replies
+    assert "确认，先看付费意愿" in quick_replies
+    assert "确认，先看转化阻力" in quick_replies
 
 
 def test_get_session_returns_assistant_reply_groups_and_latest_projection(
@@ -537,6 +577,7 @@ def test_get_session_returns_assistant_reply_groups_and_latest_projection(
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
     assert data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"]
+    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][4]["meta"]
     group = data["assistant_reply_groups"][0]
     assert group["session_id"] == seeded_session
     assert group["user_message_id"] == user_message_id

@@ -12,6 +12,7 @@ export const DECISION_GUIDANCE_REASON_LABEL = "decision-guidance-reason";
 
 interface AssistantTurnCardProps {
   canRegenerate?: boolean;
+  collaborationModeLabel?: string | null;
   currentAction: NextAction | null;
   isRegenerating?: boolean;
   isWaiting?: boolean;
@@ -31,6 +32,7 @@ const defaultOptions = [
 
 export function AssistantTurnCard({
   canRegenerate = false,
+  collaborationModeLabel = null,
   currentAction,
   isRegenerating = false,
   isWaiting = false,
@@ -54,6 +56,10 @@ export function AssistantTurnCard({
     currentAction?.target === "target_user"
       ? "你现在最想服务的第一类用户是谁？请尽量具体到角色、场景和触发时机。"
       : "如果只能先做一个最小版本，你希望它优先解决哪一个关键问题？";
+  const confirmationReplies =
+    decisionGuidance?.conversationStrategy === "confirm"
+      ? decisionGuidance.confirmQuickReplies ?? []
+      : [];
 
   const openHistory = () => {
     setSelectedHistoryVersionId(latestReplyVersion?.assistantVersionId ?? null);
@@ -126,6 +132,12 @@ export function AssistantTurnCard({
               </div>
             ) : null}
           </div>
+          {collaborationModeLabel ? (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600">
+              <span className="font-medium text-stone-500">当前协作模式</span>
+              <span className="font-semibold text-stone-900">{collaborationModeLabel}</span>
+            </div>
+          ) : null}
 
           {decisionGuidance ? (
             <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
@@ -142,6 +154,23 @@ export function AssistantTurnCard({
                 >
                   {decisionGuidance.strategyReason}
                 </p>
+              ) : null}
+              {confirmationReplies.length > 0 ? (
+                <>
+                  <p className="mt-3 text-xs font-medium text-stone-500">确认后直接回复</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {confirmationReplies.map((reply) => (
+                      <button
+                        key={reply}
+                        onClick={() => onSelectDecisionGuidanceQuestion?.(reply)}
+                        type="button"
+                        className="rounded-full border border-stone-200 bg-white px-3 py-1 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100"
+                      >
+                        {reply}
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {decisionGuidance.nextBestQuestions.map((question, index) => (

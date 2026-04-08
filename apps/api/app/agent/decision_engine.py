@@ -20,7 +20,7 @@ PHASE_GOALS = {
     "complete": "总结共识并确认下一步",
 }
 
-NON_DIRECTIONAL_STATE_PATCH_KEYS = {"iteration", "stage_hint"}
+NON_DIRECTIONAL_STATE_PATCH_KEYS = {"iteration", "stage_hint", "conversation_strategy"}
 
 
 def _merge_state(state: dict, state_patch: dict) -> dict:
@@ -183,9 +183,17 @@ def _has_direction_signal(
     prd_patch: dict,
 ) -> bool:
     meaningful_state_keys = {
-        key for key in state_patch.keys() if key not in NON_DIRECTIONAL_STATE_PATCH_KEYS
+        key
+        for key, value in state_patch.items()
+        if key not in NON_DIRECTIONAL_STATE_PATCH_KEYS and not is_missing(value)
     }
-    return bool(meaningful_state_keys or understanding.candidate_updates or prd_patch)
+    meaningful_prd_patch = any(
+        isinstance(value, dict)
+        and value.get("status") != "missing"
+        and not is_missing(value.get("content"))
+        for value in prd_patch.values()
+    )
+    return bool(meaningful_state_keys or understanding.candidate_updates or meaningful_prd_patch)
 
 
 def _build_strategy_reason(

@@ -29,6 +29,7 @@ class NextAction:
 class AgentResult:
     reply: str
     action: NextAction
+    reply_mode: Literal["gateway", "local"] = "gateway"
     state_patch: dict[str, Any] = field(default_factory=dict)
     prd_patch: dict[str, Any] = field(default_factory=dict)
     decision_log: list[dict[str, Any]] = field(default_factory=list)

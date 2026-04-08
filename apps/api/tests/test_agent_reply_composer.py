@@ -104,6 +104,7 @@ def test_compose_reply_next_step_changes_by_next_move():
 
     reply_confirm = compose_reply(decision_confirm)
     assert "请你先确认目标用户是否准确" in reply_confirm
+    assert "确认后我会继续按" in reply_confirm
 
     decision_refute = _base_decision("challenge_and_reframe")
     suggestions, recommendation = build_suggestions(decision_refute)
@@ -126,6 +127,21 @@ def test_compose_reply_uses_specific_confirmation_target_in_confirm_section():
     assert CONFIRM_ITEMS_PREFIX in reply
     assert "目标用户是否准确" in reply
     assert "请你先确认目标用户是否准确" in reply
+
+
+def test_compose_reply_confirm_stage_offers_direct_confirmation_template_and_followup():
+    decision = _base_decision("summarize_and_confirm")
+    suggestions, recommendation = build_suggestions(decision)
+    decision.suggestions = suggestions
+    decision.recommendation = recommendation
+    decision.needs_confirmation = ["目标用户是否准确"]
+    decision.next_best_questions = ["如果判断没偏，你就直接回复“确认，继续下一步”。"]
+
+    reply = compose_reply(decision)
+
+    assert "确认后我会继续按" in reply
+    assert "你也可以直接回复" in reply
+    assert "确认，继续下一步" in reply
 
 
 def test_compose_reply_next_step_falls_back_without_next_best_question():

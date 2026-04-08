@@ -72,6 +72,17 @@ class PreparedRegenerateStream(PreparedMessageStream):
     assistant_message_id: str
 
 
+class LocalReplyStream:
+    def __init__(self, reply: str) -> None:
+        self._reply = reply
+
+    def __iter__(self):
+        yield self._reply
+
+    def close(self):
+        return None
+
+
 def apply_state_patch(current_state: dict, patch: dict) -> dict:
     if not patch:
         return current_state
@@ -135,8 +146,31 @@ def _build_decision_state_patch(turn_decision: object) -> dict:
     }
 
 
-def _merge_state_patch_with_decision(state_patch: dict, turn_decision: object) -> dict:
+def _build_collaboration_mode_label(scene: str) -> str:
+    labels = {
+        "reasoning": "深度推演模式",
+        "general": "通用协作模式",
+        "fallback": "稳态兜底模式",
+    }
+    return labels.get(scene, "通用协作模式")
+
+
+def _merge_state_patch_with_decision(
+    state_patch: dict,
+    turn_decision: object,
+    *,
+    model_config: LLMModelConfig | None = None,
+    current_state: dict | None = None,
+) -> dict:
     decision_patch = _build_decision_state_patch(turn_decision)
+    scene = _infer_model_scene(model_config)
+    if model_config is None and current_state is not None:
+        existing_scene = current_state.get("current_model_scene")
+        if isinstance(existing_scene, str) and existing_scene in {"general", "reasoning", "fallback"}:
+            scene = existing_scene
+
+    decision_patch["current_model_scene"] = scene
+    decision_patch["collaboration_mode_label"] = _build_collaboration_mode_label(scene)
     return {**decision_patch, **state_patch}
 
 
@@ -179,26 +213,152 @@ def _serialize_model_option(model_config: LLMModelConfig) -> dict[str, str]:
     }
 
 
+def _normalize_recommended_usage_text(value: str) -> str:
+    trimmed = value.strip()
+    if not trimmed:
+        return ""
+    if trimmed[-1] in {"。", "！", "？", ".", "!", "?"}:
+        return trimmed
+    return f"{trimmed}。"
+
+
+def _build_recommended_model_basis(model_config: LLMModelConfig) -> str:
+    configured_usage = model_config.recommended_usage
+    if configured_usage:
+        return _normalize_recommended_usage_text(configured_usage)
+
+    model_name = model_config.model
+    normalized = model_name.lower()
+    if "claude" in normalized or "sonnet" in normalized:
+        return "这个替代模型更适合继续长文本推理。"
+    if "gpt" in normalized:
+        return "这个替代模型适合继续通用对话。"
+    return "这个替代模型当前可用，适合继续当前对话。"
+
+
+def _infer_model_scene(model_config: LLMModelConfig | None) -> str:
+    if model_config is None:
+        return "general"
+
+    configured_scene = getattr(model_config, "recommended_scene", None)
+    if configured_scene in {"general", "reasoning", "fallback"}:
+        return configured_scene
+
+    haystack = " ".join(
+        part.lower()
+        for part in (
+            model_config.recommended_usage or "",
+            model_config.name or "",
+            model_config.model or "",
+        )
+        if part
+    )
+    if any(keyword in haystack for keyword in ("长文本", "推理", "reason", "claude", "sonnet")):
+        return "reasoning"
+    if any(keyword in haystack for keyword in ("通用", "对话", "chat", "gpt")):
+        return "general"
+    return "fallback"
+
+
+def _infer_model_family(model_config: LLMModelConfig | None) -> str:
+    if model_config is None:
+        return "any"
+
+    haystack = " ".join(
+        part.lower()
+        for part in (model_config.name or "", model_config.model or "")
+        if part
+    )
+    if "claude" in haystack or "sonnet" in haystack:
+        return "claude"
+    if "gpt" in haystack or "openai" in haystack:
+        return "gpt"
+    return "other"
+
+
+def _scene_rank_for_target(candidate_scene: str, target_scene: str) -> int:
+    rank_map = {
+        "general": {
+            "general": 0,
+            "reasoning": 1,
+            "fallback": 2,
+        },
+        "reasoning": {
+            "reasoning": 0,
+            "general": 1,
+            "fallback": 2,
+        },
+        "fallback": {
+            "fallback": 0,
+            "general": 1,
+            "reasoning": 2,
+        },
+    }
+    return rank_map.get(target_scene, rank_map["general"]).get(candidate_scene, 3)
+
+
+def _sort_available_models(
+    enabled_models: list[LLMModelConfig],
+    *,
+    requested_model: LLMModelConfig | None = None,
+) -> list[LLMModelConfig]:
+    target_scene = _infer_model_scene(requested_model)
+    target_family = _infer_model_family(requested_model)
+
+    def sort_key(model_config: LLMModelConfig) -> tuple[int, int, str, str]:
+        candidate_scene = _infer_model_scene(model_config)
+        candidate_family = _infer_model_family(model_config)
+        scene_rank = _scene_rank_for_target(candidate_scene, target_scene)
+        family_rank = 0 if target_family != "any" and candidate_family == target_family else 1
+        return (
+            scene_rank,
+            family_rank,
+            model_config.name.lower(),
+            model_config.id,
+        )
+
+    return sorted(enabled_models, key=sort_key)
+
+
+def _resolve_recommended_model_scene(model_config: LLMModelConfig) -> str:
+    configured_scene = getattr(model_config, "recommended_scene", None)
+    if configured_scene in {"general", "reasoning", "fallback"}:
+        return configured_scene
+    return _infer_model_scene(model_config)
+
+
 def _build_select_available_model_details(
     db: Session,
     *,
     requested_model_config_id: str,
-    requested_model_name: str | None = None,
+    requested_model: LLMModelConfig | None = None,
 ) -> dict[str, object]:
     enabled_models = model_configs_repository.list_enabled_model_configs(db)
-    available_model_configs = [_serialize_model_option(item) for item in enabled_models]
+    ranked_models = _sort_available_models(enabled_models, requested_model=requested_model)
+    available_model_configs = [_serialize_model_option(item) for item in ranked_models]
     details: dict[str, object] = {
         "available_model_configs": available_model_configs,
         "requested_model_config_id": requested_model_config_id,
     }
 
-    if requested_model_name:
-        details["requested_model_name"] = requested_model_name
+    if requested_model is not None:
+        details["requested_model_name"] = requested_model.name
 
-    recommended_model = available_model_configs[0] if available_model_configs else None
+    recommended_model_entity = ranked_models[0] if ranked_models else None
+    recommended_model = (
+        _serialize_model_option(recommended_model_entity)
+        if recommended_model_entity is not None
+        else None
+    )
     if recommended_model is not None:
         details["recommended_model_config_id"] = recommended_model["id"]
+        details["recommended_model_scene"] = _resolve_recommended_model_scene(recommended_model_entity)
         details["recommended_model_name"] = recommended_model["name"]
+        details["recommended_model_reason"] = (
+            "原先选择的模型已停用，建议先切换到这个可用模型继续对话。"
+            if requested_model is not None
+            else "原先选择的模型已不存在，建议先切换到这个可用模型继续对话。"
+        ) + _build_recommended_model_basis(recommended_model_entity)
 
     return details
 
@@ -233,7 +393,7 @@ def _get_enabled_model_config(db: Session, model_config_id: str) -> LLMModelConf
             details=_build_select_available_model_details(
                 db,
                 requested_model_config_id=model_config.id,
-                requested_model_name=model_config.name,
+                requested_model=model_config,
             ),
         )
     return model_config
@@ -342,8 +502,14 @@ def _persist_assistant_reply_and_version(
     state: dict,
     state_patch: dict,
     prd_patch: dict,
+    model_config: LLMModelConfig | None = None,
 ) -> tuple[str, str, int, str, int]:
-    merged_state_patch = _merge_state_patch_with_decision(state_patch, turn_decision)
+    merged_state_patch = _merge_state_patch_with_decision(
+        state_patch,
+        turn_decision,
+        model_config=model_config,
+        current_state=state,
+    )
     new_state = apply_state_patch(state, merged_state_patch)
     new_state = apply_prd_patch(new_state, prd_patch)
 
@@ -429,12 +595,15 @@ def _prepare_message_stream(
         model_extraction_result = _resolve_model_extraction_result(state, content, model_config)
         agent_result = run_agent(state, content, model_result=model_extraction_result)
         turn_decision = _require_turn_decision(agent_result)
-        reply_stream = open_reply_stream(
-            base_url=model_config.base_url,
-            api_key=model_config.api_key,
-            model=model_config.model,
-            messages=_build_gateway_messages(db, session_id),
-        )
+        if agent_result.reply_mode == "local":
+            reply_stream = LocalReplyStream(agent_result.reply)
+        else:
+            reply_stream = open_reply_stream(
+                base_url=model_config.base_url,
+                api_key=model_config.api_key,
+                model=model_config.model,
+                messages=_build_gateway_messages(db, session_id),
+            )
         db.commit()
     except ModelGatewayError as exc:
         logger.warning(
@@ -568,12 +737,15 @@ def handle_user_message(
         model_extraction_result = _resolve_model_extraction_result(state, content, model_config)
         agent_result = run_agent(state, content, model_result=model_extraction_result)
         turn_decision = _require_turn_decision(agent_result)
-        reply = generate_reply(
-            base_url=model_config.base_url,
-            api_key=model_config.api_key,
-            model=model_config.model,
-            messages=_build_gateway_messages(db, session_id),
-        )
+        if agent_result.reply_mode == "local":
+            reply = agent_result.reply
+        else:
+            reply = generate_reply(
+                base_url=model_config.base_url,
+                api_key=model_config.api_key,
+                model=model_config.model,
+                messages=_build_gateway_messages(db, session_id),
+            )
 
         assistant_message_id, _, _, _, _ = _persist_assistant_reply_and_version(
             db=db,
@@ -590,6 +762,7 @@ def handle_user_message(
             state=state,
             state_patch=agent_result.state_patch,
             prd_patch=agent_result.prd_patch,
+            model_config=model_config,
         )
     except ModelGatewayError as exc:
         logger.warning(
@@ -718,6 +891,10 @@ def stream_user_message_events(
                 state=prepared.state,
                 state_patch=prepared.state_patch,
                 prd_patch=prepared.prd_patch,
+                model_config=model_configs_repository.get_model_config_by_id(
+                    db,
+                    prepared.model_meta["model_config_id"],
+                ),
             )
         except Exception:
             db.rollback()

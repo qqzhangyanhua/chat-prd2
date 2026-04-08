@@ -249,6 +249,60 @@ describe("Composer", () => {
     expect(screen.queryByText("当前模型不可用，请选择其他模型后重试")).not.toBeInTheDocument();
   });
 
+  it("offers an immediate retry after switching to the recommended model", async () => {
+    const encoder = new TextEncoder();
+    vi.mocked(sendMessage)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("当前模型不可用，请选择其他模型后重试"), {
+          code: "MODEL_CONFIG_DISABLED",
+          details: {
+            recommended_model_config_id: "model-anthropic",
+            recommended_model_scene: "reasoning",
+            recommended_model_name: "Anthropic Claude 3.7",
+            recommended_model_reason: "它更适合继续长文本推理，建议优先切到这个模型继续。",
+            requested_model_config_id: "model-openai",
+          },
+          recoveryAction: {
+            type: "select_available_model",
+            label: "选择可用模型",
+            target: null,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode('event: message.accepted\ndata: {"message_id":"user-2"}\n\n'),
+            );
+            controller.close();
+          },
+        }),
+      );
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    fireEvent.click(await screen.findByRole("button", { name: "切换到 Anthropic Claude 3.7" }));
+    expect(
+      await screen.findByText(
+        "已切换到 Anthropic Claude 3.7。按当前对话场景优先推荐：长文本推理。它更适合继续长文本推理，建议优先切到这个模型继续。",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "立即重试刚才的消息" }));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenNthCalledWith(
+        2,
+        "demo-session",
+        "请帮我梳理目标用户。",
+        null,
+        expect.any(AbortSignal),
+        "model-anthropic",
+      );
+    });
+  });
+
   it("passes the selected model_config_id when sending a message", async () => {
     const encoder = new TextEncoder();
     vi.mocked(sendMessage).mockResolvedValue(
@@ -769,6 +823,80 @@ describe("ConversationPanel regenerate", () => {
       );
     });
   });
+
+  it("offers an immediate regenerate after switching to the recommended model", async () => {
+    const encoder = new TextEncoder();
+    workspaceStore.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+      {
+        id: "model-anthropic",
+        name: "Anthropic Claude 3.7",
+        model: "claude-3-7-sonnet",
+      },
+    ]);
+
+    vi.mocked(regenerateMessage)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("当前模型不可用，请选择其他模型后重试"), {
+          code: "MODEL_CONFIG_DISABLED",
+          details: {
+            recommended_model_config_id: "model-anthropic",
+            recommended_model_scene: "reasoning",
+            recommended_model_name: "Anthropic Claude 3.7",
+            recommended_model_reason: "它更适合继续长文本推理，建议优先切到这个模型继续。",
+            requested_model_config_id: "model-openai",
+          },
+          recoveryAction: {
+            type: "select_available_model",
+            label: "选择可用模型",
+            target: null,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode('event: assistant.version.started\ndata: {"session_id":"demo-session","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-anthropic","is_regeneration":true,"is_latest":false}\n\n'),
+            );
+            controller.close();
+          },
+        }),
+      );
+
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      lastSubmittedInput: "请帮我梳理目标用户。",
+      pendingRequestMode: "regenerate",
+      pendingUserInput: "请帮我梳理目标用户。",
+      regenerateRequestId: 1,
+    });
+
+    render(<Composer sessionId="demo-session" regenerateUserMessageId="user-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "切换到 Anthropic Claude 3.7" }));
+    expect(
+      await screen.findByText(
+        "已切换到 Anthropic Claude 3.7。按当前对话场景优先推荐：长文本推理。它更适合继续长文本推理，建议优先切到这个模型继续。",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "立即重新生成" }));
+
+    await waitFor(() => {
+      expect(regenerateMessage).toHaveBeenNthCalledWith(
+        2,
+        "demo-session",
+        "user-1",
+        null,
+        expect.any(AbortSignal),
+        "model-anthropic",
+      );
+    });
+  });
 });
 
 describe("ConversationPanel decision guidance", () => {
@@ -795,6 +923,7 @@ describe("ConversationPanel decision guidance", () => {
       nextBestQuestions: [
         ...guidanceQuestions,
       ],
+      confirmQuickReplies: [],
     };
 
     workspaceStore.setState({
@@ -845,6 +974,7 @@ describe("ConversationPanel decision guidance", () => {
       strategyLabel: "取舍中",
       strategyReason: "需要先确定空之间的优先级",
       nextBestQuestions: guidanceQuestions,
+      confirmQuickReplies: [],
     };
 
     workspaceStore.setState({
@@ -872,6 +1002,7 @@ describe("ConversationPanel decision guidance", () => {
       strategyLabel: "取舍中",
       strategyReason: "需要先确定空之间的优先级",
       nextBestQuestions: guidanceQuestions,
+      confirmQuickReplies: [],
     };
 
     workspaceStore.setState({
@@ -891,5 +1022,37 @@ describe("ConversationPanel decision guidance", () => {
       expect(screen.queryByRole("button", { name: question })).not.toBeInTheDocument();
     });
     expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
+  });
+
+  it("writes stable confirmation quick replies into the composer during confirm stage", async () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "confirm",
+      strategyLabel: "确认中",
+      strategyReason: "需要先锁定当前共识",
+      nextBestQuestions: ["请确认当前理解是否准确"],
+      confirmQuickReplies: [
+        "确认，继续下一步",
+        "不对，先改目标用户",
+        "不对，先改核心问题",
+      ],
+    };
+
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      messages: [
+        { id: "user-1", role: "user", content: "先讲清问题" },
+        { id: "assistant-1", role: "assistant", content: "我们先锁定共识" },
+      ],
+      decisionGuidance: guidance,
+    });
+
+    render(<ConversationPanel sessionId="session-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认，继续下一步" }));
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().inputValue).toBe("确认，继续下一步");
+      expect(screen.getByRole("textbox")).toHaveValue("确认，继续下一步");
+    });
   });
 });

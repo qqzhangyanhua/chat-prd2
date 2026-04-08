@@ -470,6 +470,10 @@ describe("WorkspaceSessionShell", () => {
                   "确认当前目标用户是哪个人群？",
                   "确认下一步验证的关键假设。",
                 ],
+                confirm_quick_replies: [
+                  "确认，继续下一步",
+                  "不对，先改目标用户",
+                ],
               },
             },
           ],
@@ -492,6 +496,10 @@ describe("WorkspaceSessionShell", () => {
         nextBestQuestions: [
           "确认当前目标用户是哪个人群？",
           "确认下一步验证的关键假设。",
+        ],
+        confirmQuickReplies: [
+          "确认，继续下一步",
+          "不对，先改目标用户",
         ],
       });
     });

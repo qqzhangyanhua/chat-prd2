@@ -25,6 +25,14 @@ interface ComposerProps {
 interface SuggestedModelSelection {
   modelConfigId: string;
   modelName: string;
+  scene: string | null;
+  reason: string | null;
+}
+
+interface PostModelSwitchPrompt {
+  actionLabel: string;
+  message: string;
+  onAction: () => void;
 }
 
 function getSuggestedModelSelection(
@@ -44,7 +52,9 @@ function getSuggestedModelSelection(
   const details = (error as {
     details: {
       recommended_model_config_id?: unknown;
+      recommended_model_scene?: unknown;
       recommended_model_name?: unknown;
+      recommended_model_reason?: unknown;
     };
   }).details;
   const recommendedModelConfigId = details.recommended_model_config_id;
@@ -63,7 +73,45 @@ function getSuggestedModelSelection(
       typeof details.recommended_model_name === "string" && details.recommended_model_name
         ? details.recommended_model_name
         : matchedModel.name,
+    scene:
+      typeof details.recommended_model_scene === "string" && details.recommended_model_scene
+        ? details.recommended_model_scene
+        : null,
+    reason:
+      typeof details.recommended_model_reason === "string" && details.recommended_model_reason
+        ? details.recommended_model_reason
+        : null,
   };
+}
+
+function getSceneLabel(scene: string | null): string | null {
+  if (scene === "general") {
+    return "通用对话";
+  }
+  if (scene === "reasoning") {
+    return "长文本推理";
+  }
+  if (scene === "fallback") {
+    return "兜底回退";
+  }
+  return null;
+}
+
+function buildPostSwitchMessage(
+  suggestedModel: SuggestedModelSelection,
+  fallbackMessage: string,
+): string {
+  const parts = [`已切换到 ${suggestedModel.modelName}。`];
+  const sceneLabel = getSceneLabel(suggestedModel.scene);
+  if (sceneLabel) {
+    parts.push(`按当前对话场景优先推荐：${sceneLabel}。`);
+  }
+  if (suggestedModel.reason) {
+    parts.push(suggestedModel.reason);
+  } else {
+    parts.push(fallbackMessage);
+  }
+  return parts.join("");
 }
 
 export function Composer({ sessionId, regenerateUserMessageId = null }: ComposerProps) {
@@ -71,6 +119,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
   const lastHandledRegenerateIdRef = useRef(0);
   const modelSelectorRef = useRef<HTMLSelectElement | null>(null);
   const [errorRecoveryAction, setErrorRecoveryAction] = useState<ResolvedRecoveryAction | null>(null);
+  const [postModelSwitchPrompt, setPostModelSwitchPrompt] = useState<PostModelSwitchPrompt | null>(null);
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const availableModelConfigs = useWorkspaceStore((state) => state.availableModelConfigs);
@@ -106,6 +155,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
       workspaceStore.getState().startRequest(normalizedContent);
     }
     setErrorRecoveryAction(null);
+    setPostModelSwitchPrompt(null);
 
     try {
       const stream = await sendMessage(
@@ -145,6 +195,17 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
             workspaceStore.getState().selectModelConfig(suggestedModel.modelConfigId);
             workspaceStore.getState().resetError();
             setErrorRecoveryAction(null);
+            setPostModelSwitchPrompt({
+              actionLabel: "立即重试刚才的消息",
+              message: buildPostSwitchMessage(
+                suggestedModel,
+                "这个模型当前可用，我建议先继续刚才这条消息。",
+              ),
+              onAction: () => {
+                setPostModelSwitchPrompt(null);
+                void dispatchMessage(normalizedContent);
+              },
+            });
             return;
           }
           modelSelectorRef.current?.focus();
@@ -175,6 +236,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     setErrorRecoveryAction(null);
+    setPostModelSwitchPrompt(null);
 
     try {
       const stream = await regenerateMessage(
@@ -214,6 +276,17 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
             workspaceStore.getState().selectModelConfig(suggestedModel.modelConfigId);
             workspaceStore.getState().resetError();
             setErrorRecoveryAction(null);
+            setPostModelSwitchPrompt({
+              actionLabel: "立即重新生成",
+              message: buildPostSwitchMessage(
+                suggestedModel,
+                "这个模型当前可用，我建议先重新生成上一版回复。",
+              ),
+              onAction: () => {
+                setPostModelSwitchPrompt(null);
+                void dispatchRegenerate(userMessageId);
+              },
+            });
             return;
           }
           modelSelectorRef.current?.focus();
@@ -301,6 +374,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
               disabled={isStreaming}
               onChange={(event) => {
                 resetError();
+                setPostModelSwitchPrompt(null);
                 setInputValue(event.target.value);
               }}
               onKeyDown={(event) => {
@@ -323,6 +397,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
               onSelectModel={() => {
                 resetError();
                 setErrorRecoveryAction(null);
+                setPostModelSwitchPrompt(null);
               }}
               selectRef={modelSelectorRef}
             />
@@ -344,6 +419,18 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
                 message={errorMessage}
                 onAction={errorRecoveryAction?.onAction}
               />
+            ) : null}
+            {postModelSwitchPrompt ? (
+              <div className="mt-2 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-700">
+                <p>{postModelSwitchPrompt.message}</p>
+                <button
+                  type="button"
+                  className="mt-3 rounded-xl border border-stone-300 bg-white px-4 py-2 font-medium text-stone-900"
+                  onClick={postModelSwitchPrompt.onAction}
+                >
+                  {postModelSwitchPrompt.actionLabel}
+                </button>
+              </div>
             ) : null}
           </div>
 

@@ -23,6 +23,8 @@ class StateSnapshot(BaseModel):
     prd_snapshot: dict[str, Any]
     current_phase: str = Field(default="idea_clarification")
     conversation_strategy: str = Field(default="clarify")
+    current_model_scene: str = Field(default="general")
+    collaboration_mode_label: str | None = None
     strategy_reason: str | None = None
     phase_goal: str | None = None
     working_hypotheses: list[dict[str, Any]] = Field(default_factory=list)

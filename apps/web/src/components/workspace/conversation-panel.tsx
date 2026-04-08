@@ -21,6 +21,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const replyGroups = useWorkspaceStore((state) => state.replyGroups);
   const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const decisionGuidance = useWorkspaceStore((state) => state.decisionGuidance);
+  const collaborationModeLabel = useWorkspaceStore((state) => state.collaborationModeLabel);
   const streamPhase = useWorkspaceStore((state) => state.streamPhase);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -114,6 +115,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
       ) : (
         <AssistantTurnCard
           canRegenerate={Boolean(selectedModelConfigId && regenerateUserMessageId)}
+          collaborationModeLabel={collaborationModeLabel}
           currentAction={currentAction}
           isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
           isWaiting={isWaitingForNew}

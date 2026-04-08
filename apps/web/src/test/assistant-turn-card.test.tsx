@@ -96,6 +96,7 @@ describe("AssistantTurnCard", () => {
         "你愿意先收敛用户还是首个场景？",
         "最佳主线是聚焦哪个核心问题？",
       ],
+      confirmQuickReplies: [],
     };
 
     render(
@@ -115,12 +116,26 @@ describe("AssistantTurnCard", () => {
     });
   });
 
+  it("shows collaboration mode label when provided", () => {
+    render(
+      <AssistantTurnCard
+        collaborationModeLabel="深度推演模式"
+        currentAction={null}
+        latestAssistantMessage="我先帮你拆开复杂约束，再逐步收敛方案。"
+      />,
+    );
+
+    expect(screen.getByText("当前协作模式")).toBeInTheDocument();
+    expect(screen.getByText("深度推演模式")).toBeInTheDocument();
+  });
+
   it("still shows stage label and buttons when strategy reason is missing", () => {
     const guidance: DecisionGuidance = {
       conversationStrategy: "choose",
       strategyLabel: "推动取舍",
       strategyReason: null,
       nextBestQuestions: ["先确定主线再调整方案"],
+      confirmQuickReplies: [],
     };
 
     render(
@@ -146,6 +161,7 @@ describe("AssistantTurnCard", () => {
       strategyLabel: "推动取舍",
       strategyReason: "目标用户过泛，先确定主线取舍。",
       nextBestQuestions: ["你愿意先收敛用户还是首个场景？"],
+      confirmQuickReplies: [],
     };
     const onSelect = vi.fn();
 
@@ -161,6 +177,61 @@ describe("AssistantTurnCard", () => {
     fireEvent.click(screen.getByRole("button", { name: guidance.nextBestQuestions[0] }));
 
     expect(onSelect).toHaveBeenCalledWith("你愿意先收敛用户还是首个场景？");
+  });
+
+  it("shows stable confirmation quick replies during confirm stage", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "confirm",
+      strategyLabel: "确认共识",
+      strategyReason: "核心信息已基本齐备，先锁定共识。",
+      nextBestQuestions: ["请确认当前理解是否准确"],
+      confirmQuickReplies: [
+        "确认，继续下一步",
+        "不对，先改目标用户",
+        "不对，先改核心问题",
+      ],
+    };
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        latestAssistantMessage="我先把当前共识收口。"
+      />,
+    );
+
+    expect(screen.getByText("确认后直接回复")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认，继续下一步" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "不对，先改目标用户" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "不对，先改核心问题" })).toBeInTheDocument();
+  });
+
+  it("uses the same selection callback for confirmation quick replies", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "confirm",
+      strategyLabel: "确认共识",
+      strategyReason: "核心信息已基本齐备，先锁定共识。",
+      nextBestQuestions: ["请确认当前理解是否准确"],
+      confirmQuickReplies: [
+        "确认，继续下一步",
+        "不对，先改目标用户",
+        "不对，先改核心问题",
+      ],
+    };
+    const onSelect = vi.fn();
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        onSelectDecisionGuidanceQuestion={onSelect}
+        latestAssistantMessage="我先把当前共识收口。"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认，继续下一步" }));
+
+    expect(onSelect).toHaveBeenCalledWith("确认，继续下一步");
   });
 
   it("does not render guidance when no decision guidance is provided", () => {
