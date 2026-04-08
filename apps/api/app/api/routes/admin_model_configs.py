@@ -41,6 +41,8 @@ def create_model_config(
     model_config = model_configs_repository.create_model_config(
         db,
         name=payload.name,
+        recommended_scene=payload.recommended_scene,
+        recommended_usage=payload.recommended_usage,
         base_url=payload.base_url,
         api_key=payload.api_key,
         model=payload.model,
@@ -65,6 +67,8 @@ def update_model_config(
         db,
         model_config,
         name=payload.name,
+        recommended_scene=payload.recommended_scene,
+        recommended_usage=payload.recommended_usage,
         base_url=payload.base_url,
         api_key=payload.api_key,
         model=payload.model,

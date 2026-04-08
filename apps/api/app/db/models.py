@@ -203,6 +203,8 @@ class LLMModelConfig(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    recommended_scene: Mapped[str | None] = mapped_column(String, nullable=True)
+    recommended_usage: Mapped[str | None] = mapped_column(Text, nullable=True)
     base_url: Mapped[str] = mapped_column(String, nullable=False)
     api_key: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)

@@ -143,6 +143,44 @@ def test_migration_creates_llm_model_configs_table(monkeypatch) -> None:
     assert "llm_model_configs" in created_tables
 
 
+def test_migration_adds_recommended_usage_to_llm_model_configs(monkeypatch) -> None:
+    migration = _load_migration_module(
+        "0008_add_recommended_usage_to_llm_model_configs.py",
+        "alembic_0008_add_recommended_usage_to_llm_model_configs",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_add_column(table_name, column, **kwargs):
+        captured["table_name"] = table_name
+        captured["column"] = column
+
+    monkeypatch.setattr(migration.op, "add_column", fake_add_column)
+
+    migration.upgrade()
+
+    assert captured["table_name"] == "llm_model_configs"
+    assert getattr(captured["column"], "name", None) == "recommended_usage"
+
+
+def test_migration_adds_recommended_scene_to_llm_model_configs(monkeypatch) -> None:
+    migration = _load_migration_module(
+        "0009_add_recommended_scene_to_llm_model_configs.py",
+        "alembic_0009_add_recommended_scene_to_llm_model_configs",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_add_column(table_name, column, **kwargs):
+        captured["table_name"] = table_name
+        captured["column"] = column
+
+    monkeypatch.setattr(migration.op, "add_column", fake_add_column)
+
+    migration.upgrade()
+
+    assert captured["table_name"] == "llm_model_configs"
+    assert getattr(captured["column"], "name", None) == "recommended_scene"
+
+
 def test_migration_creates_assistant_reply_group_and_version_tables(monkeypatch) -> None:
     migration = _load_migration_module(
         "0006_add_assistant_reply_versions.py",

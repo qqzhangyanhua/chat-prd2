@@ -1,10 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+RecommendedScene = Literal["general", "reasoning", "fallback"]
 
 
 def _validate_base_url(value: str) -> str:
@@ -16,6 +17,8 @@ def _validate_base_url(value: str) -> str:
 
 class AdminModelConfigCreateRequest(BaseModel):
     name: NonEmptyString
+    recommended_scene: RecommendedScene | None = None
+    recommended_usage: NonEmptyString | None = None
     base_url: NonEmptyString
     api_key: NonEmptyString
     model: NonEmptyString
@@ -29,6 +32,8 @@ class AdminModelConfigCreateRequest(BaseModel):
 
 class AdminModelConfigUpdateRequest(BaseModel):
     name: NonEmptyString | None = None
+    recommended_scene: RecommendedScene | None = None
+    recommended_usage: NonEmptyString | None = None
     base_url: NonEmptyString | None = None
     api_key: NonEmptyString | None = None
     model: NonEmptyString | None = None
@@ -47,6 +52,8 @@ class ModelConfigAdminResponse(BaseModel):
 
     id: str
     name: str
+    recommended_scene: RecommendedScene | None = None
+    recommended_usage: str | None = None
     base_url: str
     api_key: str
     model: str

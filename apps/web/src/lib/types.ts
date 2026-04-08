@@ -58,6 +58,8 @@ export interface StateSnapshotResponse {
   [key: string]: unknown;
   idea?: string;
   stage_hint?: string;
+  current_model_scene?: RecommendedScene;
+  collaboration_mode_label?: string | null;
 }
 
 export interface ConversationMessage {
@@ -103,6 +105,7 @@ export interface AgentTurnDecisionSectionMeta {
   strategy_label?: string;
   strategy_reason?: string;
   next_best_questions?: unknown[];
+  confirm_quick_replies?: unknown[];
 }
 
 export interface AgentTurnDecisionSection {
@@ -136,6 +139,7 @@ export interface DecisionGuidance {
   strategyLabel: string;
   strategyReason: string | null;
   nextBestQuestions: string[];
+  confirmQuickReplies?: string[];
 }
 
 export interface SessionSnapshotResponse {
@@ -175,6 +179,8 @@ export interface EnabledModelConfigItem {
   model: string;
 }
 
+export type RecommendedScene = "general" | "reasoning" | "fallback";
+
 export interface EnabledModelConfigListResponse {
   items: EnabledModelConfigItem[];
 }
@@ -182,6 +188,8 @@ export interface EnabledModelConfigListResponse {
 export interface AdminModelConfigItem {
   id: string;
   name: string;
+  recommended_scene?: RecommendedScene | null;
+  recommended_usage?: string | null;
   base_url: string;
   api_key: string;
   model: string;
@@ -196,6 +204,8 @@ export interface AdminModelConfigListResponse {
 
 export interface AdminModelConfigCreateRequest {
   name: string;
+  recommended_scene?: RecommendedScene;
+  recommended_usage?: string;
   base_url: string;
   api_key: string;
   model: string;
@@ -204,6 +214,8 @@ export interface AdminModelConfigCreateRequest {
 
 export interface AdminModelConfigUpdateRequest {
   name?: string;
+  recommended_scene?: RecommendedScene;
+  recommended_usage?: string;
   base_url?: string;
   api_key?: string;
   model?: string;

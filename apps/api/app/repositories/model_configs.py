@@ -30,6 +30,8 @@ def create_model_config(
     db: Session,
     *,
     name: str,
+    recommended_scene: str | None = None,
+    recommended_usage: str | None = None,
     base_url: str,
     api_key: str,
     model: str,
@@ -38,6 +40,8 @@ def create_model_config(
     entity = LLMModelConfig(
         id=str(uuid4()),
         name=name,
+        recommended_scene=recommended_scene,
+        recommended_usage=recommended_usage,
         base_url=base_url,
         api_key=api_key,
         model=model,
@@ -54,6 +58,8 @@ def update_model_config(
     entity: LLMModelConfig,
     *,
     name: str | None = None,
+    recommended_scene: str | None = None,
+    recommended_usage: str | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -61,6 +67,10 @@ def update_model_config(
 ) -> LLMModelConfig:
     if name is not None:
         entity.name = name
+    if recommended_scene is not None:
+        entity.recommended_scene = recommended_scene
+    if recommended_usage is not None:
+        entity.recommended_usage = recommended_usage
     if base_url is not None:
         entity.base_url = base_url
     if api_key is not None:

@@ -30,6 +30,8 @@ def test_enabled_model_configs_returns_enabled_only_and_hides_api_key(client, mo
         headers=admin_headers,
         json={
             "name": "禁用模型",
+            "recommended_scene": "fallback",
+            "recommended_usage": "适合短回复兜底。",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-disabled",
             "model": "gpt-4.1-mini",
@@ -43,6 +45,8 @@ def test_enabled_model_configs_returns_enabled_only_and_hides_api_key(client, mo
         headers=admin_headers,
         json={
             "name": "启用模型",
+            "recommended_scene": "general",
+            "recommended_usage": "适合稳定继续对话。",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-enabled",
             "model": "gpt-4.1",
@@ -104,6 +108,8 @@ def test_admin_can_crud_model_configs_and_enabled_endpoint_hides_api_key(client,
         headers=admin_headers,
         json={
             "name": "OpenAI 主配置",
+            "recommended_scene": "general",
+            "recommended_usage": "适合通用产品讨论。",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-secret",
             "model": "gpt-4.1",
@@ -114,18 +120,24 @@ def test_admin_can_crud_model_configs_and_enabled_endpoint_hides_api_key(client,
     created = create_response.json()
     config_id = created["id"]
     assert created["api_key"] == "sk-secret"
+    assert created["recommended_scene"] == "general"
+    assert created["recommended_usage"] == "适合通用产品讨论。"
 
     list_response = client.get("/api/admin/model-configs", headers=admin_headers)
     assert list_response.status_code == 200
     list_data = list_response.json()
     assert len(list_data["items"]) == 1
     assert list_data["items"][0]["id"] == config_id
+    assert list_data["items"][0]["recommended_scene"] == "general"
+    assert list_data["items"][0]["recommended_usage"] == "适合通用产品讨论。"
 
     update_response = client.patch(
         f"/api/admin/model-configs/{config_id}",
         headers=admin_headers,
         json={
             "model": "gpt-4.1-mini",
+            "recommended_scene": "reasoning",
+            "recommended_usage": "适合快速补充细节。",
             "enabled": False,
         },
     )
@@ -133,6 +145,8 @@ def test_admin_can_crud_model_configs_and_enabled_endpoint_hides_api_key(client,
     updated = update_response.json()
     assert updated["model"] == "gpt-4.1-mini"
     assert updated["enabled"] is False
+    assert updated["recommended_scene"] == "reasoning"
+    assert updated["recommended_usage"] == "适合快速补充细节。"
 
     enabled_response = client.get(
         "/api/model-configs/enabled",
@@ -179,6 +193,8 @@ def test_admin_create_model_config_rejects_blank_fields(client, monkeypatch):
         headers=admin_headers,
         json={
             "name": "   ",
+            "recommended_scene": "invalid",
+            "recommended_usage": "   ",
             "base_url": "   ",
             "api_key": "   ",
             "model": "   ",
@@ -199,6 +215,8 @@ def test_admin_create_model_config_rejects_invalid_base_url(client, monkeypatch)
         headers=admin_headers,
         json={
             "name": "OpenAI",
+            "recommended_scene": "general",
+            "recommended_usage": "适合稳定对话。",
             "base_url": "not-a-url",
             "api_key": "sk-secret",
             "model": "gpt-4.1-mini",
@@ -222,6 +240,8 @@ def test_admin_update_model_config_rejects_blank_fields_and_invalid_base_url(
         headers=admin_headers,
         json={
             "name": "OpenAI",
+            "recommended_scene": "general",
+            "recommended_usage": "适合稳定对话。",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-secret",
             "model": "gpt-4.1-mini",
@@ -236,6 +256,8 @@ def test_admin_update_model_config_rejects_blank_fields_and_invalid_base_url(
         headers=admin_headers,
         json={
             "name": "  ",
+            "recommended_scene": "invalid",
+            "recommended_usage": "   ",
             "api_key": "   ",
             "model": "   ",
         },
