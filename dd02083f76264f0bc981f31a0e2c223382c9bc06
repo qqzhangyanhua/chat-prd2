@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "dd02083f76264f0bc981f31a0e2c223382c9bc06",
+  "prompts": {
+    "f0d53bcce8e5d3dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3996fc-520f-442c-98c6-956f72c1d77c",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 491,
+      "total_deletions": 136,
+      "accepted_lines": 491,
+      "overriden_lines": 0
+    }
+  }
+}
