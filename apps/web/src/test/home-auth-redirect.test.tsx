@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HomeAuthRedirect } from "../components/home/home-auth-redirect";
@@ -65,6 +66,15 @@ describe("HomeAuthRedirect", () => {
       status: "degraded",
       schema: "outdated",
       detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+      error: {
+        code: "SCHEMA_OUTDATED",
+        message: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        recovery_action: {
+          type: "run_migration",
+          label: "执行数据库迁移",
+          target: "cd apps/api && uv run alembic upgrade head",
+        },
+      },
       missing_tables: ["agent_turn_decisions"],
     });
 
@@ -72,8 +82,36 @@ describe("HomeAuthRedirect", () => {
 
     expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
     expect(screen.getByText("agent_turn_decisions")).toBeInTheDocument();
-    expect(screen.getByText(/cd apps\/api && alembic upgrade head/i)).toBeInTheDocument();
+    expect(screen.getByText(/cd apps\/api && uv run alembic upgrade head/i)).toBeInTheDocument();
     expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("re-checks schema status and redirects after migration is fixed", async () => {
+    vi.mocked(useAuthStore).mockImplementation((selector) =>
+      selector({ isAuthenticated: true } as never),
+    );
+    getHealthStatusMock
+      .mockResolvedValueOnce({
+        status: "degraded",
+        schema: "outdated",
+        detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        missing_tables: ["agent_turn_decisions"],
+      })
+      .mockResolvedValueOnce({
+        status: "ok",
+        schema: "ready",
+      });
+
+    render(<HomeAuthRedirect />);
+
+    expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重新检测" }));
+
+    await waitFor(() => {
+      expect(getHealthStatusMock).toHaveBeenCalledTimes(2);
+      expect(replaceMock).toHaveBeenCalledWith("/workspace");
+    });
   });
 
   it("still redirects when health probing fails unexpectedly", async () => {

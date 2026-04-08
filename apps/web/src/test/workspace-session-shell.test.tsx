@@ -172,6 +172,16 @@ describe("WorkspaceSessionShell", () => {
     expect(screen.queryByText("这是旧会话残留的 PRD")).not.toBeInTheDocument();
   });
 
+  it("uses the shared error notice in both conversation and PRD columns when session loading fails", async () => {
+    getSessionMock.mockRejectedValue(new Error("会话加载失败"));
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    expect(await screen.findByRole("button", { name: "重试加载" })).toBeInTheDocument();
+    expect(screen.getByText("当前会话加载失败，暂不展示 PRD 快照。")).toBeInTheDocument();
+    expect(screen.getAllByTestId("workspace-error-notice")).toHaveLength(2);
+  });
+
   it("shows loading skeleton while session is loading", () => {
     getSessionMock.mockImplementation(
       () => new Promise(() => {}), // never resolves — keeps loading state
@@ -260,6 +270,26 @@ describe("WorkspaceSessionShell", () => {
     expect(await screen.findByRole("button", { name: "重试加载" })).toBeEnabled();
   });
 
+  it("uses structured recovery action when session snapshot is missing", async () => {
+    getSessionMock.mockRejectedValue(
+      Object.assign(new Error("Session snapshot not found"), {
+        code: "SESSION_SNAPSHOT_MISSING",
+        recoveryAction: {
+          type: "open_workspace_home",
+          label: "返回工作台首页",
+          target: "/workspace",
+        },
+      }),
+    );
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    const actionButton = await screen.findByRole("button", { name: "返回工作台首页" });
+    fireEvent.click(actionButton);
+
+    expect(pushMock).toHaveBeenCalledWith("/workspace");
+  });
+
   it("shows an explicit migration hint when session loading fails because schema is outdated", async () => {
     getSessionMock.mockRejectedValue(
       new Error("数据库结构版本过旧，请先执行 alembic upgrade head"),
@@ -268,6 +298,15 @@ describe("WorkspaceSessionShell", () => {
       status: "degraded",
       schema: "outdated",
       detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+      error: {
+        code: "SCHEMA_OUTDATED",
+        message: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        recovery_action: {
+          type: "run_migration",
+          label: "执行数据库迁移",
+          target: "cd apps/api && uv run alembic upgrade head",
+        },
+      },
       missing_tables: ["agent_turn_decisions"],
     });
 
@@ -275,7 +314,55 @@ describe("WorkspaceSessionShell", () => {
 
     expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
     expect(screen.getByText("agent_turn_decisions")).toBeInTheDocument();
-    expect(screen.getByText(/cd apps\/api && alembic upgrade head/i)).toBeInTheDocument();
+    expect(screen.getByText(/cd apps\/api && uv run alembic upgrade head/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新检测" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试加载" })).not.toBeInTheDocument();
+  });
+
+  it("re-checks schema status and reloads the session when migration is fixed", async () => {
+    getSessionMock
+      .mockRejectedValueOnce(new Error("数据库结构版本过旧，请先执行 alembic upgrade head"))
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-1",
+          user_id: "user-1",
+          title: "AI Co-founder",
+          initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+        },
+        state: {
+          idea: "idea",
+          stage_hint: "明确问题",
+        },
+        prd_snapshot: {
+          sections: {},
+        },
+        messages: [],
+        assistant_reply_groups: [],
+      });
+    getHealthStatusMock
+      .mockResolvedValueOnce({
+        status: "degraded",
+        schema: "outdated",
+        detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        missing_tables: ["agent_turn_decisions"],
+      })
+      .mockResolvedValueOnce({
+        status: "ok",
+        schema: "ready",
+      });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    const retryButton = await screen.findByRole("button", { name: "重新检测" });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(getHealthStatusMock).toHaveBeenCalledTimes(2);
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText("后端数据库迁移未完成")).not.toBeInTheDocument();
+    });
   });
 
   it("hydrates assistant reply groups into workspace store", async () => {

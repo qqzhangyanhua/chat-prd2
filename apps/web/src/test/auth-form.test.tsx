@@ -79,6 +79,15 @@ describe("AuthForm", () => {
       status: "degraded",
       schema: "outdated",
       detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+      error: {
+        code: "SCHEMA_OUTDATED",
+        message: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        recovery_action: {
+          type: "run_migration",
+          label: "执行数据库迁移",
+          target: "cd apps/api && uv run alembic upgrade head",
+        },
+      },
       missing_tables: ["agent_turn_decisions"],
     });
 
@@ -94,9 +103,46 @@ describe("AuthForm", () => {
 
     expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
     expect(screen.getByText("agent_turn_decisions")).toBeInTheDocument();
-    expect(screen.getByText(/cd apps\/api && alembic upgrade head/i)).toBeInTheDocument();
+    expect(screen.getByText(/cd apps\/api && uv run alembic upgrade head/i)).toBeInTheDocument();
     expect(useAuthStore.getState().accessToken).toBe("token-123");
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("re-checks schema status and continues into workspace after migration is fixed", async () => {
+    loginMock.mockResolvedValue({
+      user: { id: "user-1", email: "user@example.com", is_admin: false },
+      access_token: "token-123",
+    });
+    getHealthStatusMock
+      .mockResolvedValueOnce({
+        status: "degraded",
+        schema: "outdated",
+        detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        missing_tables: ["agent_turn_decisions"],
+      })
+      .mockResolvedValueOnce({
+        status: "ok",
+        schema: "ready",
+      });
+
+    render(<AuthForm mode="login" />);
+
+    fireEvent.change(screen.getByPlaceholderText("Business email*"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password*"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重新检测" }));
+
+    await waitFor(() => {
+      expect(getHealthStatusMock).toHaveBeenCalledTimes(2);
+      expect(pushMock).toHaveBeenCalledWith("/workspace");
+    });
   });
 
   it("still redirects after login when health probing fails unexpectedly", async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceEntry } from "../components/workspace/workspace-entry";
@@ -60,6 +60,15 @@ describe("WorkspaceEntry", () => {
       status: "degraded",
       schema: "outdated",
       detail: "数据库结构版本过旧，请先执行 alembic upgrade head",
+      error: {
+        code: "SCHEMA_OUTDATED",
+        message: "数据库结构版本过旧，请先执行 alembic upgrade head",
+        recovery_action: {
+          type: "run_migration",
+          label: "执行数据库迁移",
+          target: "cd apps/api && uv run alembic upgrade head",
+        },
+      },
       missing_tables: ["agent_turn_decisions", "assistant_reply_versions"],
     });
 
@@ -68,7 +77,7 @@ describe("WorkspaceEntry", () => {
     expect(await screen.findByText("后端数据库迁移未完成")).toBeInTheDocument();
     expect(screen.getByText("agent_turn_decisions")).toBeInTheDocument();
     expect(screen.getByText("assistant_reply_versions")).toBeInTheDocument();
-    expect(screen.getByText(/cd apps\/api && alembic upgrade head/i)).toBeInTheDocument();
+    expect(screen.getByText(/cd apps\/api && uv run alembic upgrade head/i)).toBeInTheDocument();
   });
 
   it("creates a new session and redirects into the workspace", async () => {
@@ -189,7 +198,9 @@ describe("WorkspaceEntry", () => {
     await screen.findByText("Describe your idea");
 
     const buttons = screen.getAllByRole("button", { name: /product discovery/i });
-    fireEvent.click(buttons[buttons.length - 1]);
+    await act(async () => {
+      fireEvent.click(buttons[buttons.length - 1]);
+    });
 
     const textarea = screen.getByPlaceholderText(/tell me about your product idea/i);
     expect(textarea).toHaveValue("我有一个产品想法，想通过对话挖掘用户需求和核心问题。");
@@ -202,7 +213,9 @@ describe("WorkspaceEntry", () => {
     await screen.findByText("Describe your idea");
 
     const buttons = screen.getAllByRole("button", { name: /feature planning/i });
-    fireEvent.click(buttons[buttons.length - 1]);
+    await act(async () => {
+      fireEvent.click(buttons[buttons.length - 1]);
+    });
 
     const textarea = screen.getByPlaceholderText(/tell me about your product idea/i);
     expect(textarea).toHaveValue("我需要为现有产品规划新功能，梳理优先级和实现路径。");

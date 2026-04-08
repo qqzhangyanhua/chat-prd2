@@ -166,7 +166,18 @@ def test_message_stream_returns_404_for_other_users_session(client, auth_client,
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Session not found"}
+    assert response.json() == {
+        "detail": "Session not found",
+        "error": {
+            "code": "SESSION_NOT_FOUND",
+            "message": "Session not found",
+            "recovery_action": {
+                "type": "open_workspace_home",
+                "label": "返回工作台首页",
+                "target": "/workspace",
+            },
+        },
+    }
 
 
 def test_message_stream_rejects_missing_model_config_id(auth_client, seeded_session):
@@ -197,8 +208,17 @@ def test_message_stream_rejects_disabled_model_config(
             model="gpt-4o-mini",
             enabled=False,
         )
+        fallback_model = model_configs_repository.create_model_config(
+            db,
+            name="推荐流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="claude-3-7-sonnet",
+            enabled=True,
+        )
         db.commit()
         model_config_id = model_config.id
+        fallback_model_id = fallback_model.id
     finally:
         db.close()
 
@@ -208,7 +228,31 @@ def test_message_stream_rejects_disabled_model_config(
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Model config is disabled"}
+    assert response.json() == {
+        "detail": "Model config is disabled",
+        "error": {
+            "code": "MODEL_CONFIG_DISABLED",
+            "message": "Model config is disabled",
+            "details": {
+                "available_model_configs": [
+                    {
+                        "id": fallback_model_id,
+                        "name": "推荐流式模型",
+                        "model": "claude-3-7-sonnet",
+                    },
+                ],
+                "recommended_model_config_id": fallback_model_id,
+                "recommended_model_name": "推荐流式模型",
+                "requested_model_config_id": model_config_id,
+                "requested_model_name": "禁用流式模型",
+            },
+            "recovery_action": {
+                "type": "select_available_model",
+                "label": "选择可用模型",
+                "target": None,
+            },
+        },
+    }
 
 
 def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_message(

@@ -87,5 +87,14 @@ def test_healthcheck_returns_503_when_schema_is_outdated(monkeypatch):
         "status": "degraded",
         "schema": "outdated",
         "detail": "数据库结构版本过旧，请先执行 alembic upgrade head",
+        "error": {
+            "code": "SCHEMA_OUTDATED",
+            "message": "数据库结构版本过旧，请先执行 alembic upgrade head",
+            "recovery_action": {
+                "type": "run_migration",
+                "label": "执行数据库迁移",
+                "target": "cd apps/api && alembic upgrade head",
+            },
+        },
         "missing_tables": ["agent_turn_decisions"],
     }

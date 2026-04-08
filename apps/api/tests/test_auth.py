@@ -90,6 +90,18 @@ def test_login_rejects_short_invalid_password_with_401(client):
 def test_me_requires_auth(client):
     response = client.get("/api/auth/me")
     assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Not authenticated",
+        "error": {
+            "code": "AUTH_REQUIRED",
+            "message": "Not authenticated",
+            "recovery_action": {
+                "type": "login",
+                "label": "重新登录",
+                "target": "/login",
+            },
+        },
+    }
 
 
 def test_me_returns_current_user_with_bearer_token(client):

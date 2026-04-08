@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.agent.types import Suggestion, TurnDecision
 from app.db.models import User
 from app.db.models import AgentTurnDecision
+from app.db.models import ProjectStateVersion
 from app.repositories import agent_turn_decisions as agent_turn_decisions_repository
 from app.repositories import assistant_reply_groups as assistant_reply_groups_repository
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
@@ -15,6 +16,7 @@ from app.repositories import model_configs as model_configs_repository
 from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
+import app.services.messages as messages_service
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
 from app.services.messages import stream_regenerate_message_events
 from app.services.messages import stream_user_message_events
@@ -155,6 +157,15 @@ def _phase1_state(**overrides):
 
 def test_handle_user_message_rejects_missing_model_config(db_session):
     session = _create_session_with_state(db_session)
+    fallback_model = model_configs_repository.create_model_config(
+        db_session,
+        name="推荐模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
 
     with pytest.raises(HTTPException) as exc_info:
         handle_user_message(
@@ -167,6 +178,24 @@ def test_handle_user_message_rejects_missing_model_config(db_session):
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Model config not found"
+    assert getattr(exc_info.value, "code", None) == "MODEL_CONFIG_NOT_FOUND"
+    assert getattr(exc_info.value, "recovery_action", None) == {
+        "type": "select_available_model",
+        "label": "选择可用模型",
+        "target": None,
+    }
+    assert getattr(exc_info.value, "details", None) == {
+        "available_model_configs": [
+            {
+                "id": fallback_model.id,
+                "name": "推荐模型",
+                "model": "gpt-4o-mini",
+            },
+        ],
+        "recommended_model_config_id": fallback_model.id,
+        "recommended_model_name": "推荐模型",
+        "requested_model_config_id": "missing-config",
+    }
 
 
 def test_handle_user_message_rejects_disabled_model_config(db_session):
@@ -178,6 +207,14 @@ def test_handle_user_message_rejects_disabled_model_config(db_session):
         api_key="secret",
         model="gpt-4o-mini",
         enabled=False,
+    )
+    fallback_model = model_configs_repository.create_model_config(
+        db_session,
+        name="推荐模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=True,
     )
     db_session.commit()
 
@@ -192,6 +229,25 @@ def test_handle_user_message_rejects_disabled_model_config(db_session):
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Model config is disabled"
+    assert getattr(exc_info.value, "code", None) == "MODEL_CONFIG_DISABLED"
+    assert getattr(exc_info.value, "recovery_action", None) == {
+        "type": "select_available_model",
+        "label": "选择可用模型",
+        "target": None,
+    }
+    assert getattr(exc_info.value, "details", None) == {
+        "available_model_configs": [
+            {
+                "id": fallback_model.id,
+                "name": "推荐模型",
+                "model": "claude-3-7-sonnet",
+            },
+        ],
+        "recommended_model_config_id": fallback_model.id,
+        "recommended_model_name": "推荐模型",
+        "requested_model_config_id": model_config.id,
+        "requested_model_name": "禁用模型",
+    }
 
 
 def test_handle_user_message_uses_selected_model_and_persists_model_metadata(db_session, monkeypatch):
@@ -577,6 +633,12 @@ def test_handle_user_message_rolls_back_user_message_when_generate_reply_fails(d
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.detail == "上游不可用"
+    assert getattr(exc_info.value, "code", None) == "MODEL_GATEWAY_UNAVAILABLE"
+    assert getattr(exc_info.value, "recovery_action", None) == {
+        "type": "retry",
+        "label": "稍后重试",
+        "target": None,
+    }
     assert messages_repository.get_messages_for_session(db_session, session.id) == []
     latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
     assert latest_state_version is not None
@@ -657,6 +719,186 @@ def test_handle_user_message_logs_model_gateway_context(db_session, monkeypatch,
     assert session.id in caplog.text
     assert model_config.id in caplog.text
     assert "上游不可用" in caplog.text
+
+
+def test_persist_regenerated_reply_version_surfaces_structured_conflict_errors(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="重生成冲突模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "初版回复")
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请给我一个版本",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    assert reply_group is not None
+
+    base_kwargs = {
+        "db": db_session,
+        "session_id": session.id,
+        "session": session,
+        "user_message_id": user_message.id,
+        "reply_group_id": reply_group.id,
+        "assistant_version_id": str(uuid4()),
+        "version_no": 2,
+        "reply": "重生成版本",
+        "model_meta": {
+            "model_config_id": model_config.id,
+            "model_name": model_config.model,
+            "display_name": model_config.name,
+            "base_url": model_config.base_url,
+        },
+        "action": {"action": "probe_deeper"},
+        "state": state_repository.get_latest_state(db_session, session.id),
+        "state_patch": {},
+        "prd_patch": {},
+    }
+
+    db_session.execute(
+        ProjectStateVersion.__table__.delete().where(
+            ProjectStateVersion.session_id == session.id,
+        ),
+    )
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        messages_service._persist_regenerated_reply_version(**base_kwargs)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "State snapshot not found"
+    assert getattr(exc_info.value, "code", None) == "STATE_SNAPSHOT_MISSING"
+    assert getattr(exc_info.value, "recovery_action", None) == {
+        "type": "reload_session",
+        "label": "重新加载会话",
+        "target": None,
+    }
+
+
+def test_persist_regenerated_reply_version_surfaces_reply_group_mismatch(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="重生成冲突模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "初版回复")
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请给我一个版本",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+
+    with pytest.raises(HTTPException) as exc_info:
+        messages_service._persist_regenerated_reply_version(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            user_message_id=user_message.id,
+            reply_group_id=str(uuid4()),
+            assistant_version_id=str(uuid4()),
+            version_no=2,
+            reply="重生成版本",
+            model_meta={},
+            action={"action": "probe_deeper"},
+            state=state_repository.get_latest_state(db_session, session.id),
+            state_patch={},
+            prd_patch={},
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Reply group mismatch"
+    assert getattr(exc_info.value, "code", None) == "REPLY_GROUP_MISMATCH"
+    assert getattr(exc_info.value, "recovery_action", None) == {
+        "type": "reload_session",
+        "label": "重新加载会话",
+        "target": None,
+    }
+
+
+def test_persist_regenerated_reply_version_surfaces_reply_version_sequence_mismatch(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="重生成冲突模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "初版回复")
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="请给我一个版本",
+        model_config_id=model_config.id,
+    )
+
+    persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
+    user_message = next(message for message in persisted_messages if message.role == "user")
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=user_message.id,
+    )
+    assert reply_group is not None
+
+    with pytest.raises(HTTPException) as exc_info:
+        messages_service._persist_regenerated_reply_version(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            user_message_id=user_message.id,
+            reply_group_id=reply_group.id,
+            assistant_version_id=str(uuid4()),
+            version_no=99,
+            reply="重生成版本",
+            model_meta={},
+            action={"action": "probe_deeper"},
+            state=state_repository.get_latest_state(db_session, session.id),
+            state_patch={},
+            prd_patch={},
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Reply version sequence mismatch"
+    assert getattr(exc_info.value, "code", None) == "REPLY_VERSION_SEQUENCE_MISMATCH"
+    assert getattr(exc_info.value, "recovery_action", None) == {
+        "type": "reload_session",
+        "label": "重新加载会话",
+        "target": None,
+    }
 
 
 def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db_session, monkeypatch):

@@ -299,7 +299,18 @@ def test_get_session_does_not_touch_activity_when_snapshot_missing(
 
     response = auth_client.get(f"/api/sessions/{session_id}")
     assert response.status_code == 404
-    assert response.json()["detail"] == "Session snapshot not found"
+    assert response.json() == {
+        "detail": "Session snapshot not found",
+        "error": {
+            "code": "SESSION_SNAPSHOT_MISSING",
+            "message": "Session snapshot not found",
+            "recovery_action": {
+                "type": "open_workspace_home",
+                "label": "返回工作台首页",
+                "target": "/workspace",
+            },
+        },
+    }
 
     db = testing_session_local()
     try:

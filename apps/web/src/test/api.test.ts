@@ -23,7 +23,18 @@ describe("api auth handling", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ detail: "未认证" }), {
+        new Response(JSON.stringify({
+          detail: "未认证",
+          error: {
+            code: "AUTH_REQUIRED",
+            message: "未认证",
+            recovery_action: {
+              type: "login",
+              label: "重新登录",
+              target: "/login",
+            },
+          },
+        }), {
           status: 401,
           headers: {
             "Content-Type": "application/json",
@@ -35,7 +46,15 @@ describe("api auth handling", () => {
       assign: assignMock,
     });
 
-    await expect(listSessions("expired-token")).rejects.toThrow("未认证");
+    await expect(listSessions("expired-token")).rejects.toMatchObject({
+      code: "AUTH_REQUIRED",
+      message: "未认证",
+      recoveryAction: {
+        type: "login",
+        label: "重新登录",
+        target: "/login",
+      },
+    });
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().accessToken).toBeNull();

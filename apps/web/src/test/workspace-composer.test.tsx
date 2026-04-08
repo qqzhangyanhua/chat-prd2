@@ -221,6 +221,34 @@ describe("Composer", () => {
     expect(await screen.findByText("消息发送失败")).toBeInTheDocument();
   });
 
+  it("switches to the recommended model when model selection is required", async () => {
+    vi.mocked(sendMessage).mockRejectedValue(
+      Object.assign(new Error("当前模型不可用，请选择其他模型后重试"), {
+        code: "MODEL_CONFIG_DISABLED",
+        details: {
+          recommended_model_config_id: "model-anthropic",
+          recommended_model_name: "Anthropic Claude 3.7",
+          requested_model_config_id: "model-openai",
+        },
+        recoveryAction: {
+          type: "select_available_model",
+          label: "选择可用模型",
+          target: null,
+        },
+      }),
+    );
+
+    render(<Composer sessionId="demo-session" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    const actionButton = await screen.findByRole("button", { name: "切换到 Anthropic Claude 3.7" });
+    fireEvent.click(actionButton);
+
+    expect(screen.getByLabelText("选择模型")).toHaveValue("model-anthropic");
+    expect(screen.queryByText("当前模型不可用，请选择其他模型后重试")).not.toBeInTheDocument();
+  });
+
   it("passes the selected model_config_id when sending a message", async () => {
     const encoder = new TextEncoder();
     vi.mocked(sendMessage).mockResolvedValue(
