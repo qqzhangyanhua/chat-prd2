@@ -4,15 +4,17 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Bot, LayoutGrid, MessageSquare } from "lucide-react";
 
-import { createSession, getHealthStatus, listSessions, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import { createSession, listSessions, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import { getRecoveryActionFromError, resolveRecoveryAction } from "../../lib/recovery-action";
+import { useSchemaGate } from "../../hooks/use-schema-gate";
 import { storeNewSessionDraft } from "../../lib/new-session-draft";
 import { useAuthStore } from "../../store/auth-store";
-import type { HealthStatusResponse } from "../../lib/types";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { BrandIcon } from "./brand-icon";
 import { SchemaOutdatedNotice } from "./schema-outdated-notice";
 import { SectionLabel } from "./section-label";
 import { Spinner } from "./spinner";
+import { WorkspaceErrorNotice } from "./workspace-error-notice";
 import { WorkspaceLayout } from "./workspace-layout";
 
 const TEMPLATES: { label: string; text: string }[] = [
@@ -37,12 +39,22 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);
+  const [errorCause, setErrorCause] = useState<unknown>(null);
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingSessions, setIsCheckingSessions] = useState(true);
+  const { schemaHealth, clearSchemaHealth, syncSchemaFromError } = useSchemaGate();
+  const schemaRecoveryAction = resolveRecoveryAction(schemaHealth?.error?.recovery_action);
+  const errorRecoveryAction = resolveRecoveryAction(getRecoveryActionFromError(errorCause), {
+    onLogin: () => {
+      router.push("/login");
+    },
+    onOpenWorkspaceHome: () => {
+      router.push("/workspace");
+    },
+  });
 
   useEffect(() => {
     if (!hydrated) return;
@@ -58,7 +70,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
       try {
         const response = await listSessions(accessToken);
         if (cancelled) return;
-        setSchemaHealth(null);
+        clearSchemaHealth();
         if (response.sessions.length > 0) {
           const latest = response.sessions.reduce((best, s) =>
             new Date(best.updated_at) > new Date(s.updated_at) ? best : s,
@@ -69,17 +81,9 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "加载会话失败";
+          setErrorCause(error);
           setErrorMessage(message);
-          if (message === SCHEMA_OUTDATED_DETAIL) {
-            try {
-              const health = await getHealthStatus();
-              if (!cancelled && health.schema === "outdated") setSchemaHealth(health);
-            } catch {
-              if (!cancelled) setSchemaHealth(null);
-            }
-          } else {
-            setSchemaHealth(null);
-          }
+          await syncSchemaFromError(error);
         }
       } finally {
         if (!cancelled) setIsCheckingSessions(false);
@@ -88,13 +92,14 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
 
     void loadSessions();
     return () => { cancelled = true; };
-  }, [hydrated, accessToken, autoRedirectToLatest, router]);
+  }, [hydrated, accessToken, autoRedirectToLatest, router, clearSchemaHealth, syncSchemaFromError]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
+    setErrorCause(null);
     setErrorMessage(null);
-    setSchemaHealth(null);
+    clearSchemaHealth();
     try {
       const trimmedIdea = idea.trim();
       const response = await createSession(
@@ -104,6 +109,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
       storeNewSessionDraft(response.session.id, trimmedIdea);
       router.push(`/workspace?session=${response.session.id}`);
     } catch (error) {
+      setErrorCause(error);
       setErrorMessage(error instanceof Error ? error.message : "创建会话失败");
     } finally {
       setIsSubmitting(false);
@@ -127,6 +133,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
           {schemaHealth?.schema === "outdated" ? (
             <div className="mb-6">
               <SchemaOutdatedNotice
+                command={schemaRecoveryAction?.type === "run_migration" ? schemaRecoveryAction.target ?? undefined : undefined}
                 detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
                 missingTables={schemaHealth.missing_tables}
               />
@@ -160,7 +167,14 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
                     />
                   </label>
 
-                  {errorMessage ? <div className="mt-3 px-1 text-sm text-red-600">{errorMessage}</div> : null}
+                  {errorMessage ? (
+                    <WorkspaceErrorNotice
+                      actionLabel={errorRecoveryAction?.onAction ? errorRecoveryAction.label : undefined}
+                      className="mt-3 border-red-200 bg-red-50 text-red-700"
+                      message={errorMessage}
+                      onAction={errorRecoveryAction?.onAction}
+                    />
+                  ) : null}
 
                   <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-4">
                     <input

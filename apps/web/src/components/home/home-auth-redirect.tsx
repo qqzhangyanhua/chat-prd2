@@ -2,47 +2,61 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getHealthStatus, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
-import type { HealthStatusResponse } from "../../lib/types";
+import { SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import { resolveRecoveryAction } from "../../lib/recovery-action";
+import { useSchemaGate } from "../../hooks/use-schema-gate";
 import { useAuthStore } from "../../store/auth-store";
 import { SchemaOutdatedNotice } from "../workspace/schema-outdated-notice";
 
 export function HomeAuthRedirect() {
-  const router = useRouter();
+  const { replace } = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
+  const [autoProbeEnabled, setAutoProbeEnabled] = useState(true);
+  const { schemaHealth, isCheckingSchema, checkSchemaGate, clearSchemaHealth } = useSchemaGate();
+  const schemaRecoveryAction = resolveRecoveryAction(schemaHealth?.error?.recovery_action);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setSchemaHealth(null);
+      setAutoProbeEnabled(true);
+      clearSchemaHealth();
+      return;
+    }
+
+    if (!autoProbeEnabled || schemaHealth?.schema === "outdated") {
       return;
     }
 
     let cancelled = false;
 
-    void getHealthStatus()
-      .then((health) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (health.schema === "outdated") {
-          setSchemaHealth(health);
-          return;
-        }
-
-        router.replace("/workspace");
-      })
-      .catch(() => {
+    void checkSchemaGate({
+      onReady: () => {
         if (!cancelled) {
-          router.replace("/workspace");
+          replace("/workspace");
         }
-      });
+      },
+      onCheckFailed: () => {
+        if (!cancelled) {
+          replace("/workspace");
+        }
+      },
+    }).then((result) => {
+      if (!cancelled && result === "outdated") {
+        setAutoProbeEnabled(false);
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router]);
+  }, [autoProbeEnabled, checkSchemaGate, clearSchemaHealth, isAuthenticated, replace, schemaHealth]);
+
+  async function handleSchemaRetry() {
+    await checkSchemaGate({
+      onReady: () => {
+        replace("/workspace");
+      },
+    });
+  }
 
   if (!isAuthenticated || schemaHealth?.schema !== "outdated") {
     return null;
@@ -51,8 +65,12 @@ export function HomeAuthRedirect() {
   return (
     <div className="mx-auto max-w-[1200px] px-6 pt-6">
       <SchemaOutdatedNotice
+        actionLabel="重新检测"
+        actionPending={isCheckingSchema}
+        command={schemaRecoveryAction?.type === "run_migration" ? schemaRecoveryAction.target ?? undefined : undefined}
         detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
         missingTables={schemaHealth.missing_tables}
+        onAction={handleSchemaRetry}
       />
     </div>
   );

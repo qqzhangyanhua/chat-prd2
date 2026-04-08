@@ -16,6 +16,20 @@ export interface HealthStatusResponse {
   schema: "ready" | "outdated";
   detail?: string;
   missing_tables?: string[];
+  error?: ApiErrorPayload;
+}
+
+export interface ApiRecoveryAction {
+  type: string;
+  label: string;
+  target: string | null;
+}
+
+export interface ApiErrorPayload {
+  code: string;
+  message: string;
+  recovery_action?: ApiRecoveryAction;
+  details?: Record<string, unknown>;
 }
 
 export interface SessionResponse {

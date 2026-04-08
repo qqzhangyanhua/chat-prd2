@@ -4,10 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
-import { getHealthStatus, login, register, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
-import type { AuthMode, HealthStatusResponse } from "../../lib/types";
+import { login, register, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import { getRecoveryActionFromError, resolveRecoveryAction } from "../../lib/recovery-action";
+import { useSchemaGate } from "../../hooks/use-schema-gate";
+import type { AuthMode } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { SchemaOutdatedNotice } from "../workspace/schema-outdated-notice";
+import { WorkspaceErrorNotice } from "../workspace/workspace-error-notice";
 
 
 interface AuthFormProps {
@@ -20,9 +23,16 @@ export function AuthForm({ mode }: AuthFormProps) {
   const setAuth = useAuthStore((state) => state.setAuth);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errorCause, setErrorCause] = useState<unknown>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
+  const { schemaHealth, isCheckingSchema, checkSchemaGate, clearSchemaHealth } = useSchemaGate();
+  const schemaRecoveryAction = resolveRecoveryAction(schemaHealth?.error?.recovery_action);
+  const errorRecoveryAction = resolveRecoveryAction(getRecoveryActionFromError(errorCause), {
+    onLogin: () => {
+      router.push("/login");
+    },
+  });
 
   const titleLabelCn = mode === "login" ? "登录你的账号" : "创建你的账号";
   const subtitleLabelCn = mode === "login" ? "登录以继续使用 AI Co-founder" : "注册以继续使用 AI Co-founder";
@@ -34,8 +44,9 @@ export function AuthForm({ mode }: AuthFormProps) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSubmitting(true);
+    setErrorCause(null);
     setErrorMessage(null);
-    setSchemaHealth(null);
+    clearSchemaHealth();
 
     try {
       const response = await submitAction(email, password);
@@ -44,20 +55,37 @@ export function AuthForm({ mode }: AuthFormProps) {
         user: response.user,
       });
 
-      const health = await getHealthStatus().catch(() => null);
-
-      if (health?.schema === "outdated") {
-        setSchemaHealth(health);
-        return;
-      }
-
-      router.push("/workspace");
+      await checkSchemaGate({
+        onReady: () => {
+          router.push("/workspace");
+        },
+        onCheckFailed: () => {
+          router.push("/workspace");
+        },
+      });
     } catch (error) {
+      setErrorCause(error);
       setErrorMessage(
         error instanceof Error ? error.message : "认证请求失败",
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleSchemaRetry() {
+    setErrorCause(null);
+    setErrorMessage(null);
+
+    try {
+      await checkSchemaGate({
+        onReady: () => {
+          router.push("/workspace");
+        },
+      });
+    } catch (error) {
+      setErrorCause(error);
+      setErrorMessage(error instanceof Error ? error.message : "健康检查失败，请稍后重试");
     }
   }
 
@@ -98,19 +126,22 @@ export function AuthForm({ mode }: AuthFormProps) {
         </div>
 
         {errorMessage ? (
-          <div className="flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
-            <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 8v4m0 4h.01" />
-            </svg>
-            <p className="text-sm text-red-400">{errorMessage}</p>
-          </div>
+          <WorkspaceErrorNotice
+            actionLabel={errorRecoveryAction?.onAction ? errorRecoveryAction.label : undefined}
+            className="border-red-500/20 bg-red-500/10 text-red-400"
+            message={errorMessage}
+            onAction={errorRecoveryAction?.onAction}
+          />
         ) : null}
 
         {schemaHealth?.schema === "outdated" ? (
           <SchemaOutdatedNotice
+            actionLabel="重新检测"
+            actionPending={isCheckingSchema}
+            command={schemaRecoveryAction?.type === "run_migration" ? schemaRecoveryAction.target ?? undefined : undefined}
             detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
             missingTables={schemaHealth.missing_tables}
+            onAction={handleSchemaRetry}
           />
         ) : null}
 

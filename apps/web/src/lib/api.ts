@@ -3,6 +3,8 @@ import type {
   AdminModelConfigItem,
   AdminModelConfigListResponse,
   AdminModelConfigUpdateRequest,
+  ApiErrorPayload,
+  ApiRecoveryAction,
   AuthResponse,
   EnabledModelConfigListResponse,
   ExportResponse,
@@ -17,11 +19,45 @@ import { useAuthStore } from "../store/auth-store";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 export const SCHEMA_OUTDATED_DETAIL = "数据库结构版本过旧，请先执行 alembic upgrade head";
 
-async function getErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
+interface ErrorResponsePayload {
+  detail?: string;
+  error?: ApiErrorPayload;
+}
+
+interface ApiErrorOptions {
+  code?: string;
+  details?: Record<string, unknown>;
+  recoveryAction?: ApiRecoveryAction;
+  status: number;
+}
+
+export class ApiError extends Error {
+  code?: string;
+  details?: Record<string, unknown>;
+  recoveryAction?: ApiRecoveryAction;
+  status: number;
+
+  constructor(message: string, options: ApiErrorOptions) {
+    super(message);
+    this.name = "ApiError";
+    this.code = options.code;
+    this.details = options.details;
+    this.recoveryAction = options.recoveryAction;
+    this.status = options.status;
+  }
+}
+
+async function getErrorPayload(
+  response: Response,
+  fallbackMessage: string,
+): Promise<{ error?: ApiErrorPayload; message: string }> {
   const errorPayload = (await response.json().catch(() => null)) as
-    | { detail?: string }
+    | ErrorResponsePayload
     | null;
-  return errorPayload?.detail ?? fallbackMessage;
+  return {
+    error: errorPayload?.error,
+    message: errorPayload?.error?.message ?? errorPayload?.detail ?? fallbackMessage,
+  };
 }
 
 function redirectToLogin(): void {
@@ -37,13 +73,18 @@ async function throwApiError(
   fallbackMessage: string,
   requiresAuth = false,
 ): Promise<never> {
-  const message = await getErrorMessage(response, fallbackMessage);
+  const { error, message } = await getErrorPayload(response, fallbackMessage);
 
   if (requiresAuth && response.status === 401) {
     redirectToLogin();
   }
 
-  throw new Error(message);
+  throw new ApiError(message, {
+    code: error?.code,
+    details: error?.details,
+    recoveryAction: error?.recovery_action,
+    status: response.status,
+  });
 }
 
 async function requestAuth(

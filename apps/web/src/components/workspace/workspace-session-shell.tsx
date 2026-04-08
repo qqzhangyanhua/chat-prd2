@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { getHealthStatus, getSession, listEnabledModelConfigs, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import { getSession, listEnabledModelConfigs, SCHEMA_OUTDATED_DETAIL } from "../../lib/api";
+import { useSchemaGate } from "../../hooks/use-schema-gate";
+import { getRecoveryActionFromError, resolveRecoveryAction } from "../../lib/recovery-action";
 import { consumeNewSessionDraft } from "../../lib/new-session-draft";
-import type { HealthStatusResponse } from "../../lib/types";
 import { useAuthStore } from "../../store/auth-store";
 import { useAuthGuard } from "../../hooks/use-auth-guard";
 import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 import { ConversationPanel } from "./conversation-panel";
 import { PrdPanel } from "./prd-panel";
+import { WorkspaceErrorNotice } from "./workspace-error-notice";
 import { SchemaOutdatedNotice } from "./schema-outdated-notice";
 import { SkeletonCard } from "./skeleton-card";
 import { WorkspaceLayout } from "./workspace-layout";
@@ -20,14 +23,36 @@ interface WorkspaceSessionShellProps {
 }
 
 export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps) {
+  const { push } = useRouter();
   const { hydrated } = useAuthGuard();
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
+  const [loadErrorCause, setLoadErrorCause] = useState<unknown>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [schemaHealth, setSchemaHealth] = useState<HealthStatusResponse | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const {
+    schemaHealth,
+    clearSchemaHealth,
+    checkSchemaGate,
+    isCheckingSchema,
+    syncSchemaFromError,
+  } = useSchemaGate();
+  const schemaRecoveryAction = resolveRecoveryAction(schemaHealth?.error?.recovery_action);
+  const loadRecoveryAction = resolveRecoveryAction(getRecoveryActionFromError(loadErrorCause), {
+    onOpenWorkspaceHome: () => {
+      push("/workspace");
+    },
+    onReloadSession: () => {
+      setIsRetrying(true);
+      setRetryToken((n) => n + 1);
+    },
+    onRetry: () => {
+      setIsRetrying(true);
+      setRetryToken((n) => n + 1);
+    },
+  });
 
   useEffect(() => {
     if (!hydrated) return;
@@ -39,8 +64,9 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
         try {
           const snapshot = await getSession(sessionId, accessToken);
           if (cancelled) return;
+          setLoadErrorCause(null);
           setLoadError(null);
-          setSchemaHealth(null);
+          clearSchemaHealth();
           workspaceStore.getState().hydrateSession(snapshot);
           const pendingDraft = consumeNewSessionDraft(sessionId);
           if (pendingDraft) workspaceStore.getState().setInputValue(pendingDraft);
@@ -48,17 +74,9 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
           if (!cancelled) {
             const message = error instanceof Error ? error.message : "会话加载失败";
             workspaceStore.setState(workspaceStore.getInitialState(), true);
+            setLoadErrorCause(error);
             setLoadError(message);
-            if (message === SCHEMA_OUTDATED_DETAIL) {
-              try {
-                const health = await getHealthStatus();
-                if (!cancelled && health.schema === "outdated") setSchemaHealth(health);
-              } catch {
-                if (!cancelled) setSchemaHealth(null);
-              }
-            } else {
-              setSchemaHealth(null);
-            }
+            await syncSchemaFromError(error);
             showToast({ id: `load-session-${sessionId}`, message, tone: "error" });
           }
           return;
@@ -84,7 +102,25 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
 
     void loadSession();
     return () => { cancelled = true; };
-  }, [hydrated, accessToken, retryToken, sessionId, showToast]);
+  }, [hydrated, accessToken, retryToken, sessionId, showToast, clearSchemaHealth, syncSchemaFromError]);
+
+  async function handleSchemaRetry() {
+    setIsRetrying(true);
+
+    const result = await checkSchemaGate({
+      onReady: () => {
+        setRetryToken((n) => n + 1);
+      },
+      onCheckFailed: (error) => {
+        const message = error instanceof Error ? error.message : "健康检查失败";
+        showToast({ id: `schema-recheck-${sessionId}`, message, tone: "error" });
+      },
+    });
+
+    if (result !== "ready") {
+      setIsRetrying(false);
+    }
+  }
 
   return (
     <WorkspaceLayout sessionId={sessionId}>
@@ -97,32 +133,24 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
           </div>
         ) : loadError ? (
           schemaHealth?.schema === "outdated" ? (
-            <div className="flex flex-col gap-3">
-              <SchemaOutdatedNotice
-                detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
-                missingTables={schemaHealth.missing_tables}
-              />
-              <button
-                type="button"
-                disabled={isRetrying}
-                className="w-fit rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => { setIsRetrying(true); setRetryToken((n) => n + 1); }}
-              >
-                {isRetrying ? "重试中..." : "重试加载"}
-              </button>
-            </div>
+            <SchemaOutdatedNotice
+              actionLabel="重新检测"
+              actionPending={isRetrying || isCheckingSchema}
+              command={schemaRecoveryAction?.type === "run_migration" ? schemaRecoveryAction.target ?? undefined : undefined}
+              detail={schemaHealth.detail ?? SCHEMA_OUTDATED_DETAIL}
+              missingTables={schemaHealth.missing_tables}
+              onAction={handleSchemaRetry}
+            />
           ) : (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
-              <p>{loadError}</p>
-              <button
-                type="button"
-                disabled={isRetrying}
-                className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => { setIsRetrying(true); setRetryToken((n) => n + 1); }}
-              >
-                {isRetrying ? "重试中..." : "重试加载"}
-              </button>
-            </div>
+            <WorkspaceErrorNotice
+              actionLabel={loadRecoveryAction?.onAction ? loadRecoveryAction.label : "重试加载"}
+              actionPending={isRetrying && !loadRecoveryAction?.onAction}
+              message={loadError}
+              onAction={loadRecoveryAction?.onAction ?? (() => {
+                setIsRetrying(true);
+                setRetryToken((n) => n + 1);
+              })}
+            />
           )
         ) : (
           <ConversationPanel sessionId={sessionId} />
@@ -135,9 +163,10 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
       ) : !loadError ? (
         <PrdPanel />
       ) : (
-        <div className="h-full w-[360px] shrink-0 rounded-2xl border border-dashed border-stone-200/80 bg-white/60 p-6 text-sm text-stone-400 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
-          当前会话加载失败，暂不展示 PRD 快照。
-        </div>
+        <WorkspaceErrorNotice
+          className="h-fit w-[360px] shrink-0"
+          message="当前会话加载失败，暂不展示 PRD 快照。"
+        />
       )}
     </WorkspaceLayout>
   );

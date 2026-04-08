@@ -1,25 +1,76 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Send, Square, Loader } from "lucide-react";
 
 import { getSession, regenerateMessage, sendMessage } from "../../lib/api";
+import {
+  getRecoveryActionFromError,
+  resolveRecoveryAction,
+  type ResolvedRecoveryAction,
+} from "../../lib/recovery-action";
 import { parseEventStream } from "../../lib/sse";
 import { handleStreamError } from "../../lib/stream-error";
 import { useAuthStore } from "../../store/auth-store";
 import { useToastStore } from "../../store/toast-store";
 import { useWorkspaceStore, workspaceStore } from "../../store/workspace-store";
 import { ModelSelector } from "./model-selector";
+import { WorkspaceErrorNotice } from "./workspace-error-notice";
 
 interface ComposerProps {
   regenerateUserMessageId?: string | null;
   sessionId: string;
 }
 
+interface SuggestedModelSelection {
+  modelConfigId: string;
+  modelName: string;
+}
+
+function getSuggestedModelSelection(
+  error: unknown,
+  availableModelConfigs: Array<{ id: string; name: string }>,
+): SuggestedModelSelection | null {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("details" in error) ||
+    typeof (error as { details?: unknown }).details !== "object" ||
+    (error as { details?: unknown }).details === null
+  ) {
+    return null;
+  }
+
+  const details = (error as {
+    details: {
+      recommended_model_config_id?: unknown;
+      recommended_model_name?: unknown;
+    };
+  }).details;
+  const recommendedModelConfigId = details.recommended_model_config_id;
+  if (typeof recommendedModelConfigId !== "string") {
+    return null;
+  }
+
+  const matchedModel = availableModelConfigs.find((item) => item.id === recommendedModelConfigId);
+  if (!matchedModel) {
+    return null;
+  }
+
+  return {
+    modelConfigId: recommendedModelConfigId,
+    modelName:
+      typeof details.recommended_model_name === "string" && details.recommended_model_name
+        ? details.recommended_model_name
+        : matchedModel.name,
+  };
+}
 
 export function Composer({ sessionId, regenerateUserMessageId = null }: ComposerProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastHandledRegenerateIdRef = useRef(0);
+  const modelSelectorRef = useRef<HTMLSelectElement | null>(null);
+  const [errorRecoveryAction, setErrorRecoveryAction] = useState<ResolvedRecoveryAction | null>(null);
   const accessToken = useAuthStore((state) => state.accessToken);
   const showToast = useToastStore((state) => state.showToast);
   const availableModelConfigs = useWorkspaceStore((state) => state.availableModelConfigs);
@@ -54,6 +105,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
     if (!skipStartRequest) {
       workspaceStore.getState().startRequest(normalizedContent);
     }
+    setErrorRecoveryAction(null);
 
     try {
       const stream = await sendMessage(
@@ -72,6 +124,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
         workspaceStore.getState().setStreaming(false);
       }
       await refreshSessionSnapshot();
+      setErrorRecoveryAction(null);
     } catch (error) {
       const wasAborted = handleStreamError({
         error,
@@ -80,7 +133,32 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
         toastId: `send-message-${sessionId}`,
         fallbackMessage: "消息发送失败",
       });
-      if (wasAborted) return;
+      if (wasAborted) {
+        setErrorRecoveryAction(null);
+        return;
+      }
+
+      const suggestedModel = getSuggestedModelSelection(error, availableModelConfigs);
+      const resolvedAction = resolveRecoveryAction(getRecoveryActionFromError(error), {
+        onSelectAvailableModel: () => {
+          if (suggestedModel) {
+            workspaceStore.getState().selectModelConfig(suggestedModel.modelConfigId);
+            workspaceStore.getState().resetError();
+            setErrorRecoveryAction(null);
+            return;
+          }
+          modelSelectorRef.current?.focus();
+        },
+      });
+
+      setErrorRecoveryAction(
+        suggestedModel && resolvedAction?.type === "select_available_model"
+          ? {
+              ...resolvedAction,
+              label: `切换到 ${suggestedModel.modelName}`,
+            }
+          : resolvedAction,
+      );
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
@@ -96,6 +174,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    setErrorRecoveryAction(null);
 
     try {
       const stream = await regenerateMessage(
@@ -114,6 +193,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
         workspaceStore.getState().setStreaming(false);
       }
       await refreshSessionSnapshot();
+      setErrorRecoveryAction(null);
     } catch (error) {
       const wasAborted = handleStreamError({
         error,
@@ -122,7 +202,32 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
         toastId: `regenerate-message-${sessionId}`,
         fallbackMessage: "消息重生成失败",
       });
-      if (wasAborted) return;
+      if (wasAborted) {
+        setErrorRecoveryAction(null);
+        return;
+      }
+
+      const suggestedModel = getSuggestedModelSelection(error, availableModelConfigs);
+      const resolvedAction = resolveRecoveryAction(getRecoveryActionFromError(error), {
+        onSelectAvailableModel: () => {
+          if (suggestedModel) {
+            workspaceStore.getState().selectModelConfig(suggestedModel.modelConfigId);
+            workspaceStore.getState().resetError();
+            setErrorRecoveryAction(null);
+            return;
+          }
+          modelSelectorRef.current?.focus();
+        },
+      });
+
+      setErrorRecoveryAction(
+        suggestedModel && resolvedAction?.type === "select_available_model"
+          ? {
+              ...resolvedAction,
+              label: `切换到 ${suggestedModel.modelName}`,
+            }
+          : resolvedAction,
+      );
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
@@ -214,7 +319,13 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
 
         <div className="flex items-center justify-between gap-4 border-t border-stone-100 px-5 py-3.5">
           <div className="flex flex-col gap-0.5">
-            <ModelSelector />
+            <ModelSelector
+              onSelectModel={() => {
+                resetError();
+                setErrorRecoveryAction(null);
+              }}
+              selectRef={modelSelectorRef}
+            />
             <p className={`flex items-center gap-1.5 text-xs ${isWaiting || isStreaming ? "text-amber-600" : "text-stone-400"}`}>
               {isWaiting ? (
                 <Loader className="h-3 w-3 animate-spin" />
@@ -227,7 +338,12 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
               <p className="text-xs text-amber-700">当前暂无可用模型，请联系管理员配置。</p>
             ) : null}
             {errorMessage ? (
-              <p className="text-xs text-red-600">{errorMessage}</p>
+              <WorkspaceErrorNotice
+                actionLabel={errorRecoveryAction?.onAction ? errorRecoveryAction.label : undefined}
+                className="mt-2"
+                message={errorMessage}
+                onAction={errorRecoveryAction?.onAction}
+              />
             ) : null}
           </div>
 

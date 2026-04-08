@@ -1,8 +1,15 @@
 "use client";
 
+import type { Ref } from "react";
+
 import { useWorkspaceStore } from "../../store/workspace-store";
 
-export function ModelSelector() {
+interface ModelSelectorProps {
+  onSelectModel?: () => void;
+  selectRef?: Ref<HTMLSelectElement>;
+}
+
+export function ModelSelector({ onSelectModel, selectRef }: ModelSelectorProps) {
   const availableModelConfigs = useWorkspaceStore((state) => state.availableModelConfigs);
   const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const selectModelConfig = useWorkspaceStore((state) => state.selectModelConfig);
@@ -16,7 +23,11 @@ export function ModelSelector() {
         aria-label="选择模型"
         className="min-w-[220px] rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-800 outline-none transition-all duration-150 hover:border-stone-300 focus:border-stone-900 focus:bg-white focus:ring-2 focus:ring-stone-900/8 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={availableModelConfigs.length === 0}
-        onChange={(event) => selectModelConfig(event.target.value)}
+        onChange={(event) => {
+          onSelectModel?.();
+          selectModelConfig(event.target.value);
+        }}
+        ref={selectRef}
         value={selectedModelConfigId ?? ""}
       >
         {availableModelConfigs.length === 0 ? (
