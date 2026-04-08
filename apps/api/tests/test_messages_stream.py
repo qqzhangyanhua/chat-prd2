@@ -507,6 +507,264 @@ def test_message_stream_keeps_conversion_resistance_validation_in_local_stable_f
     )
 
 
+def test_message_stream_closes_frequency_validation_with_local_verdict_and_confirm_gate(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="频率出口流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "确认高频问题是否造成真实损失",
+                "stage_hint": "频率影响确认",
+                "validation_focus": "frequency",
+                "validation_step": 2,
+                "evidence": ["频率线索：最近几乎每天都会发生"],
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("frequency verdict should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "如果一直这样，团队每周都会多花半天时间，而且经常错过最佳验证窗口",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "基于你刚才补的频率和损失，我现在倾向判断这是一个值得优先推进的问题" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_keeps_frequency_validation_step_when_reply_is_too_vague(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="频率模糊兜底流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "明确问题发生频率是否足够高",
+                "stage_hint": "推进频率验证",
+                "validation_focus": "frequency",
+                "validation_step": 1,
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("vague frequency reply should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "差不多吧",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "这轮回答还不足以支持我判断频率" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_keeps_conversion_resistance_validation_step_when_reply_is_too_vague(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="转化阻力模糊兜底流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "明确转化阻力集中在哪一环",
+                "stage_hint": "推进转化阻力验证",
+                "validation_focus": "conversion_resistance",
+                "validation_step": 1,
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("vague conversion resistance reply should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "还行吧",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "这轮回答还不足以支持我判断转化阻力" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
+def test_message_stream_can_switch_from_frequency_to_conversion_resistance_locally(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="改道流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "确认高频问题是否造成真实损失",
+                "stage_hint": "频率影响确认",
+                "validation_focus": "frequency",
+                "validation_step": 2,
+                "evidence": ["频率线索：最近几乎每天都会发生"],
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("focus switch should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "先别看频率，改看转化阻力",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "我先停止继续看频率，切到“转化阻力验证”" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
 def test_message_stream_rejects_missing_model_config_id(auth_client, seeded_session):
     response = auth_client.post(
         f"/api/sessions/{seeded_session}/messages",

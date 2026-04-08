@@ -326,6 +326,152 @@ def test_run_agent_keeps_conversion_resistance_validation_in_local_stable_flow_a
     ]
 
 
+def test_run_agent_closes_frequency_validation_with_local_verdict_and_confirm_gate():
+    state = _phase1_state(
+        conversation_strategy="converge",
+        target_user="独立创业者",
+        problem="不知道先验证哪个需求",
+        solution="通过连续追问沉淀结构化 PRD",
+        mvp_scope=["创建会话、持续追问、导出 PRD"],
+        phase_goal="确认高频问题是否造成真实损失",
+        stage_hint="频率影响确认",
+        validation_focus="frequency",
+        validation_step=2,
+        evidence=["频率线索：最近几乎每天都会发生"],
+    )
+
+    result = run_agent(state, "如果一直这样，团队每周都会多花半天时间，而且经常错过最佳验证窗口")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["validation_focus"] == "frequency"
+    assert result.state_patch["validation_step"] == 3
+    assert result.state_patch["conversation_strategy"] == "confirm"
+    assert result.state_patch["pending_confirmations"] == ["是否把这个问题定义为当前最值得优先验证的问题"]
+    assert "基于你刚才补的频率和损失，我现在倾向判断这是一个值得优先推进的问题" in result.reply
+    assert "如果你确认，我下一步就直接开始压缩最小验证方案" in result.reply
+    assert result.turn_decision is not None
+    assert result.turn_decision.conversation_strategy == "confirm"
+    assert result.turn_decision.phase_goal == "确认是否把该问题作为当前优先验证对象"
+    assert result.turn_decision.next_move == "summarize_and_confirm"
+    assert result.turn_decision.needs_confirmation == ["是否把这个问题定义为当前最值得优先验证的问题"]
+
+
+def test_run_agent_closes_conversion_resistance_validation_with_local_verdict_and_confirm_gate():
+    state = _phase1_state(
+        conversation_strategy="converge",
+        target_user="独立创业者",
+        problem="不知道先验证哪个需求",
+        solution="通过连续追问沉淀结构化 PRD",
+        mvp_scope=["创建会话、持续追问、导出 PRD"],
+        phase_goal="确认首要阻力是否直接打断转化",
+        stage_hint="转化阻力影响确认",
+        validation_focus="conversion_resistance",
+        validation_step=2,
+        evidence=["转化阻力线索：大多数人会卡在第一次接入"],
+    )
+
+    result = run_agent(state, "一旦卡住，大多数人就会先放弃，等以后再说，少数人会直接去找人工替代")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["validation_focus"] == "conversion_resistance"
+    assert result.state_patch["validation_step"] == 3
+    assert result.state_patch["conversation_strategy"] == "confirm"
+    assert result.state_patch["pending_confirmations"] == ["是否把这个阻力定义为当前最值得优先验证的问题"]
+    assert "基于你刚才补的阻力和流失结果，我现在倾向判断这是一个值得优先处理的转化阻力" in result.reply
+    assert "如果你确认，我下一步就直接开始压缩最小验证方案" in result.reply
+    assert result.turn_decision is not None
+    assert result.turn_decision.conversation_strategy == "confirm"
+    assert result.turn_decision.phase_goal == "确认是否把该阻力作为当前优先验证对象"
+    assert result.turn_decision.next_move == "summarize_and_confirm"
+    assert result.turn_decision.needs_confirmation == ["是否把这个阻力定义为当前最值得优先验证的问题"]
+
+
+def test_run_agent_keeps_frequency_validation_step_when_reply_is_too_vague():
+    state = _phase1_state(
+        conversation_strategy="converge",
+        target_user="独立创业者",
+        problem="不知道先验证哪个需求",
+        solution="通过连续追问沉淀结构化 PRD",
+        mvp_scope=["创建会话、持续追问、导出 PRD"],
+        phase_goal="明确问题发生频率是否足够高",
+        stage_hint="推进频率验证",
+        validation_focus="frequency",
+        validation_step=1,
+    )
+
+    result = run_agent(state, "差不多吧")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["validation_focus"] == "frequency"
+    assert result.state_patch["validation_step"] == 1
+    assert result.state_patch["conversation_strategy"] == "converge"
+    assert "这轮回答还不足以支持我判断频率" in result.reply
+    assert "请你不要再用“差不多”这种概括说法" in result.reply
+    assert result.turn_decision is not None
+    assert result.turn_decision.phase_goal == "明确问题发生频率是否足够高"
+    assert result.turn_decision.next_best_questions == [
+        "为了继续推进，请直接回答这个问题是每天、每周，还是偶发出现，并补一个最近一次真实场景。"
+    ]
+
+
+def test_run_agent_keeps_conversion_resistance_validation_step_when_reply_is_too_vague():
+    state = _phase1_state(
+        conversation_strategy="converge",
+        target_user="独立创业者",
+        problem="不知道先验证哪个需求",
+        solution="通过连续追问沉淀结构化 PRD",
+        mvp_scope=["创建会话、持续追问、导出 PRD"],
+        phase_goal="明确转化阻力集中在哪一环",
+        stage_hint="推进转化阻力验证",
+        validation_focus="conversion_resistance",
+        validation_step=1,
+    )
+
+    result = run_agent(state, "还行吧")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["validation_focus"] == "conversion_resistance"
+    assert result.state_patch["validation_step"] == 1
+    assert result.state_patch["conversation_strategy"] == "converge"
+    assert "这轮回答还不足以支持我判断转化阻力" in result.reply
+    assert "请你不要再用“还行”这种概括说法" in result.reply
+    assert result.turn_decision is not None
+    assert result.turn_decision.phase_goal == "明确转化阻力集中在哪一环"
+    assert result.turn_decision.next_best_questions == [
+        "为了继续推进，请直接回答用户最容易卡在哪一步，并补一句卡住后通常是放弃、延后，还是转去其他替代方案。"
+    ]
+
+
+def test_run_agent_can_switch_from_frequency_to_conversion_resistance_locally():
+    state = _phase1_state(
+        conversation_strategy="converge",
+        target_user="独立创业者",
+        problem="不知道先验证哪个需求",
+        solution="通过连续追问沉淀结构化 PRD",
+        mvp_scope=["创建会话、持续追问、导出 PRD"],
+        phase_goal="明确问题发生频率是否足够高",
+        stage_hint="推进频率验证",
+        validation_focus="frequency",
+        validation_step=2,
+        evidence=["频率线索：最近几乎每天都会发生"],
+    )
+
+    result = run_agent(state, "先别看频率，改看转化阻力")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["validation_focus"] == "conversion_resistance"
+    assert result.state_patch["validation_step"] == 1
+    assert result.state_patch["conversation_strategy"] == "converge"
+    assert result.state_patch["stage_hint"] == "推进转化阻力验证"
+    assert "我先停止继续看频率，切到“转化阻力验证”" in result.reply
+    assert "请你直接告诉我用户现在最容易卡在哪一步" in result.reply
+    assert result.turn_decision is not None
+    assert result.turn_decision.phase_goal == "明确转化阻力集中在哪一环"
+    assert result.turn_decision.next_best_questions == [
+        "为了继续推进，请直接回答用户现在最容易卡在哪一步，是理解成本、接入成本，还是结果不够稳定。"
+    ]
+
+
 def test_run_agent_allows_action_and_next_move_diverge():
     state = _phase1_state()
 

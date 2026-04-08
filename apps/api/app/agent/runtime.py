@@ -16,184 +16,13 @@ from app.agent.suggestion_planner import build_suggestions
 from app.agent.types import AgentResult, NextAction, Suggestion, TurnDecision
 from app.agent.understanding import understand_user_input
 from app.agent.types import UnderstandingResult
-
-
-CONFIRM_CONTINUE_COMMAND = "确认，继续下一步"
-
-CONFIRM_FOCUS_COMMANDS = {
-    CONFIRM_CONTINUE_COMMAND: {
-        "phase_goal": "明确首轮验证优先级",
-        "stage_hint": "推进验证优先级",
-        "strategy_reason": "当前共识已锁定，下一步进入首轮验证优先级收敛。",
-        "recommendation": {
-            "label": "先锁定首轮验证项",
-            "content": "先在频率、付费意愿、转化阻力里选一个最优先验证项",
-            "rationale": "先锁定验证目标，后续访谈和方案取舍才不会发散",
-            "type": "recommendation",
-            "priority": 1,
-        },
-        "suggestions": [
-            {
-                "type": "recommendation",
-                "label": "先锁定首轮验证项",
-                "content": "先在频率、付费意愿、转化阻力里选一个最优先验证项",
-                "rationale": "先锁定验证目标，后续访谈和方案取舍才不会发散",
-                "priority": 1,
-            },
-            {
-                "type": "direction",
-                "label": "优先验证频率",
-                "content": "先判断这个问题是否足够高频",
-                "rationale": "频率不成立，后续价值和付费判断都会失真",
-                "priority": 2,
-            },
-            {
-                "type": "tradeoff",
-                "label": "再决定验证付费还是转化阻力",
-                "content": "在频率成立后，再判断用户是否愿意付费或卡在哪一步",
-                "rationale": "先后顺序更稳定，验证成本更低",
-                "priority": 3,
-            },
-        ],
-        "next_best_questions": [
-            "为了继续推进，请直接回答你现在最想先验证的是频率、付费意愿，还是转化阻力？"
-        ],
-        "reply_lines": [
-            "下一步我会把讨论推进到“首轮验证优先级”，先判断你现在最该优先验证哪一项。",
-            "如果你还没明确顺序，我更建议先看“频率”是否成立，因为它最先决定这个问题值不值得继续深挖。",
-            "请你直接告诉我当前最想先验证的是频率、付费意愿，还是转化阻力。",
-        ],
-    },
-    "确认，先看频率": {
-        "phase_goal": "明确问题发生频率是否足够高",
-        "stage_hint": "推进频率验证",
-        "strategy_reason": "当前共识已锁定，下一步进入频率验证。",
-        "recommendation": {
-            "label": "先验证问题频率",
-            "content": "先判断这个问题是否高频到值得优先解决",
-            "rationale": "低频问题通常不值得优先投入 MVP",
-            "type": "recommendation",
-            "priority": 1,
-        },
-        "suggestions": [
-            {
-                "type": "recommendation",
-                "label": "先验证问题频率",
-                "content": "先判断这个问题是否高频到值得优先解决",
-                "rationale": "低频问题通常不值得优先投入 MVP",
-                "priority": 1,
-            },
-            {
-                "type": "direction",
-                "label": "补一条最近发生的真实案例",
-                "content": "先说明最近一次发生在什么场景、谁触发、结果如何",
-                "rationale": "真实案例比抽象判断更能校准频率",
-                "priority": 2,
-            },
-            {
-                "type": "tradeoff",
-                "label": "区分偶发痛点和高频痛点",
-                "content": "先分清这是偶发抱怨还是反复发生的问题",
-                "rationale": "频率会直接影响产品优先级",
-                "priority": 3,
-            },
-        ],
-        "next_best_questions": [
-            "为了继续推进，请直接补一句这个问题平均多久发生一次，最好带上最近一次真实场景。"
-        ],
-        "reply_lines": [
-            "下一步我会先把讨论推进到“频率验证”，先判断这个问题是不是高频到值得优先做。",
-            "如果频率站不住，后面再谈付费和转化都会偏早。",
-            "请你直接告诉我这个问题平均多久发生一次，最好顺手带上最近一次真实场景。",
-        ],
-    },
-    "确认，先看付费意愿": {
-        "phase_goal": "明确付费意愿是否成立",
-        "stage_hint": "推进付费意愿验证",
-        "strategy_reason": "当前共识已锁定，下一步进入付费意愿验证。",
-        "recommendation": {
-            "label": "先验证付费意愿",
-            "content": "先判断用户有没有为这类结果付费的真实动机",
-            "rationale": "没有付费意愿，再顺畅的方案也很难成立为业务",
-            "type": "recommendation",
-            "priority": 1,
-        },
-        "suggestions": [
-            {
-                "type": "recommendation",
-                "label": "先验证付费意愿",
-                "content": "先判断用户有没有为这类结果付费的真实动机",
-                "rationale": "没有付费意愿，再顺畅的方案也很难成立为业务",
-                "priority": 1,
-            },
-            {
-                "type": "direction",
-                "label": "先找现有替代方案价格锚点",
-                "content": "先看用户现在是否已经在为其他替代方案买单",
-                "rationale": "已有支付行为比口头意愿更可靠",
-                "priority": 2,
-            },
-            {
-                "type": "tradeoff",
-                "label": "区分愿意花钱和愿意花时间",
-                "content": "先判断用户到底更愿意付钱还是自己折腾",
-                "rationale": "这会直接决定后续商业模式方向",
-                "priority": 3,
-            },
-        ],
-        "next_best_questions": [
-            "为了继续推进，请直接回答这类用户现在有没有为替代方案付费，或者愿不愿意为更好结果付费。"
-        ],
-        "reply_lines": [
-            "下一步我会先把讨论推进到“付费意愿验证”，先判断这是不是一个用户愿意掏钱解决的问题。",
-            "如果用户只觉得麻烦但不愿付费，产品价值和商业化路径都要重算。",
-            "请你直接告诉我这类用户现在有没有为替代方案付费，或者愿不愿意为更好结果付费。",
-        ],
-    },
-    "确认，先看转化阻力": {
-        "phase_goal": "明确转化阻力集中在哪一环",
-        "stage_hint": "推进转化阻力验证",
-        "strategy_reason": "当前共识已锁定，下一步进入转化阻力验证。",
-        "recommendation": {
-            "label": "先验证转化阻力",
-            "content": "先判断用户会卡在理解、接入还是结果稳定性",
-            "rationale": "不先识别转化阻力，MVP 很容易做成却没人持续使用",
-            "type": "recommendation",
-            "priority": 1,
-        },
-        "suggestions": [
-            {
-                "type": "recommendation",
-                "label": "先验证转化阻力",
-                "content": "先判断用户会卡在理解、接入还是结果稳定性",
-                "rationale": "不先识别转化阻力，MVP 很容易做成却没人持续使用",
-                "priority": 1,
-            },
-            {
-                "type": "direction",
-                "label": "先找最容易流失的一步",
-                "content": "先指出用户最可能在哪一步退出",
-                "rationale": "最薄弱的一环通常决定整体转化",
-                "priority": 2,
-            },
-            {
-                "type": "tradeoff",
-                "label": "区分理解成本和接入成本",
-                "content": "先判断是看不懂，还是用起来太麻烦",
-                "rationale": "不同阻力决定完全不同的产品打法",
-                "priority": 3,
-            },
-        ],
-        "next_best_questions": [
-            "为了继续推进，请直接回答用户现在最容易卡在哪一步，是理解成本、接入成本，还是结果不够稳定。"
-        ],
-        "reply_lines": [
-            "下一步我会先把讨论推进到“转化阻力验证”，先判断用户最可能卡在哪一步。",
-            "如果不先识别阻力点，后面功能越堆越多，反而更难形成转化闭环。",
-            "请你直接告诉我用户现在最容易卡在哪一步，是理解成本、接入成本，还是结果不够稳定。",
-        ],
-    },
-}
+from app.agent.validation_flows import (
+    CONFIRM_FOCUS_COMMANDS,
+    VAGUE_VALIDATION_PHRASES,
+    VALIDATION_FOLLOWUP_FLOWS,
+    VALIDATION_SWITCH_COMMANDS,
+    VALIDATION_VAGUE_REPLY_HINTS,
+)
 
 CORRECTION_COMMANDS = {
     "不对，先改目标用户": {
@@ -266,53 +95,6 @@ CORRECTION_COMMANDS = {
     },
 }
 
-VALIDATION_FOLLOWUP_FLOWS = {
-    ("frequency", 1): {
-        "phase_goal": "确认高频问题是否造成真实损失",
-        "stage_hint": "频率影响确认",
-        "strategy_reason": "频率信号已记录，下一步确认它是否真的造成损失。",
-        "summary_prefix": "用户补充了问题发生频率的描述。",
-        "evidence_prefix": "频率线索",
-        "recommendation": {
-            "label": "先确认高频是否真的带来损失",
-            "content": "把频率和真实损失连起来，再决定是否值得优先做",
-            "rationale": "高频但无损失的问题，优先级仍可能不成立",
-            "type": "recommendation",
-            "priority": 1,
-        },
-        "suggestions": [
-            {
-                "type": "recommendation",
-                "label": "先确认高频是否真的带来损失",
-                "content": "把频率和真实损失连起来，再决定是否值得优先做",
-                "rationale": "高频但无损失的问题，优先级仍可能不成立",
-                "priority": 1,
-            },
-            {
-                "type": "direction",
-                "label": "补真实损失",
-                "content": "说明会多花多少时间、错过什么机会、造成什么错误",
-                "rationale": "损失越具体，优先级越容易判断",
-                "priority": 2,
-            },
-            {
-                "type": "tradeoff",
-                "label": "区分高频噪音和高频痛点",
-                "content": "判断这是单纯烦，还是会持续拖慢关键动作",
-                "rationale": "不是所有高频问题都值得优先解决",
-                "priority": 3,
-            },
-        ],
-        "next_best_questions": [
-            "为了继续推进，请直接回答如果这件事持续发生，实际会多花什么时间、错过什么机会，或者带来什么损失。"
-        ],
-        "reply_lines": [
-            "我先按你的描述把当前判断收成“这是一个高频信号候选”，先不急着直接认定它值得优先做。",
-            "下一步我会继续追问这个频率到底有没有真实后果，因为没有损失的高频问题不一定值得做成产品。",
-            "请你直接告诉我，如果这件事持续发生，实际会多花什么时间、错过什么机会，或者带来什么损失。",
-        ],
-    },
-}
 
 
 def _apply_agent_patch(state: dict, state_patch: dict, prd_patch: dict) -> dict:
@@ -337,6 +119,148 @@ def _confirmed_sections(state: dict) -> list[str]:
     return items
 
 
+def _build_validation_switch_result(state: dict, user_input: str) -> AgentResult | None:
+    command = VALIDATION_SWITCH_COMMANDS.get(user_input.strip())
+    if command is None:
+        return None
+    if state.get("conversation_strategy") != "converge":
+        return None
+    if state.get("validation_focus") != command["from_focus"]:
+        return None
+
+    target_flow = CONFIRM_FOCUS_COMMANDS[command["target_command"]]
+    validation_focus = "frequency" if command["target_command"] == "确认，先看频率" else "conversion_resistance"
+    state_patch = {
+        "conversation_strategy": "converge",
+        "validation_focus": validation_focus,
+        "validation_step": 1,
+        "iteration": int(state.get("iteration") or 0) + 1,
+        "stage_hint": target_flow["stage_hint"],
+        "pending_confirmations": [],
+    }
+    understanding = UnderstandingResult(
+        summary="用户要求暂停当前验证主线，切换到另一条验证焦点。",
+        candidate_updates={},
+        assumption_candidates=[],
+        ambiguous_points=[],
+        risk_hints=[],
+    )
+    turn_decision = TurnDecision(
+        phase="alignment_review",
+        phase_goal=target_flow["phase_goal"],
+        understanding={
+            "summary": understanding.summary,
+            "candidate_updates": {},
+            "ambiguous_points": [],
+        },
+        assumptions=list(state.get("working_hypotheses") or []),
+        gaps=[],
+        challenges=[],
+        pm_risk_flags=list(state.get("pm_risk_flags") or []),
+        next_move="assume_and_advance",
+        suggestions=[Suggestion(**item) for item in target_flow["suggestions"]],
+        recommendation=dict(target_flow["recommendation"]),
+        reply_brief={"focus": "assume_and_advance", "must_include": []},
+        state_patch=state_patch,
+        prd_patch={},
+        needs_confirmation=[],
+        confidence="medium",
+        strategy_reason=f"当前主线已切到{target_flow['phase_goal']}。",
+        next_best_questions=list(target_flow["next_best_questions"]),
+        conversation_strategy="converge",
+    )
+
+    return AgentResult(
+        reply=command["reply"],
+        action=NextAction(
+            action="summarize_understanding",
+            target=None,
+            reason=f"切换验证焦点到{target_flow['phase_goal']}。",
+        ),
+        reply_mode="local",
+        state_patch=state_patch,
+        prd_patch={},
+        decision_log=[],
+        understanding=understanding,
+        turn_decision=turn_decision,
+    )
+
+
+def _is_vague_validation_reply(user_input: str) -> bool:
+    normalized = normalize_text(user_input)
+    if not normalized:
+        return True
+    return any(phrase in normalized for phrase in VAGUE_VALIDATION_PHRASES)
+
+
+def _build_vague_validation_result(state: dict, user_input: str) -> AgentResult | None:
+    if state.get("conversation_strategy") != "converge":
+        return None
+    if not _is_vague_validation_reply(user_input):
+        return None
+
+    validation_focus = state.get("validation_focus")
+    validation_step = int(state.get("validation_step") or 0)
+    hint = VALIDATION_VAGUE_REPLY_HINTS.get((validation_focus, validation_step))
+    if hint is None:
+        return None
+
+    state_patch = {
+        "conversation_strategy": "converge",
+        "validation_focus": validation_focus,
+        "validation_step": validation_step,
+        "iteration": int(state.get("iteration") or 0) + 1,
+        "stage_hint": hint["stage_hint"],
+    }
+    understanding = UnderstandingResult(
+        summary="用户这轮回答过于模糊，当前不足以推进验证判断。",
+        candidate_updates={},
+        assumption_candidates=[],
+        ambiguous_points=["用户这轮只给了模糊回答，缺少可执行细节。"],
+        risk_hints=[],
+    )
+    turn_decision = TurnDecision(
+        phase="alignment_review",
+        phase_goal=hint["phase_goal"],
+        understanding={
+            "summary": understanding.summary,
+            "candidate_updates": {},
+            "ambiguous_points": understanding.ambiguous_points,
+        },
+        assumptions=list(state.get("working_hypotheses") or []),
+        gaps=["缺少可判断的频率尺度"],
+        challenges=[],
+        pm_risk_flags=list(state.get("pm_risk_flags") or []),
+        next_move="probe_for_specificity",
+        suggestions=[Suggestion(**item) for item in hint["suggestions"]],
+        recommendation=dict(hint["recommendation"]),
+        reply_brief={"focus": "probe_for_specificity", "must_include": []},
+        state_patch=state_patch,
+        prd_patch={},
+        needs_confirmation=[],
+        confidence="medium",
+        strategy_reason=hint["strategy_reason"],
+        next_best_questions=list(hint["next_best_questions"]),
+        conversation_strategy="converge",
+    )
+    reply = "".join(hint["reply_lines"]) + hint["next_best_questions"][0]
+
+    return AgentResult(
+        reply=reply,
+        action=NextAction(
+            action="probe_deeper",
+            target=None,
+            reason=hint["strategy_reason"],
+        ),
+        reply_mode="local",
+        state_patch=state_patch,
+        prd_patch={},
+        decision_log=[],
+        understanding=understanding,
+        turn_decision=turn_decision,
+    )
+
+
 def _build_validation_followup_result(state: dict, user_input: str) -> AgentResult | None:
     if state.get("conversation_strategy") != "converge":
         return None
@@ -351,13 +275,17 @@ def _build_validation_followup_result(state: dict, user_input: str) -> AgentResu
     evidence = list(state.get("evidence") or [])
     evidence.append(f"{flow['evidence_prefix']}：{normalized_input}")
     next_best_questions = list(flow["next_best_questions"])
+    conversation_strategy = flow.get("conversation_strategy", "converge")
+    pending_confirmations = list(flow.get("pending_confirmations", []))
+    next_move = flow.get("next_move", "assume_and_advance")
     state_patch = {
-        "conversation_strategy": "converge",
+        "conversation_strategy": conversation_strategy,
         "validation_focus": validation_focus,
         "validation_step": validation_step + 1,
         "iteration": int(state.get("iteration") or 0) + 1,
         "stage_hint": flow["stage_hint"],
         "evidence": evidence,
+        "pending_confirmations": pending_confirmations,
     }
     understanding = UnderstandingResult(
         summary=f"{flow['summary_prefix']}{normalized_input}",
@@ -378,17 +306,17 @@ def _build_validation_followup_result(state: dict, user_input: str) -> AgentResu
         gaps=[],
         challenges=[],
         pm_risk_flags=list(state.get("pm_risk_flags") or []),
-        next_move="assume_and_advance",
+        next_move=next_move,
         suggestions=[Suggestion(**item) for item in flow["suggestions"]],
         recommendation=dict(flow["recommendation"]),
         reply_brief={"focus": "assume_and_advance", "must_include": []},
         state_patch=state_patch,
         prd_patch={},
-        needs_confirmation=[],
+        needs_confirmation=pending_confirmations,
         confidence="medium",
         strategy_reason=flow["strategy_reason"],
         next_best_questions=next_best_questions,
-        conversation_strategy="converge",
+        conversation_strategy=conversation_strategy,
     )
     reply = "".join(flow["reply_lines"])
 
@@ -559,6 +487,14 @@ def run_agent(
     user_input: str,
     model_result: StructuredExtractionResult | None = None,
 ) -> AgentResult:
+    validation_switch_result = _build_validation_switch_result(state, user_input)
+    if validation_switch_result is not None:
+        return validation_switch_result
+
+    vague_validation_result = _build_vague_validation_result(state, user_input)
+    if vague_validation_result is not None:
+        return vague_validation_result
+
     validation_followup_result = _build_validation_followup_result(state, user_input)
     if validation_followup_result is not None:
         return validation_followup_result
