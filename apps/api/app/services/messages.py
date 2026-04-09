@@ -26,11 +26,13 @@ from app.schemas.message import AssistantDeltaEventData
 from app.schemas.message import AssistantDoneEventData
 from app.schemas.message import AssistantVersionStartedEventData
 from app.schemas.message import MessageAcceptedEventData
-from app.schemas.message import PrdUpdatedEventData
 from app.schemas.message import ReplyGroupCreatedEventData
 from app.services.model_gateway import ModelGatewayError, generate_reply
 from app.services.model_gateway import generate_structured_extraction
 from app.services.model_gateway import open_reply_stream
+from app.services.prd_runtime import build_prd_updated_event_data as _build_prd_updated_event_data
+from app.services.prd_runtime import preview_prd_meta as _preview_prd_meta
+from app.services.prd_runtime import preview_prd_sections as _preview_prd_sections
 
 
 logger = logging.getLogger(__name__)
@@ -96,14 +98,6 @@ def apply_prd_patch(current_state: dict, patch: dict) -> dict:
     current_state["prd_snapshot"]["sections"] = {**sections, **patch}
     return current_state
 
-
-def _preview_prd_sections(state: dict, patch: dict) -> dict:
-    sections = state.get("prd_snapshot", {}).get("sections", {})
-    if not patch:
-        return sections
-    return {**sections, **patch}
-
-
 def _require_turn_decision(agent_result: object) -> object:
     turn_decision = getattr(agent_result, "turn_decision", None)
     if turn_decision is None:
@@ -120,6 +114,40 @@ def _dedupe_str_list(items: list[str]) -> list[str]:
         seen.add(item)
         ordered.append(item)
     return ordered
+
+
+_PERSISTED_WORKFLOW_STATE_FIELDS: tuple[str, ...] = (
+    "workflow_stage",
+    "idea_parse_result",
+    "prd_draft",
+    "critic_result",
+    "refine_history",
+    "finalization_ready",
+)
+
+
+def _coerce_mapping(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _extract_workflow_state_from_turn_decision(turn_decision: object) -> dict:
+    """
+    兼容真实 turn_decision 载荷：
+    1) 部分字段可能在 turn_decision 顶层
+    2) 更多字段可能仅存在于 turn_decision.state_patch
+    """
+    decision_state_patch = _coerce_mapping(getattr(turn_decision, "state_patch", None))
+    extracted: dict = {}
+    for key in _PERSISTED_WORKFLOW_STATE_FIELDS:
+        value = getattr(turn_decision, key, None)
+        if value is not None:
+            extracted[key] = value
+            continue
+        if key in decision_state_patch:
+            extracted[key] = decision_state_patch[key]
+    return extracted
 
 
 def _build_decision_state_patch(turn_decision: object) -> dict:
@@ -163,6 +191,7 @@ def _merge_state_patch_with_decision(
     current_state: dict | None = None,
 ) -> dict:
     decision_patch = _build_decision_state_patch(turn_decision)
+    workflow_patch = _extract_workflow_state_from_turn_decision(turn_decision)
     scene = _infer_model_scene(model_config)
     if model_config is None and current_state is not None:
         existing_scene = current_state.get("current_model_scene")
@@ -171,7 +200,20 @@ def _merge_state_patch_with_decision(
 
     decision_patch["current_model_scene"] = scene
     decision_patch["collaboration_mode_label"] = _build_collaboration_mode_label(scene)
-    return {**decision_patch, **state_patch}
+    # 旧字段保持原合并语义：agent_result.state_patch 仍可覆盖 decision_patch。
+    merged = {**decision_patch, **(state_patch or {})}
+    # 新增闭环字段优先以 turn_decision / turn_decision.state_patch 为准，
+    # 同时兼容 agent_result.state_patch 缺失这些字段的真实路径。
+    final_patch = {**merged, **workflow_patch}
+    # 确保持久化后的 state 一定包含这些字段，但不覆盖已有 state 的值。
+    if current_state is not None:
+        for key in _PERSISTED_WORKFLOW_STATE_FIELDS:
+            if key in final_patch:
+                continue
+            if key in current_state:
+                continue
+            final_patch[key] = None
+    return final_patch
 
 
 def _resolve_model_extraction_result(
@@ -902,9 +944,11 @@ def stream_user_message_events(
 
         yield MessageStreamEvent(
             type="prd.updated",
-            data=PrdUpdatedEventData(
-                sections=_preview_prd_sections(prepared.state, prepared.prd_patch),
-            ).model_dump(),
+            data=_build_prd_updated_event_data(
+                prepared.state,
+                prepared.state_patch,
+                prepared.prd_patch,
+            ),
         )
         yield MessageStreamEvent(
             type="assistant.done",
@@ -937,12 +981,13 @@ def _persist_regenerated_reply_version(
     reply: str,
     model_meta: dict[str, str],
     action: dict,
+    turn_decision: object,
     state: dict,
     state_patch: dict,
     prd_patch: dict,
 ) -> tuple[str, int, int]:
-    latest_state_version = state_repository.get_latest_state_version(db, session_id)
-    if latest_state_version is None:
+    base_state_version = state_repository.get_latest_state_version(db, session_id)
+    if base_state_version is None:
         _raise_regeneration_conflict("STATE_SNAPSHOT_MISSING", "State snapshot not found")
     latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
     if latest_prd_snapshot is None:
@@ -967,6 +1012,27 @@ def _persist_regenerated_reply_version(
             "REPLY_VERSION_SEQUENCE_MISMATCH",
             "Reply version sequence mismatch",
         )
+    merged_state_patch = _merge_state_patch_with_decision(
+        state_patch,
+        turn_decision,
+        current_state=state,
+    )
+    new_state = apply_state_patch(state, merged_state_patch)
+    new_state = apply_prd_patch(new_state, prd_patch)
+    next_state_version = base_state_version.version + 1
+    state_version = state_repository.create_state_version(
+        db,
+        session_id,
+        next_state_version,
+        new_state,
+    )
+    prd_repository.create_prd_snapshot(
+        db,
+        session_id,
+        next_state_version,
+        new_state.get("prd_snapshot", {}).get("sections", {}),
+    )
+
     created_version = AssistantReplyVersion(
         id=assistant_version_id,
         reply_group_id=reply_group.id,
@@ -976,8 +1042,8 @@ def _persist_regenerated_reply_version(
         content=reply,
         action_snapshot=action,
         model_meta=model_meta,
-        state_version_id=latest_state_version.id,
-        prd_snapshot_version=latest_prd_snapshot.version,
+        state_version_id=state_version.id,
+        prd_snapshot_version=next_state_version,
     )
     db.add(created_version)
     db.flush()
@@ -993,7 +1059,7 @@ def _persist_regenerated_reply_version(
     db.add(assistant_message)
     messages_repository.touch_session_activity(db, session)
     db.commit()
-    return assistant_version_id, version_no, latest_prd_snapshot.version
+    return assistant_version_id, version_no, next_state_version
 
 
 def stream_regenerate_message_events(
@@ -1076,6 +1142,7 @@ def stream_regenerate_message_events(
                 reply="".join(reply_parts),
                 model_meta=prepared.model_meta,
                 action=prepared.action,
+                turn_decision=prepared.turn_decision,
                 state=prepared.state,
                 state_patch=prepared.state_patch,
                 prd_patch=prepared.prd_patch,
@@ -1084,6 +1151,14 @@ def stream_regenerate_message_events(
             db.rollback()
             raise
 
+        yield MessageStreamEvent(
+            type="prd.updated",
+            data=_build_prd_updated_event_data(
+                prepared.state,
+                prepared.state_patch,
+                prepared.prd_patch,
+            ),
+        )
         yield MessageStreamEvent(
             type="assistant.done",
             data=AssistantDoneEventData(

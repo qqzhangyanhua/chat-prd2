@@ -353,6 +353,12 @@ def build_initial_state(initial_idea: str) -> dict:
         "pending_confirmations": [],
         "rejected_options": [],
         "next_best_questions": [],
+        "workflow_stage": "idea_parser",
+        "idea_parse_result": None,
+        "prd_draft": None,
+        "critic_result": None,
+        "refine_history": [],
+        "finalization_ready": False,
     }
 
 

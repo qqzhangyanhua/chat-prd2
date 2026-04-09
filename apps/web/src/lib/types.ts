@@ -230,7 +230,20 @@ export interface PrdSection {
   title: string;
 }
 
+export type PrdStageTone = "draft" | "ready" | "final";
+
+export interface PrdMeta {
+  stageLabel: string;
+  stageTone: PrdStageTone;
+  criticSummary: string;
+  criticGaps: string[];
+  draftVersion: number | null;
+  nextQuestion: string | null;
+}
+
 export interface PrdState {
+  extraSections: Record<string, PrdSection>;
+  meta: PrdMeta;
   sections: Record<string, PrdSection>;
 }
 
@@ -297,4 +310,10 @@ export type WorkspaceEvent =
             message_id?: string;
           };
     }
-  | { type: "prd.updated"; data: { sections: Record<string, PrdSection> } };
+  | {
+      type: "prd.updated";
+      data: {
+        sections: Record<string, PrdSection>;
+        meta?: PrdMeta;
+      };
+    };

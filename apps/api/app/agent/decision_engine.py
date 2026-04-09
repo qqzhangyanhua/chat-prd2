@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import asdict
+from typing import Literal
 
 from app.agent.extractor import first_missing_section, is_missing
-from app.agent.types import ConversationStrategy, NextMove, TurnDecision, UnderstandingResult
+from app.agent.types import ConversationStrategy, CriticResult, NextMove, TurnDecision, UnderstandingResult
 
 MISSING_SECTION_GAPS = {
     "target_user": "缺少明确的目标用户",
@@ -21,6 +23,51 @@ PHASE_GOALS = {
 }
 
 NON_DIRECTIONAL_STATE_PATCH_KEYS = {"iteration", "stage_hint", "conversation_strategy"}
+
+_CRITICAL_PRODUCT_SPEC_KEYWORDS: tuple[str, ...] = ("核心文件格式", "预览深度", "权限边界")
+
+_CRITICAL_QUESTIONS_BY_KEYWORD: dict[str, str] = {
+    "核心文件格式": "首版必须支持哪些核心文件格式？请按优先级列出 3-5 个（例如 DWG/DXF/PDF/IFC/STEP/GLTF）。",
+    "预览深度": "预览交互深度要到什么程度：仅旋转缩放，还是测量、标注、剖切、构件选择？首版必须有哪 1-2 项？",
+    "权限边界": "权限边界怎么定：哪些人可以查看/编辑/分享？是否需要外链分享、到期、下载限制？",
+}
+
+
+def review_prd_draft_critical_gaps(prd_draft: dict) -> dict:
+    """最小 Critic 规则：基于 prd_draft.missing_information 识别关键产品方案缺口。
+
+    规则：当“核心文件格式 / 预览深度 / 权限边界”这类关键项缺少 >= 2 项时，直接 block。
+    """
+
+    missing_information = list((prd_draft or {}).get("missing_information") or [])
+    matched_keywords: list[str] = []
+    for keyword in _CRITICAL_PRODUCT_SPEC_KEYWORDS:
+        if any(keyword in str(item) for item in missing_information):
+            matched_keywords.append(keyword)
+
+    question_queue = [_CRITICAL_QUESTIONS_BY_KEYWORD[k] for k in matched_keywords]
+    major_gaps = [item for item in missing_information if any(k in str(item) for k in matched_keywords)]
+
+    blocking_questions: list[str] = []
+    Verdict = Literal["pass", "revise", "block"]
+    overall_verdict: Verdict
+    if not missing_information:
+        overall_verdict = "pass"
+    elif len(matched_keywords) >= 2:
+        overall_verdict = "block"
+        blocking_questions = list(question_queue)
+    else:
+        # missing_information 非空时，无论是否命中关键关键词，均至少需要 revise，不直接放行。
+        overall_verdict = "revise"
+
+    critic = CriticResult(
+        overall_verdict=overall_verdict,
+        major_gaps=major_gaps,
+        question_queue=question_queue,
+        blocking_questions=blocking_questions,
+        recommended_next_focus=matched_keywords[0] if matched_keywords else None,
+    )
+    return asdict(critic)
 
 
 def _merge_state(state: dict, state_patch: dict) -> dict:

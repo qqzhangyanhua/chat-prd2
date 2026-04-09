@@ -331,6 +331,52 @@ VALIDATION_FOLLOWUP_FLOWS = {
             "请你直接告诉我，一旦卡在这里，用户最常见的结果是放弃、延后，还是转去其他替代方案。",
         ],
     },
+    ("conversion_resistance", 2): {
+        "phase_goal": "确认是否把该阻力作为当前优先验证对象",
+        "stage_hint": "转化阻力结论确认",
+        "strategy_reason": "阻力与流失结果都已出现，当前先确认是否把它定义为优先阻力。",
+        "summary_prefix": "用户补充了首要阻力带来的流失结果。",
+        "evidence_prefix": "流失结果线索",
+        "conversation_strategy": "confirm",
+        "next_move": "summarize_and_confirm",
+        "pending_confirmations": ["是否把这个阻力定义为当前最值得优先验证的问题"],
+        "recommendation": {
+            "label": "先把这个阻力锁成当前优先验证对象",
+            "content": "如果你认可，我下一步就围绕它压缩最小验证方案",
+            "rationale": "阻力和流失结果都成立时，继续发散会拖慢验证节奏",
+            "type": "recommendation",
+            "priority": 1,
+        },
+        "suggestions": [
+            {
+                "type": "recommendation",
+                "label": "先把这个阻力锁成当前优先验证对象",
+                "content": "如果你认可，我下一步就围绕它压缩最小验证方案",
+                "rationale": "阻力和流失结果都成立时，继续发散会拖慢验证节奏",
+                "priority": 1,
+            },
+            {
+                "type": "direction",
+                "label": "先停止继续扩散更多阻力",
+                "content": "先锁定这个阻力，再看要不要补其他风险验证",
+                "rationale": "优先阻力不锁定，后续动作会继续飘",
+                "priority": 2,
+            },
+            {
+                "type": "tradeoff",
+                "label": "确认优先阻力后再压缩方案",
+                "content": "先别急着扩方案，先把优先级判断钉死",
+                "rationale": "先定优先级，再定方案，返工更少",
+                "priority": 3,
+            },
+        ],
+        "next_best_questions": ["是否把这个阻力定义为当前最值得优先验证的问题"],
+        "reply_lines": [
+            "基于你刚才补的阻力和流失结果，我现在倾向判断这是一个值得优先处理的转化阻力。",
+            "如果你确认，我下一步就直接开始压缩最小验证方案，不再继续横向发散别的阻力。",
+            "你只需要确认：是否把这个阻力定义为当前最值得优先验证的问题。",
+        ],
+    },
 }
 
 

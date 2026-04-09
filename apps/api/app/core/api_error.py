@@ -1,17 +1,17 @@
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
 
-RecoveryAction = dict[str, str | None]
+RecoveryAction = dict[str, Optional[str]]
 
 
 def build_api_error_payload(
     code: str,
     message: str,
-    recovery_action: RecoveryAction | None = None,
-    details: dict[str, Any] | None = None,
+    recovery_action: Optional[RecoveryAction] = None,
+    details: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "detail": message,
@@ -34,9 +34,9 @@ class ApiError(HTTPException):
         status_code: int,
         code: str,
         message: str,
-        recovery_action: RecoveryAction | None = None,
-        details: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
+        recovery_action: Optional[RecoveryAction] = None,
+        details: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
     ) -> None:
         super().__init__(status_code=status_code, detail=message, headers=headers)
         self.code = code
@@ -62,9 +62,9 @@ def raise_api_error(
     status_code: int,
     code: str,
     message: str,
-    recovery_action: RecoveryAction | None = None,
-    details: dict[str, Any] | None = None,
-    headers: dict[str, str] | None = None,
+    recovery_action: Optional[RecoveryAction] = None,
+    details: Optional[dict[str, Any]] = None,
+    headers: Optional[dict[str, str]] = None,
 ) -> None:
     raise ApiError(
         status_code=status_code,

@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agent.types import ConversationStrategy, WorkflowStage
+
 
 class StateSnapshot(BaseModel):
     idea: str
@@ -22,7 +24,7 @@ class StateSnapshot(BaseModel):
     open_questions: list[str]
     prd_snapshot: dict[str, Any]
     current_phase: str = Field(default="idea_clarification")
-    conversation_strategy: str = Field(default="clarify")
+    conversation_strategy: ConversationStrategy = Field(default="clarify")
     current_model_scene: str = Field(default="general")
     collaboration_mode_label: str | None = None
     strategy_reason: str | None = None
@@ -35,3 +37,9 @@ class StateSnapshot(BaseModel):
     pending_confirmations: list[str] = Field(default_factory=list)
     rejected_options: list[str] = Field(default_factory=list)
     next_best_questions: list[str] = Field(default_factory=list)
+    workflow_stage: WorkflowStage = Field(default="idea_parser")
+    idea_parse_result: dict[str, Any] | None = None
+    prd_draft: dict[str, Any] | None = None
+    critic_result: dict[str, Any] | None = None
+    refine_history: list[dict[str, Any]] = Field(default_factory=list)
+    finalization_ready: bool = False

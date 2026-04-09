@@ -64,6 +64,7 @@ class AssistantDoneEventData(BaseModel):
 
 class PrdUpdatedEventData(BaseModel):
     sections: dict
+    meta: dict | None = None
 
 
 class ConversationMessageResponse(BaseModel):

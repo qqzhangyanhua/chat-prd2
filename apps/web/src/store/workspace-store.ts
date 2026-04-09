@@ -16,6 +16,16 @@ import type {
   WorkspaceEvent,
   WorkspaceMessage,
 } from "../lib/types";
+import {
+  createInitialExtraPrdSections,
+  createInitialPrdMeta,
+  createInitialPrdSections,
+  deriveExtraPrdSections,
+  derivePrimaryPrdSections,
+  derivePrdMeta,
+  normalizeIncomingPrdSections,
+  shouldPreserveCurrentPrd,
+} from "./prd-store-helpers";
 
 type StreamPhase = "idle" | "waiting" | "streaming";
 type RequestMode = "new" | "regenerate";
@@ -75,57 +85,6 @@ interface WorkspaceState {
   setStreaming: (value: boolean) => void;
   startRegenerate: () => boolean;
   startRequest: (content: string, mode?: RequestMode) => void;
-}
-
-const initialPrdSections: PrdState["sections"] = {
-  target_user: {
-    title: "目标用户",
-    content: "还需要继续明确谁会最频繁、最迫切地使用这个产品。",
-    status: "confirmed",
-  },
-  problem: {
-    title: "核心问题",
-    content: "当前只知道用户有想法，但具体痛点、触发场景和替代方案还不够清楚。",
-    status: "inferred",
-  },
-  solution: {
-    title: "解决方案",
-    content: "系统会通过连续追问、挑战假设和收敛选项，帮助用户把模糊想法变成可执行 PRD。",
-    status: "inferred",
-  },
-  mvp_scope: {
-    title: "MVP 范围",
-    content: "需要进一步确认首版最小闭环，包括会话、追问、决策沉淀和 PRD 输出。",
-    status: "missing",
-  },
-};
-
-function createInitialPrdSections(): PrdState["sections"] {
-  return {
-    target_user: { ...initialPrdSections.target_user },
-    problem: { ...initialPrdSections.problem },
-    solution: { ...initialPrdSections.solution },
-    mvp_scope: { ...initialPrdSections.mvp_scope },
-  };
-}
-
-function normalizePrdSections(
-  sections: SessionSnapshotResponse["prd_snapshot"]["sections"],
-): PrdState["sections"] {
-  const normalizedEntries = Object.entries(sections).map(([key, value]) => {
-    const content = typeof value.content === "string" ? value.content : "";
-    const title = typeof value.title === "string" && value.title ? value.title : key;
-    const status =
-      value.status === "confirmed" ||
-      value.status === "inferred" ||
-      value.status === "missing"
-        ? value.status
-        : "missing";
-
-    return [key, { content, title, status }] as const;
-  });
-
-  return Object.fromEntries(normalizedEntries);
 }
 
 const STRATEGY_LABEL_MAP: Record<DecisionStrategy, string> = {
@@ -288,11 +247,21 @@ function buildHydratedSessionState(
     preserveCurrentAction?: boolean;
     preserveInputValue?: boolean;
     preserveLastSubmittedInput?: boolean;
+    preserveFresherPrd?: boolean;
   },
 ) {
   const preserveCurrentAction = options?.preserveCurrentAction ?? false;
   const preserveInputValue = options?.preserveInputValue ?? false;
   const preserveLastSubmittedInput = options?.preserveLastSubmittedInput ?? false;
+  const preserveFresherPrd = options?.preserveFresherPrd ?? false;
+  const nextPrd: PrdState = {
+    extraSections: deriveExtraPrdSections(snapshot.state),
+    meta: derivePrdMeta(snapshot.state),
+    sections: derivePrimaryPrdSections(snapshot.state, snapshot.prd_snapshot.sections),
+  };
+  const prd = preserveFresherPrd && shouldPreserveCurrentPrd(state.prd, nextPrd)
+    ? state.prd
+    : nextPrd;
 
   return {
     ...state,
@@ -317,12 +286,7 @@ function buildHydratedSessionState(
     messages: normalizeMessages(snapshot.messages),
     pendingRequestMode: null,
     pendingUserInput: null,
-    prd: {
-      sections:
-        Object.keys(snapshot.prd_snapshot.sections).length > 0
-          ? normalizePrdSections(snapshot.prd_snapshot.sections)
-          : createInitialPrdSections(),
-    },
+    prd,
     regenerateRequestId: 0,
     replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),
     selectedHistoryGroupId: null,
@@ -407,6 +371,8 @@ function createInitialState(): Omit<
     pendingUserInput: null,
     pendingRequestMode: null,
     prd: {
+      extraSections: createInitialExtraPrdSections(),
+      meta: createInitialPrdMeta(),
       sections: createInitialPrdSections(),
     },
     regenerateRequestId: 0,
@@ -735,17 +701,24 @@ export function createWorkspaceStore() {
               ],
             };
           }
-          case "prd.updated":
+          case "prd.updated": {
+            const normalizedPrdUpdate = normalizeIncomingPrdSections(event.data.sections);
             return {
               ...state,
               prd: {
                 ...state.prd,
+                meta: event.data.meta ?? state.prd.meta,
                 sections: {
                   ...state.prd.sections,
-                  ...event.data.sections,
+                  ...normalizedPrdUpdate.sections,
+                },
+                extraSections: {
+                  ...state.prd.extraSections,
+                  ...normalizedPrdUpdate.extraSections,
                 },
               },
             };
+          }
           default:
             return state;
         }
@@ -780,6 +753,7 @@ export function createWorkspaceStore() {
           preserveCurrentAction: true,
           preserveInputValue: true,
           preserveLastSubmittedInput: true,
+          preserveFresherPrd: true,
         }),
       ),
     markInterrupted: () =>
