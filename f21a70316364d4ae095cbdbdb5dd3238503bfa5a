@@ -1,0 +1,47 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "f21a70316364d4ae095cbdbdb5dd3238503bfa5a",
+  "prompts": {
+    "478a3fbeecd7c23a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d6dbb-53a7-7fb3-bc01-0ecefc2c918e",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 178,
+      "overriden_lines": 0
+    },
+    "de2fc03d017c7929": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7130-f589-7540-b0fa-51e2dcc2c1be",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 31,
+      "total_deletions": 7,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    },
+    "f0d53bcce8e5d3dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3996fc-520f-442c-98c6-956f72c1d77c",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 485,
+      "overriden_lines": 0
+    }
+  }
+}
