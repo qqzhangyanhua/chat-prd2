@@ -1,0 +1,104 @@
+[
+  {
+    "name": "default_exploration",
+    "state": {},
+    "expected": {
+      "stageLabel": "探索中",
+      "stageTone": "draft",
+      "criticSummary": "系统正在持续沉淀当前 PRD 草稿。",
+      "criticGaps": [],
+      "draftVersion": null,
+      "nextQuestion": null
+    }
+  },
+  {
+    "name": "refine_loop_with_gaps",
+    "state": {
+      "workflow_stage": "refine_loop",
+      "prd_draft": {
+        "version": 2,
+        "status": "draft_refined"
+      },
+      "critic_result": {
+        "overall_verdict": "revise",
+        "major_gaps": ["缺少成功指标", "缺少不做清单"]
+      }
+    },
+    "expected": {
+      "stageLabel": "草稿中",
+      "stageTone": "draft",
+      "criticSummary": "Critic 认为还有 2 个关键缺口待补齐。",
+      "criticGaps": ["缺少成功指标", "缺少不做清单"],
+      "draftVersion": 2,
+      "nextQuestion": null
+    }
+  },
+  {
+    "name": "finalize_ready",
+    "state": {
+      "workflow_stage": "finalize",
+      "finalization_ready": true,
+      "prd_draft": {
+        "version": 3,
+        "status": "draft_refined"
+      },
+      "critic_result": {
+        "overall_verdict": "pass",
+        "question_queue": []
+      }
+    },
+    "expected": {
+      "stageLabel": "可整理终稿",
+      "stageTone": "ready",
+      "criticSummary": "Critic 已通过，可以整理最终版 PRD。",
+      "criticGaps": [],
+      "draftVersion": 3,
+      "nextQuestion": null
+    }
+  },
+  {
+    "name": "completed_finalized",
+    "state": {
+      "workflow_stage": "completed",
+      "prd_draft": {
+        "version": 4,
+        "status": "finalized"
+      },
+      "finalization_ready": true,
+      "critic_result": {
+        "overall_verdict": "pass"
+      }
+    },
+    "expected": {
+      "stageLabel": "已生成终稿",
+      "stageTone": "final",
+      "criticSummary": "当前会话已经整理出最终版 PRD，后续修改会基于终稿增量更新。",
+      "criticGaps": [],
+      "draftVersion": 4,
+      "nextQuestion": null
+    }
+  },
+  {
+    "name": "refine_loop_with_question_queue",
+    "state": {
+      "workflow_stage": "refine_loop",
+      "prd_draft": {
+        "version": 2,
+        "status": "draft_refined"
+      },
+      "critic_result": {
+        "overall_verdict": "block",
+        "major_gaps": ["缺少权限边界"],
+        "question_queue": ["权限边界怎么定：哪些人可以查看/编辑/分享？"]
+      }
+    },
+    "expected": {
+      "stageLabel": "草稿中",
+      "stageTone": "draft",
+      "criticSummary": "Critic 认为还有 1 个关键缺口待补齐。",
+      "criticGaps": ["缺少权限边界"],
+      "draftVersion": 2,
+      "nextQuestion": "权限边界怎么定：哪些人可以查看/编辑/分享？"
+    }
+  }
+]

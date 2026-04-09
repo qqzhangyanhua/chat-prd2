@@ -7,6 +7,7 @@ AI Co-founder 是一个通过持续对话帮助用户挖掘想法、收敛方向
 - `apps/web`：Next.js 15 + React 19 前端
 - `apps/api`：FastAPI 后端
 - `docs/startup.md`：本地启动文档
+- `docs/contracts`：PRD 运行时契约与共享样例
 - `docs/superpowers/specs`：设计文档
 - `docs/superpowers/plans`：实现计划
 
@@ -14,12 +15,18 @@ AI Co-founder 是一个通过持续对话帮助用户挖掘想法、收敛方向
 
 如果你只是想尽快把项目跑起来，先看：
 
-- [启动文档](D:/AI/chat-prd/docs/startup.md)
+- [启动文档](/Users/zhangyanhua/AI/chat-prd2/docs/startup.md)
+
+如果你要维护“生成 PRD”链路，建议同时看：
+
+- [PRD 契约索引](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/README.md)
+- [PRD 运行时契约](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-runtime-contract.md)
+- [PRD Meta 共享样例](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-meta-cases.json)
 
 如果你已经创建好 `.venv` 并装好依赖，可以直接用一键脚本：
 
 ```powershell
-Set-Location D:\AI\chat-prd
+Set-Location D:\AI\chat-prd2
 powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 ```
 
@@ -33,8 +40,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -SkipMigrate
 
 当前项目主要使用两份环境变量文件：
 
-- [`.env`](D:/AI/chat-prd/.env)
-- [`apps/web/.env.local`](D:/AI/chat-prd/apps/web/.env.local)
+- [`.env`](/Users/zhangyanhua/AI/chat-prd2/.env)
+- [`apps/web/.env.local`](/Users/zhangyanhua/AI/chat-prd2/apps/web/.env.local)
 
 当前最关键的变量有：
 
@@ -107,6 +114,7 @@ V1 当前已经包含这些核心能力：
 
 如果你是第一次接手这个项目，建议按这个顺序看：
 
-1. [启动文档](D:/AI/chat-prd/docs/startup.md)
-2. [设计文档](D:/AI/chat-prd/docs/superpowers/specs/2026-04-01-ai-cofounder-v1-design.md)
-3. [实现计划](D:/AI/chat-prd/docs/superpowers/plans/2026-04-01-ai-cofounder-v1-implementation.md)
+1. [启动文档](/Users/zhangyanhua/AI/chat-prd2/docs/startup.md)
+2. [PRD 契约索引](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/README.md)
+3. [设计文档目录](/Users/zhangyanhua/AI/chat-prd2/docs/superpowers/specs)
+4. [实现计划目录](/Users/zhangyanhua/AI/chat-prd2/docs/superpowers/plans)

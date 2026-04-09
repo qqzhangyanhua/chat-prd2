@@ -7,6 +7,14 @@
 - 数据库启动与迁移
 - 前后端本地启动
 
+## 文档导航
+
+如果你正在维护“生成 PRD”链路，建议同时查看下面这组契约文档：
+
+- [PRD 契约索引](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/README.md)
+- [PRD 运行时契约](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-runtime-contract.md)
+- [PRD Meta 共享样例](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-meta-cases.json)
+
 ## 1. 环境准备
 
 建议先确认本机已安装：
@@ -33,8 +41,8 @@ uv --version
 
 当前项目已经准备好以下环境变量文件：
 
-- 根目录 [`.env`](D:/AI/chat-prd2/.env)
-- 前端 [`apps/web/.env.local`](D:/AI/chat-prd2/apps/web/.env.local)
+- 根目录 [`.env`](/Users/zhangyanhua/AI/chat-prd2/.env)
+- 前端 [`apps/web/.env.local`](/Users/zhangyanhua/AI/chat-prd2/apps/web/.env.local)
 
 当前配置如下：
 
@@ -82,7 +90,7 @@ ADMIN_EMAILS=admin@example.com,ops@example.com
 
 ## 3. 创建并激活 uv 虚拟环境
 
-在项目根目录 [D:\AI\chat-prd2](D:/AI/chat-prd2) 执行：
+在项目根目录 [`/Users/zhangyanhua/AI/chat-prd2`](/Users/zhangyanhua/AI/chat-prd2) 执行：
 
 ```powershell
 uv venv
@@ -256,7 +264,42 @@ pnpm --filter web build
 python -m pytest apps/api/tests -q
 ```
 
-## 11. 一键启动脚本
+## 11. PRD 定向回归
+
+如果你只改了“生成 PRD”链路，优先跑这组最小回归：
+
+前端：
+
+```bash
+pnpm --filter web test -- src/test/workspace-store.test.ts src/test/workspace-session-shell.test.tsx src/test/prd-panel.test.tsx
+```
+
+后端：
+
+```bash
+PYTHONPATH=apps/api uv run pytest apps/api/tests/test_messages_service.py apps/api/tests/test_messages_stream.py -q
+```
+
+如果只是改 `prd.meta` 阶段判断或文案，最小验证可以再收窄为：
+
+前端：
+
+```bash
+pnpm --filter web test -- src/test/workspace-store.test.ts
+```
+
+后端：
+
+```bash
+PYTHONPATH=apps/api uv run pytest apps/api/tests/test_messages_service.py::test_preview_prd_meta_matches_shared_contract -q
+```
+
+更多背景和排查顺序见：
+
+- [PRD 契约索引](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/README.md)
+- [PRD 运行时契约](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-runtime-contract.md)
+
+## 12. 一键启动脚本
 
 如果你已经完成了依赖安装，并且根目录 `.venv` 已创建，可以直接运行：
 
@@ -276,7 +319,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -SkipMigrate
 ```
 
-## 12. 常见问题
+## 13. 常见问题
 
 ### 12.1 PowerShell 无法激活 `.venv`
 
@@ -306,7 +349,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 优先检查：
 
 - 后端是否已经启动在 `http://127.0.0.1:8000`
-- [`apps/web/.env.local`](D:/AI/chat-prd2/apps/web/.env.local) 的 `NEXT_PUBLIC_API_BASE_URL` 是否正确
+- [`apps/web/.env.local`](/Users/zhangyanhua/AI/chat-prd2/apps/web/.env.local) 的 `NEXT_PUBLIC_API_BASE_URL` 是否正确
 
 如果你能登录、也能创建会话，但进入会话页时看到 `Failed to fetch`、`当前会话加载失败`，或者浏览器控制台里出现看起来像 CORS 的报错，优先先执行一次数据库迁移：
 
@@ -318,7 +361,7 @@ Set-Location ..\..
 
 这是因为最近新增了 `agent_turn_decisions` 等表，如果本地数据库还停在旧 revision，后端在读取会话快照时会失败，前端往往只会表现成加载失败。
 
-## 13. 一键理解版
+## 14. 一键理解版
 
 如果你现在就是要本地跑起来，最短路径是：
 
