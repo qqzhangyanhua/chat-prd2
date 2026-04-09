@@ -3,11 +3,9 @@ import pytest
 
 from app.agent.prompts import PROBE_PROBLEM_REPLY, PROBE_SOLUTION_REPLY, SUMMARIZE_UNDERSTANDING_REPLY
 from app.agent.reply_composer import (
-    ASSUMPTION_PREFIX,
-    CONFIRM_ITEMS_PREFIX,
-    JUDGEMENT_PREFIX,
-    NEXT_STEP_PREFIX,
-    SUGGEST_PREFIX_RECOMMEND,
+    CRITIC_VERDICT_PREFIX,
+    DRAFT_SUMMARY_PREFIX,
+    NEXT_QUESTION_PREFIX,
 )
 from app.agent.extractor import StructuredExtractionResult
 from app.agent.runtime import decide_next_action, run_agent
@@ -18,6 +16,7 @@ from app.agent.understanding import UnderstandingResult
 def _phase1_state(**overrides):
     base = {
         "idea": "做一个 AI Co-founder",
+        "workflow_stage": "prd_draft",
         "target_user": None,
         "problem": None,
         "solution": None,
@@ -39,13 +38,12 @@ def _phase1_state(**overrides):
     return base
 
 
-def _assert_reply_prefixes(reply: str, next_step_fragment: str) -> None:
-    assert JUDGEMENT_PREFIX in reply
-    assert ASSUMPTION_PREFIX in reply
-    assert SUGGEST_PREFIX_RECOMMEND in reply
-    assert CONFIRM_ITEMS_PREFIX in reply
-    assert NEXT_STEP_PREFIX in reply
-    assert next_step_fragment in reply
+def _assert_reply_prefixes(reply: str, next_step_fragment: str | None = None) -> None:
+    assert DRAFT_SUMMARY_PREFIX in reply
+    assert CRITIC_VERDICT_PREFIX in reply
+    assert NEXT_QUESTION_PREFIX in reply
+    if next_step_fragment is not None:
+        assert next_step_fragment in reply
 
 
 def test_action_target_only_exposes_currently_supported_target():
@@ -76,7 +74,7 @@ def test_run_agent_returns_probe_reply_and_empty_patches_when_target_user_missin
     result = run_agent(state, "我想做一个帮助创业者梳理想法的产品")
 
     assert result.reply != PROBE_PROBLEM_REPLY
-    _assert_reply_prefixes(result.reply, "如果当前问题判断不对你直接指出")
+    _assert_reply_prefixes(result.reply, "为了继续推进，请先把清晰的核心问题补具体。")
     assert result.action.action == "probe_deeper"
     assert result.action.target == "problem"
     assert result.state_patch == {
@@ -104,9 +102,6 @@ def test_run_agent_returns_probe_reply_and_empty_patches_when_target_user_missin
     assert result.turn_decision.prd_patch == result.prd_patch
     assert result.turn_decision.suggestions
     assert result.turn_decision.recommendation is not None
-    assert any(
-        suggestion.label in result.reply for suggestion in result.turn_decision.suggestions
-    )
 
 
 def test_run_agent_returns_summary_reply_when_target_user_exists():
@@ -119,7 +114,7 @@ def test_run_agent_returns_summary_reply_when_target_user_exists():
     result = run_agent(state, "他们现在最大的痛点是不知道先验证哪个需求")
 
     assert result.reply != PROBE_SOLUTION_REPLY
-    _assert_reply_prefixes(result.reply, "如果你认可这个推进点")
+    _assert_reply_prefixes(result.reply, "基于当前信息，你最想先验证哪一项：频率、付费意愿，还是转化阻力？")
     assert result.action.action == "probe_deeper"
     assert result.action.target == "solution"
     assert result.state_patch == {
@@ -139,9 +134,6 @@ def test_run_agent_returns_summary_reply_when_target_user_exists():
     assert result.turn_decision.recommendation is not None
     assert result.turn_decision.next_best_questions
     assert result.turn_decision.next_best_questions[0] in result.reply
-    assert any(
-        suggestion.label in result.reply for suggestion in result.turn_decision.suggestions
-    )
 
 
 def test_run_agent_summarizes_after_core_prd_sections_are_complete():
@@ -157,7 +149,7 @@ def test_run_agent_summarizes_after_core_prd_sections_are_complete():
     result = run_agent(state, "继续")
 
     assert result.reply != SUMMARIZE_UNDERSTANDING_REPLY
-    _assert_reply_prefixes(result.reply, "请你先确认")
+    _assert_reply_prefixes(result.reply, "请确认当前理解是否准确")
     assert result.action.action == "summarize_understanding"
     assert result.action.target is None
     assert result.state_patch == {
@@ -168,7 +160,7 @@ def test_run_agent_summarizes_after_core_prd_sections_are_complete():
     assert result.turn_decision is not None
     assert result.turn_decision.next_move == "summarize_and_confirm"
     assert result.turn_decision.next_best_questions == ["请确认当前理解是否准确"]
-    assert "我下一轮最建议你直接回答" in result.reply
+    assert NEXT_QUESTION_PREFIX in result.reply
     assert result.turn_decision.state_patch == result.state_patch
     assert result.turn_decision.prd_patch == result.prd_patch
 
@@ -577,3 +569,332 @@ def test_run_agent_returns_understanding_result():
     assert result.understanding is not None
     assert "用户表述了" in result.understanding.summary
     assert result.understanding.candidate_updates.get("target_user") == "我们主要服务独立开发者团队"
+
+
+def test_run_agent_auto_generates_initial_prd_v1_and_critic_on_first_idea_input():
+    state = {
+        "idea": "我想做一个在线3D图纸预览平台",
+        "workflow_stage": "idea_parser",
+        "prd_snapshot": {"sections": {}},
+    }
+
+    result = run_agent(state, "我想做一个在线3D图纸预览平台")
+
+    assert result.state_patch["workflow_stage"] == "refine_loop"
+    assert result.state_patch["idea_parse_result"]["product_type"] == "在线3D图纸预览平台"
+    assert result.state_patch["prd_draft"]["version"] == 1
+    assert result.state_patch["prd_draft"]["status"] == "draft_hypothesis"
+    assert result.state_patch["critic_result"]["overall_verdict"] in {"revise", "block"}
+    assert result.state_patch["critic_result"]["question_queue"]
+    assert result.turn_decision is not None
+    assert result.turn_decision.next_best_questions
+
+
+def test_run_agent_blocks_refine_loop_when_missing_critical_product_spec_items():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [
+                "未明确核心文件格式",
+                "未明确预览深度",
+                "未明确权限边界",
+            ],
+            "critic_ready": True,
+        },
+    }
+
+    result = run_agent(state, "继续")
+
+    assert result.state_patch["critic_result"]["overall_verdict"] == "block"
+    assert result.state_patch["finalization_ready"] is False
+
+
+def test_run_agent_refine_loop_passes_when_missing_information_is_empty():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [],
+            "critic_ready": True,
+        },
+    }
+
+    result = run_agent(state, "继续")
+
+    assert result.state_patch["critic_result"]["overall_verdict"] == "pass"
+    assert result.state_patch["finalization_ready"] is True
+    assert result.state_patch["workflow_stage"] == "finalize"
+
+
+def test_run_agent_refine_loop_does_not_swallow_substantive_input():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [
+                "未明确核心文件格式",
+                "未明确预览深度",
+            ],
+            "critic_ready": True,
+        },
+    }
+
+    result = run_agent(state, "首版先支持 DWG 和 IFC")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["prd_draft"]["version"] == 2
+    assert result.state_patch["prd_draft"]["status"] == "draft_refined"
+    assert "未明确核心文件格式" not in result.state_patch["prd_draft"]["missing_information"]
+    assert "未明确预览深度" in result.state_patch["prd_draft"]["missing_information"]
+    assert result.state_patch["critic_result"]["overall_verdict"] == "revise"
+    assert result.state_patch["finalization_ready"] is False
+    assert "refine_notes" in result.state_patch["prd_draft"]["sections"]
+
+
+def test_run_agent_refine_loop_substantive_input_can_finish_last_gap_and_enter_finalize():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [
+                "未明确核心文件格式",
+            ],
+            "critic_ready": True,
+        },
+    }
+
+    result = run_agent(state, "首版先支持 DWG 和 IFC")
+
+    assert result.state_patch["critic_result"]["overall_verdict"] == "pass"
+    assert result.state_patch["finalization_ready"] is True
+    assert result.state_patch["workflow_stage"] == "finalize"
+    assert result.state_patch["prd_draft"]["version"] == 2
+    assert result.state_patch["prd_draft"]["missing_information"] == []
+
+
+def test_run_agent_refine_loop_does_not_clear_gap_for_non_answer_input():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [
+                "尚未明确需要支持的图纸/模型格式与导入方式",
+            ],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "block",
+            "question_queue": ["首版必须支持哪些文件格式？"],
+        },
+    }
+
+    result = run_agent(state, "还没想好")
+
+    assert result.state_patch["prd_draft"]["version"] == 2
+    assert result.state_patch["prd_draft"]["missing_information"] == [
+        "尚未明确需要支持的图纸/模型格式与导入方式",
+    ]
+    assert result.state_patch["critic_result"]["overall_verdict"] == "revise"
+    assert result.state_patch["finalization_ready"] is False
+    assert result.state_patch.get("workflow_stage") != "finalize"
+
+
+def test_run_agent_refine_loop_can_resolve_real_initial_draft_question_style_gap():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [
+                "需要支持哪些图纸格式？",
+                "如何规划不同角色的权限访问？",
+            ],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "block",
+            "question_queue": ["首版必须支持哪些文件格式？例如 DWG/DXF/PDF/IFC/STEP/GLTF 等，优先级如何？"],
+        },
+    }
+
+    result = run_agent(state, "第一版先支持 STEP 和 OBJ")
+
+    assert result.state_patch["prd_draft"]["version"] == 2
+    assert "需要支持哪些图纸格式？" not in result.state_patch["prd_draft"]["missing_information"]
+    assert "如何规划不同角色的权限访问？" in result.state_patch["prd_draft"]["missing_information"]
+    assert result.state_patch["critic_result"]["overall_verdict"] == "revise"
+    assert result.state_patch["finalization_ready"] is False
+
+
+def test_run_agent_refine_loop_does_not_clear_permission_gap_for_uncertain_answer():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": [
+                "如何规划不同角色的权限访问？",
+            ],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "block",
+            "question_queue": ["权限怎么设计：访客、成员、管理员？是否需要外链分享与到期控制？"],
+        },
+    }
+
+    result = run_agent(state, "权限这块我还没想好")
+
+    assert result.state_patch["prd_draft"]["version"] == 2
+    assert result.state_patch["prd_draft"]["missing_information"] == [
+        "如何规划不同角色的权限访问？",
+    ]
+    assert result.state_patch["critic_result"]["overall_verdict"] == "revise"
+    assert result.state_patch["finalization_ready"] is False
+    assert result.state_patch["finalization_ready"] is False
+
+
+def test_run_agent_finalize_flow_marks_completed_and_finalized():
+    state = {
+        "workflow_stage": "finalize",
+        "prd_draft": {
+            "version": 2,
+            "status": "draft_refined",
+            "sections": {
+                "summary": {"title": "一句话概述", "content": "AI PRD 助手", "status": "confirmed"},
+                "target_user": {"title": "目标用户", "content": "独立开发者", "status": "confirmed"},
+                "problem": {"title": "核心问题", "content": "需求分散且难以收敛", "status": "confirmed"},
+                "solution": {"title": "解决方案", "content": "通过对话持续沉淀 PRD", "status": "confirmed"},
+                "mvp_scope": {"title": "MVP 范围", "content": "创建会话、持续追问、导出 PRD", "status": "confirmed"},
+            },
+            "assumptions": [],
+            "missing_information": [],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "pass",
+            "question_queue": [],
+            "major_gaps": [],
+        },
+        "finalization_ready": True,
+    }
+
+    result = run_agent(state, "确认设计，按业务版输出")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["workflow_stage"] == "completed"
+    assert result.state_patch["finalization_ready"] is True
+    assert result.state_patch["prd_draft"]["status"] == "finalized"
+    assert result.state_patch["prd_draft"]["finalize_preferences"] == "business"
+    assert result.prd_patch["target_user"]["content"] == "独立开发者"
+    assert result.prd_patch["solution"]["content"]
+
+
+def test_run_agent_finalize_flow_rejects_when_critic_not_pass():
+    state = {
+        "workflow_stage": "finalize",
+        "prd_draft": {
+            "version": 2,
+            "status": "draft_refined",
+            "sections": {
+                "summary": {"title": "一句话概述", "content": "AI PRD 助手", "status": "confirmed"},
+            },
+            "assumptions": [],
+            "missing_information": ["还缺少成功指标"],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "revise",
+            "question_queue": ["这个产品成功的判断标准是什么？"],
+            "major_gaps": ["还缺少成功指标"],
+        },
+        "finalization_ready": False,
+    }
+
+    result = run_agent(state, "确认设计")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch.get("workflow_stage") != "completed"
+    assert result.prd_patch == {}
+    assert "缺口" in result.reply or "先补齐" in result.reply
+
+
+def test_run_agent_refine_loop_writes_answer_into_formal_sections():
+    state = {
+        "workflow_stage": "refine_loop",
+        "prd_draft": {
+            "version": 1,
+            "status": "draft_hypothesis",
+            "sections": {},
+            "assumptions": [],
+            "missing_information": ["未明确核心文件格式"],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "block",
+            "question_queue": ["首版必须支持哪些文件格式？"],
+        },
+    }
+
+    result = run_agent(state, "第一版支持 STEP 和 OBJ")
+
+    assert result.reply_mode == "local"
+    assert result.state_patch["prd_draft"]["version"] == 2
+    assert "未明确核心文件格式" not in result.state_patch["prd_draft"]["missing_information"]
+
+    sections = result.state_patch["prd_draft"]["sections"]
+    assert "refine_notes" in sections
+    assert any(
+        "STEP" in str(section.get("content", "")) or "OBJ" in str(section.get("content", ""))
+        for key, section in sections.items()
+        if key != "refine_notes" and isinstance(section, dict)
+    )
+
+
+def test_run_agent_finalize_flow_supports_technical_preference():
+    state = {
+        "workflow_stage": "finalize",
+        "prd_draft": {
+            "version": 2,
+            "status": "draft_refined",
+            "sections": {
+                "summary": {"title": "一句话概述", "content": "在线 3D 图纸预览平台", "status": "confirmed"},
+                "solution": {"title": "解决方案", "content": "提供在线预览能力", "status": "confirmed"},
+                "constraints": {"title": "约束条件", "content": "首版优先支持浏览器端", "status": "confirmed"},
+            },
+            "assumptions": [],
+            "missing_information": [],
+            "critic_ready": True,
+        },
+        "critic_result": {
+            "overall_verdict": "pass",
+            "question_queue": [],
+            "major_gaps": [],
+        },
+        "finalization_ready": True,
+    }
+
+    result = run_agent(state, "确认设计，按技术细节版输出")
+
+    assert result.state_patch["prd_draft"]["status"] == "finalized"
+    assert result.state_patch["prd_draft"]["finalize_preferences"] == "technical"

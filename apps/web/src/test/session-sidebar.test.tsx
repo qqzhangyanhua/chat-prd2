@@ -160,7 +160,7 @@ describe("WorkspaceLeftNav (session mode)", () => {
       session: {
         id: "session-1",
         user_id: "user-1",
-        title: "竞品分析",
+        title: "产品调研",
         initial_idea: "idea",
         created_at: "2026-04-03T12:00:00Z",
         updated_at: "2026-04-03T12:40:00Z",
@@ -170,12 +170,12 @@ describe("WorkspaceLeftNav (session mode)", () => {
     render(<WorkspaceLeftNav sessionId="session-1" />);
 
     fireEvent.change(await screen.findByLabelText("重命名"), {
-      target: { value: "竞品分析" },
+      target: { value: "产品调研" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
-      expect(updateSessionMock).toHaveBeenCalledWith("session-1", { title: "竞品分析" }, null);
+      expect(updateSessionMock).toHaveBeenCalledWith("session-1", { title: "产品调研" }, null);
     });
   });
 

@@ -1,3 +1,4 @@
+import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,6 +12,27 @@ from sqlalchemy.pool import StaticPool
 API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
+
+os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+
+
+def _clear_foreign_app_modules() -> None:
+    for module_name, module in list(sys.modules.items()):
+        if module_name != "app" and not module_name.startswith("app."):
+            continue
+        module_file = getattr(module, "__file__", None)
+        if not module_file:
+            continue
+        try:
+            module_path = Path(module_file).resolve()
+        except OSError:
+            continue
+        if API_ROOT in module_path.parents:
+            continue
+        del sys.modules[module_name]
+
+
+_clear_foreign_app_modules()
 
 from app.api.deps import get_db
 from app.db.models import Base

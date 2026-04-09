@@ -2,6 +2,9 @@ import json
 
 from sqlalchemy import select
 
+from app.agent.reply_composer import CRITIC_VERDICT_PREFIX
+from app.agent.reply_composer import DRAFT_SUMMARY_PREFIX
+from app.agent.reply_composer import NEXT_QUESTION_PREFIX
 from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
 from app.db.models import AgentTurnDecision
@@ -41,6 +44,23 @@ def test_message_stream_emits_progress_and_persists_messages(
             api_key="secret",
             model="gpt-4o-mini",
             enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "prd_draft",
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
         )
         db.commit()
         model_config_id = model_config.id
@@ -153,6 +173,72 @@ def test_message_stream_emits_progress_and_persists_messages(
         "summarize_and_confirm",
         "force_rank_or_choose",
     }
+
+
+def test_message_stream_emits_reply_with_single_critic_question(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="Critic 闭环模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "我想做一个在线3D图纸预览平台",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    event_order = [name for name, _ in parsed_events]
+    done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
+
+    assert event_order[:4] == [
+        "message.accepted",
+        "reply_group.created",
+        "action.decided",
+        "assistant.version.started",
+    ]
+    assert event_order[-2:] == ["prd.updated", "assistant.done"]
+    assert done_payload["is_regeneration"] is False
+    assert done_payload["is_latest"] is True
+    assert done_payload["assistant_version_id"]
+    assert done_payload["assistant_message_id"]
+    assert done_payload["message_id"]
+    assert done_payload["prd_snapshot_version"] >= 1
+
+    db = testing_session_local()
+    try:
+        assistant_message = db.execute(
+            select(ConversationMessage)
+            .where(ConversationMessage.session_id == seeded_session)
+            .where(ConversationMessage.role == "assistant")
+            .order_by(ConversationMessage.created_at.desc())
+        ).scalars().first()
+    finally:
+        db.close()
+
+    assert assistant_message is not None
+    assert "我先把你的想法解析成一个 PRD v1 草案假设" in assistant_message.content
+    assert "进入 refine_loop" in assistant_message.content
+    assert "首版必须支持哪些文件格式？" in assistant_message.content
 
 
 def test_message_stream_returns_404_for_other_users_session(client, auth_client, seeded_session):
@@ -572,6 +658,71 @@ def test_message_stream_closes_frequency_validation_with_local_verdict_and_confi
     )
 
 
+def test_message_stream_closes_conversion_resistance_validation_with_local_verdict_and_confirm_gate(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="转化阻力出口流式模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "target_user": "独立创业者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
+                "conversation_strategy": "converge",
+                "phase_goal": "确认首要阻力是否直接打断转化",
+                "stage_hint": "转化阻力影响确认",
+                "validation_focus": "conversion_resistance",
+                "validation_step": 2,
+                "evidence": ["转化阻力线索：大多数人会卡在第一次接入"],
+            },
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    def fail_open_reply_stream(**_kwargs):
+        raise AssertionError("conversion resistance verdict should not call open_reply_stream")
+
+    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "一旦卡住，大多数人就会先放弃，等以后再说，少数人会直接去找人工替代",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
+    assert delta_payloads
+    assert "基于你刚才补的阻力和流失结果，我现在倾向判断这是一个值得优先处理的转化阻力" in "".join(
+        payload["delta"] for payload in delta_payloads
+    )
+
+
 def test_message_stream_keeps_frequency_validation_step_when_reply_is_too_vague(
     auth_client,
     seeded_session,
@@ -937,12 +1088,12 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     assert "assistant.version.started" in body
     assert "assistant.delta" in body
     assert "assistant.done" in body
-    assert "prd.updated" not in body
+    assert "prd.updated" in body
     assert "message.accepted" not in body
     parsed_events = _parse_sse_events(body)
     event_order = [name for name, _ in parsed_events]
     assert event_order[:2] == ["action.decided", "assistant.version.started"]
-    assert event_order[-1] == "assistant.done"
+    assert event_order[-2:] == ["prd.updated", "assistant.done"]
     delta_payloads = [
         payload
         for name, payload in parsed_events
@@ -951,10 +1102,14 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     assert all(payload["assistant_version_id"] for payload in delta_payloads)
     assert all(payload["is_regeneration"] is True for payload in delta_payloads)
     assert all(payload["is_latest"] is False for payload in delta_payloads)
+    prd_updated_payload = next(payload for name, payload in parsed_events if name == "prd.updated")
     done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
     assert done_payload["assistant_version_id"]
     assert done_payload["is_regeneration"] is True
     assert done_payload["is_latest"] is True
+    assert isinstance(prd_updated_payload["sections"], dict)
+    assert isinstance(prd_updated_payload["meta"], dict)
+    assert prd_updated_payload["meta"]["stageLabel"] in {"探索中", "草稿中", "可整理终稿", "已生成终稿"}
 
     db = testing_session_local()
     try:

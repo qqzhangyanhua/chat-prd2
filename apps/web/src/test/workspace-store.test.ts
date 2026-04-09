@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import prdMetaCases from "../../../../docs/contracts/prd-meta-cases.json";
 
 import type { AgentTurnDecision, SessionSnapshotResponse, StateSnapshotResponse } from "../lib/types";
 import { parseEventStream } from "../lib/sse";
@@ -47,6 +48,69 @@ describe("workspace store", () => {
     expect(store.getState().prd.sections.target_user?.content).toBe(
       "独立开发者仍然是当前最优先的一类目标用户。",
     );
+  });
+
+  it("routes extra draft sections into extraSections when prd.updated event arrives", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {
+          solution: {
+            content: "先做浏览器内预览、评论和分享闭环。",
+            status: "inferred",
+            title: "解决方案",
+          },
+          constraints: {
+            content: "首版只支持浏览器端，不做桌面插件。",
+            status: "confirmed",
+            title: "约束条件",
+          },
+          success_metrics: {
+            content: "7 天内至少完成 10 次有效预览。",
+            status: "inferred",
+            title: "成功指标",
+          },
+        },
+      },
+    });
+
+    expect(store.getState().prd.sections.solution?.content).toBe(
+      "先做浏览器内预览、评论和分享闭环。",
+    );
+    expect(store.getState().prd.extraSections.constraints?.content).toBe(
+      "首版只支持浏览器端，不做桌面插件。",
+    );
+    expect(store.getState().prd.extraSections.success_metrics?.content).toBe(
+      "7 天内至少完成 10 次有效预览。",
+    );
+    expect(store.getState().prd.sections.constraints).toBeUndefined();
+  });
+
+  it("updates prd meta when prd.updated event includes meta", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {},
+        meta: {
+          stageLabel: "可整理终稿",
+          stageTone: "ready",
+          criticSummary: "Critic 已通过，可以整理最终版 PRD。",
+          criticGaps: ["缺少风险边界"],
+          draftVersion: 3,
+          nextQuestion: "如果你确认无误，我可以开始整理最终版 PRD。",
+        },
+      },
+    });
+
+    expect(store.getState().prd.meta.stageLabel).toBe("可整理终稿");
+    expect(store.getState().prd.meta.stageTone).toBe("ready");
+    expect(store.getState().prd.meta.draftVersion).toBe(3);
+    expect(store.getState().prd.meta.criticGaps).toEqual(["缺少风险边界"]);
+    expect(store.getState().prd.meta.nextQuestion).toBe("如果你确认无误，我可以开始整理最终版 PRD。");
   });
 
   it("appends assistant delta into the active assistant message", () => {
@@ -369,6 +433,282 @@ describe("workspace store", () => {
     expect(store.getState().collaborationModeLabel).toBe("深度推演模式");
   });
 
+  it("derives prd meta as drafting when workflow is refine_loop", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 2,
+          status: "draft_refined",
+        },
+        critic_result: {
+          overall_verdict: "revise",
+          major_gaps: ["缺少成功指标", "缺少不做清单"],
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.meta.stageLabel).toBe("草稿中");
+    expect(store.getState().prd.meta.draftVersion).toBe(2);
+    expect(store.getState().prd.meta.criticSummary).toContain("2 个关键缺口");
+    expect(store.getState().prd.meta.criticGaps).toEqual(["缺少成功指标", "缺少不做清单"]);
+    expect(store.getState().prd.meta.nextQuestion).toBeNull();
+  });
+
+  it("derives prd meta as ready when finalization is available", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 3,
+          status: "draft_refined",
+        },
+        critic_result: {
+          overall_verdict: "pass",
+          question_queue: [],
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.meta.stageLabel).toBe("可整理终稿");
+    expect(store.getState().prd.meta.criticSummary).toContain("Critic 已通过");
+    expect(store.getState().prd.meta.criticGaps).toEqual([]);
+    expect(store.getState().prd.meta.nextQuestion).toBeNull();
+  });
+
+  it("derives prd meta as finalized when workflow is completed", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "completed",
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+        finalization_ready: true,
+        critic_result: {
+          overall_verdict: "pass",
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.meta.stageLabel).toBe("已生成终稿");
+    expect(store.getState().prd.meta.criticSummary).toContain("最终版");
+    expect(store.getState().prd.meta.criticGaps).toEqual([]);
+    expect(store.getState().prd.meta.nextQuestion).toBeNull();
+  });
+
+  it("derives prd meta next question from critic queue", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 2,
+          status: "draft_refined",
+        },
+        critic_result: {
+          overall_verdict: "block",
+          major_gaps: ["缺少权限边界"],
+          question_queue: ["权限边界怎么定：哪些人可以查看/编辑/分享？"],
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.meta.nextQuestion).toBe("权限边界怎么定：哪些人可以查看/编辑/分享？");
+  });
+
+  it("matches the shared prd meta contract cases", () => {
+    for (const contractCase of prdMetaCases) {
+      const store = createWorkspaceStore();
+
+      store.getState().hydrateSession({
+        session: {
+          id: "session-1",
+          user_id: "user-1",
+          title: "AI Co-founder",
+          initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+        },
+        state: contractCase.state as StateSnapshotResponse,
+        prd_snapshot: {
+          sections: {},
+        },
+        messages: [],
+        assistant_reply_groups: [],
+      });
+
+      expect(store.getState().prd.meta).toEqual(contractCase.expected);
+    }
+  });
+
+  it("derives extra prd sections from prd_draft sections", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 2,
+          status: "draft_refined",
+          sections: {
+            constraints: {
+              title: "约束条件",
+              content: "首版优先浏览器端，不做桌面插件。",
+              status: "confirmed",
+            },
+            success_metrics: {
+              title: "成功指标",
+              content: "7 日内至少有 5 个团队完成一次完整预览。",
+              status: "inferred",
+            },
+          },
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.extraSections.constraints?.content).toContain("浏览器端");
+    expect(store.getState().prd.extraSections.success_metrics?.content).toContain("5 个团队");
+  });
+
+  it("prefers prd_draft primary sections over legacy prd snapshot", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 2,
+          status: "draft_refined",
+          sections: {
+            target_user: {
+              title: "目标用户",
+              content: "草稿用户",
+              status: "confirmed",
+            },
+            solution: {
+              title: "解决方案",
+              content: "草稿方案",
+              status: "inferred",
+            },
+          },
+        },
+      },
+      prd_snapshot: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            content: "旧快照用户",
+            status: "confirmed",
+          },
+          problem: {
+            title: "核心问题",
+            content: "旧快照问题",
+            status: "confirmed",
+          },
+          solution: {
+            title: "解决方案",
+            content: "旧快照方案",
+            status: "confirmed",
+          },
+          mvp_scope: {
+            title: "MVP 范围",
+            content: "旧快照范围",
+            status: "confirmed",
+          },
+        },
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.sections.target_user?.content).toBe("草稿用户");
+    expect(store.getState().prd.sections.solution?.content).toBe("草稿方案");
+    expect(store.getState().prd.sections.problem?.content).toBe("旧快照问题");
+    expect(store.getState().prd.sections.mvp_scope?.content).toBe("旧快照范围");
+  });
+
   it("hydrates legacy snapshot when assistant_reply_groups is missing", () => {
     const store = createWorkspaceStore();
 
@@ -474,6 +814,87 @@ describe("workspace store", () => {
     expect(store.getState().lastSubmittedInput).toBe("上一轮输入");
     expect(store.getState().messages.at(-1)?.content).toBe("刷新后的回复");
     expect(store.getState().decisionGuidance?.strategyLabel).toBe("确认中");
+  });
+
+  it("does not let a stale refreshed snapshot overwrite a newer streamed prd state", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "更新后的方案 v3",
+            status: "confirmed",
+          },
+          constraints: {
+            title: "约束条件",
+            content: "更新后的约束 v3",
+            status: "confirmed",
+          },
+        },
+        meta: {
+          stageLabel: "可整理终稿",
+          stageTone: "ready",
+          criticSummary: "Critic 已通过，可以整理最终版 PRD。",
+          criticGaps: [],
+          draftVersion: 3,
+          nextQuestion: "是否开始整理终稿？",
+        },
+      },
+    });
+
+    store.getState().refreshSessionSnapshot({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 2,
+          status: "draft_refined",
+          sections: {
+            solution: {
+              title: "解决方案",
+              content: "旧快照方案 v2",
+              status: "inferred",
+            },
+            constraints: {
+              title: "约束条件",
+              content: "旧快照约束 v2",
+              status: "inferred",
+            },
+          },
+        },
+        critic_result: {
+          overall_verdict: "revise",
+          major_gaps: ["还缺一个关键问题"],
+          question_queue: ["请继续补充范围边界"],
+        },
+      },
+      prd_snapshot: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "旧快照方案 v2",
+            status: "inferred",
+          },
+        },
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.meta.draftVersion).toBe(3);
+    expect(store.getState().prd.meta.stageLabel).toBe("可整理终稿");
+    expect(store.getState().prd.sections.solution?.content).toBe("更新后的方案 v3");
+    expect(store.getState().prd.extraSections.constraints?.content).toBe("更新后的约束 v3");
   });
 
   it("resets prd sections when the loaded session has an empty snapshot", () => {

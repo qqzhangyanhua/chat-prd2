@@ -1,11 +1,20 @@
+import importlib.util
+import os
+import sys
 from typing import get_args
 
-from app.agent.types import NextMove, Suggestion, SuggestionType, TurnDecision
+from app.agent.types import (
+    CriticResult,
+    NextMove,
+    Suggestion,
+    TurnDecision,
+    WorkflowStage,
+)
 from app.schemas.state import StateSnapshot
 
 
-def test_next_move_enforces_phase1_white_list():
-    required_moves = {
+def test_next_move_complements_defined_strategy_set():
+    expected_moves = {
         "probe_for_specificity",
         "assume_and_advance",
         "challenge_and_reframe",
@@ -13,7 +22,7 @@ def test_next_move_enforces_phase1_white_list():
         "force_rank_or_choose",
     }
 
-    assert required_moves.issubset(set(get_args(NextMove)))
+    assert set(get_args(NextMove)) == expected_moves
 
 
 def test_suggestion_supports_required_fields():
@@ -96,6 +105,12 @@ def test_state_snapshot_exposes_new_fields():
     assert snapshot.current_phase == "idea_clarification"
     assert snapshot.conversation_strategy == "clarify"
     assert snapshot.strategy_reason is None
+    assert snapshot.idea_parse_result is None
+    assert snapshot.prd_draft is None
+    assert snapshot.critic_result is None
+    assert snapshot.refine_history == []
+    assert snapshot.finalization_ready is False
+    assert snapshot.workflow_stage == "idea_parser"
 
 
 def test_state_snapshot_accepts_legacy_state_without_current_phase():
@@ -122,3 +137,56 @@ def test_state_snapshot_accepts_legacy_state_without_current_phase():
     assert snapshot.current_phase == "idea_clarification"
     assert snapshot.conversation_strategy == "clarify"
     assert snapshot.strategy_reason is None
+    assert snapshot.idea_parse_result is None
+    assert snapshot.prd_draft is None
+    assert snapshot.critic_result is None
+    assert snapshot.refine_history == []
+    assert snapshot.finalization_ready is False
+    assert snapshot.workflow_stage == "idea_parser"
+
+
+def test_workflow_stage_encompasses_refine_loop():
+    expected_stages = {
+        "idea_parser",
+        "prd_draft",
+        "critic_review",
+        "refine_loop",
+        "finalize",
+    }
+
+    assert set(get_args(WorkflowStage)) == expected_stages
+
+
+def test_critic_result_tracks_verdict_and_questions():
+    review = CriticResult(
+        overall_verdict="pass",
+        strengths=[],
+        major_gaps=[],
+        minor_gaps=[],
+        question_queue=["后续补全假设"],
+        blocking_questions=[],
+        recommended_next_focus=None,
+        revision_instructions=[],
+    )
+
+    assert review.overall_verdict == "pass"
+    assert review.question_queue == ["后续补全假设"]
+    assert review.blocking_questions == []
+    assert review.recommended_next_focus is None
+    assert review.revision_instructions == []
+
+
+def test_app_db_models_resolution_stays_inside_current_repo_when_foreign_app_exists():
+    api_root = os.path.abspath("apps/api")
+    foreign_root = "/Users/zhangyanhua/AI/chat-prd/python-agent-service"
+    original_sys_path = list(sys.path)
+
+    try:
+        sys.path[:] = [api_root, *original_sys_path, foreign_root]
+        spec = importlib.util.find_spec("app.db.models")
+    finally:
+        sys.path[:] = original_sys_path
+
+    assert spec is not None
+    assert spec.origin is not None
+    assert spec.origin.startswith(api_root)

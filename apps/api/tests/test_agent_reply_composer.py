@@ -1,197 +1,278 @@
 from app.agent.reply_composer import (
-    ASSUMPTION_PREFIX,
-    CONFIRM_ITEMS_PREFIX,
-    JUDGEMENT_PREFIX,
-    NEXT_STEP_PREFIX,
-    SUGGEST_PREFIX,
-    SUGGEST_PREFIX_RECOMMEND,
+    CRITIC_VERDICT_PREFIX,
+    DRAFT_SUMMARY_PREFIX,
+    NEXT_QUESTION_PREFIX,
     build_reply_sections,
     compose_reply,
 )
-from app.agent.suggestion_planner import build_suggestions
-from app.agent.types import NextMove, TurnDecision
+from app.agent.types import TurnDecision
 
 
-def _base_decision(next_move: NextMove) -> TurnDecision:
-    return TurnDecision(
-        phase="idea_clarification",
-        phase_goal="收敛目标用户",
-        understanding={
-            "summary": "用户表述了：想做一个产品。",
-            "candidate_updates": {},
-            "ambiguous_points": [],
+def _make_decision(*, prd_draft=None, critic_result=None, gaps=None, next_best_questions=None, **overrides):
+    base = {
+        "phase": "refine_loop",
+        "phase_goal": "补齐关键缺口",
+        "understanding": {},
+        "assumptions": [],
+        "gaps": list(gaps or []),
+        "challenges": [],
+        "pm_risk_flags": [],
+        "next_move": "assume_and_advance",
+        "suggestions": [],
+        "recommendation": None,
+        "reply_brief": {},
+        "state_patch": {},
+        "prd_patch": {},
+        "needs_confirmation": [],
+        "confidence": "medium",
+        "next_best_questions": list(next_best_questions or []),
+        "strategy_reason": None,
+        "conversation_strategy": "clarify",
+    }
+    if prd_draft is not None:
+        base["state_patch"]["prd_draft"] = prd_draft
+    if critic_result is not None:
+        base["state_patch"]["critic_result"] = critic_result
+    base.update(overrides)
+    return TurnDecision(**base)
+
+
+def test_compose_reply_prefers_first_critic_queue_entry():
+    decision = _make_decision(
+        prd_draft={"status": "draft_hypothesis"},
+        critic_result={
+            "overall_verdict": "block",
+            "major_gaps": ["未明确文件格式"],
+            "question_queue": [
+                "第一版要支持哪些 3D/CAD 文件格式？",
+                "是否需要标注？",
+            ],
         },
-        assumptions=[],
-        gaps=["缺少明确的目标用户"],
-        challenges=["目标用户范围过泛，需优先收敛"],
-        pm_risk_flags=[],
-        next_move=next_move,
-        suggestions=[],
-        recommendation=None,
-        reply_brief={"focus": next_move, "must_include": []},
-        state_patch={},
-        prd_patch={},
-        needs_confirmation=[],
-        confidence="low",
+        next_best_questions=["你也可以告诉我其他关注点"],
     )
 
+    reply = compose_reply(decision)
 
-def test_compose_reply_contains_required_prefixes():
-    decision = _base_decision("force_rank_or_choose")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
-    decision.assumptions = [{"label": "目标用户愿意先接受访谈验证", "source": "user_input"}]
-    decision.needs_confirmation = ["目标用户是否准确"]
+    assert CRITIC_VERDICT_PREFIX in reply
+    assert NEXT_QUESTION_PREFIX in reply
+    assert "第一版要支持哪些 3D/CAD 文件格式？" in reply
+    assert "是否需要标注？" not in reply
+    assert "你也可以告诉我其他关注点" not in reply
+
+
+def test_compose_reply_does_not_fallback_when_queue_head_is_blank():
+    decision = _make_decision(
+        critic_result={
+            "overall_verdict": "revise",
+            "major_gaps": [],
+            "question_queue": ["", "第二版的核心须知是什么？"],
+        },
+        next_best_questions=["请问接下来希望我问什么？"],
+    )
 
     reply = compose_reply(decision)
 
-    assert JUDGEMENT_PREFIX in reply
-    assert ASSUMPTION_PREFIX in reply
-    assert SUGGEST_PREFIX_RECOMMEND in reply
-    assert CONFIRM_ITEMS_PREFIX in reply
-    assert NEXT_STEP_PREFIX in reply
-    assert "目标用户愿意先接受访谈验证" in reply
-    assert suggestions[0].label in reply
+    assert "请问接下来希望我问什么？" not in reply
+    assert "第二版的核心须知是什么？" not in reply
+    assert "目前没有特别要问的问题" in reply
 
 
-def test_compose_reply_falls_back_without_suggestions():
-    decision = _base_decision("probe_for_specificity")
-
-    reply = compose_reply(decision)
-
-    assert JUDGEMENT_PREFIX in reply
-    assert ASSUMPTION_PREFIX in reply
-    assert SUGGEST_PREFIX in reply
-    assert CONFIRM_ITEMS_PREFIX in reply
-    assert NEXT_STEP_PREFIX in reply
-    assert "当前不额外补假设" in reply
-    assert "没有新增确认项" in reply
-    assert "先收敛关键信息" in reply
-    assert "请你先把明确的目标用户补具体" in reply
-
-
-def test_compose_reply_confirmation_section_uses_specific_target():
-    decision = _base_decision("assume_and_advance")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
-    decision.needs_confirmation = ["是否先聚焦独立开发者"]
-    decision.next_best_questions = ["你现在最想先验证频率、付费意愿，还是转化阻力？"]
+def test_compose_reply_supports_finalize_prompt_without_critic_result():
+    decision = _make_decision(
+        prd_draft={
+            "status": "ready_for_finalize",
+            "version": 2,
+            "missing_information": [],
+        },
+        critic_result=None,
+        gaps=[],
+        next_best_questions=[],
+        phase="finalize",
+        phase_goal="整理最终版 PRD",
+    )
 
     reply = compose_reply(decision)
 
-    assert f"{CONFIRM_ITEMS_PREFIX}是否先聚焦独立开发者" in reply
-    assert "如果你认可这个推进点" in reply
-    assert "我下一轮最建议你直接回答" in reply
-    assert "你现在最想先验证频率、付费意愿，还是转化阻力？" in reply
+    assert "当前 Critic 判断是 pass" in reply
+    assert "关键缺口已补齐" in reply
+    assert "如果当前摘要没有偏差，请直接回复“确认设计”" in reply
 
 
-def test_compose_reply_next_step_changes_by_next_move():
-    decision_choose = _base_decision("force_rank_or_choose")
-    suggestions, recommendation = build_suggestions(decision_choose)
-    decision_choose.suggestions = suggestions
-    decision_choose.recommendation = recommendation
-
-    reply_choose = compose_reply(decision_choose)
-    assert "请你直接在上面方向里做取舍" in reply_choose
-
-    decision_confirm = _base_decision("summarize_and_confirm")
-    suggestions, recommendation = build_suggestions(decision_confirm)
-    decision_confirm.suggestions = suggestions
-    decision_confirm.recommendation = recommendation
-    decision_confirm.needs_confirmation = ["目标用户是否准确"]
-
-    reply_confirm = compose_reply(decision_confirm)
-    assert "请你先确认目标用户是否准确" in reply_confirm
-    assert "确认后我会继续按" in reply_confirm
-
-    decision_refute = _base_decision("challenge_and_reframe")
-    suggestions, recommendation = build_suggestions(decision_refute)
-    decision_refute.suggestions = suggestions
-    decision_refute.recommendation = recommendation
-
-    reply_refute = compose_reply(decision_refute)
-    assert "如果当前问题判断不对你直接指出" in reply_refute
-
-
-def test_compose_reply_uses_specific_confirmation_target_in_confirm_section():
-    decision = _base_decision("summarize_and_confirm")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
-    decision.needs_confirmation = ["目标用户是否准确"]
+def test_compose_reply_does_not_fallback_to_legacy_next_question_when_question_queue_is_explicitly_empty():
+    decision = _make_decision(
+        prd_draft={
+            "status": "ready_for_finalize",
+            "version": 2,
+            "missing_information": [],
+        },
+        critic_result={
+            "overall_verdict": "pass",
+            "major_gaps": [],
+            "question_queue": [],
+        },
+        next_best_questions=["这是旧问题，不应继续出现"],
+        phase="finalize",
+        phase_goal="整理最终版 PRD",
+    )
 
     reply = compose_reply(decision)
 
-    assert CONFIRM_ITEMS_PREFIX in reply
-    assert "目标用户是否准确" in reply
-    assert "请你先确认目标用户是否准确" in reply
+    assert "这是旧问题，不应继续出现" not in reply
+    assert "如果当前摘要没有偏差，请直接回复“确认设计”" in reply
 
 
-def test_compose_reply_confirm_stage_offers_direct_confirmation_template_and_followup():
-    decision = _base_decision("summarize_and_confirm")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
-    decision.needs_confirmation = ["目标用户是否准确"]
-    decision.next_best_questions = ["如果判断没偏，你就直接回复“确认，继续下一步”。"]
-
-    reply = compose_reply(decision)
-
-    assert "确认后我会继续按" in reply
-    assert "你也可以直接回复" in reply
-    assert "确认，继续下一步" in reply
-
-
-def test_compose_reply_next_step_falls_back_without_next_best_question():
-    decision = _base_decision("challenge_and_reframe")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
+def test_compose_reply_summarizes_draft_and_critic_verdict():
+    decision = _make_decision(
+        prd_draft={
+            "status": "draft_hypothesis",
+            "version": 1,
+            "assumptions": ["首版先支持浏览器内在线预览"],
+            "missing_information": ["核心文件格式", "权限边界"],
+        },
+        critic_result={
+            "overall_verdict": "revise",
+            "major_gaps": ["未明确核心文件格式", "未明确权限边界"],
+            "question_queue": ["第一版优先支持哪些文件格式？"],
+        },
+        phase="initial_draft",
+        phase_goal="生成 PRD v1 草案",
+    )
 
     reply = compose_reply(decision)
 
-    assert "我下一轮最建议你直接回答" not in reply
+    assert DRAFT_SUMMARY_PREFIX in reply
+    assert "PRD v1" in reply
+    assert "draft_hypothesis" not in reply
+    assert "首版先支持浏览器内在线预览" in reply
+    assert "核心文件格式" in reply
+    assert "当前 Critic 判断是 revise" in reply
+    assert "未明确核心文件格式" in reply
 
 
-def test_build_reply_sections_returns_fixed_five_section_protocol():
-    decision = _base_decision("summarize_and_confirm")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
-    decision.assumptions = [{"label": "目标用户愿意接受早期访谈", "source": "user_input"}]
-    decision.needs_confirmation = ["目标用户是否准确"]
+def test_compose_reply_uses_state_patch_for_real_turndecision_inputs():
+    decision = _make_decision(
+        prd_draft={
+            "status": "draft_refined",
+            "version": 2,
+            "assumptions": ["先支持浏览器直开"],
+            "missing_information": [],
+        },
+        critic_result={
+            "overall_verdict": "block",
+            "major_gaps": ["未明确权限边界"],
+            "question_queue": ["首版权限要区分几种角色？"],
+        },
+        gaps=["这个旧 gaps 不该覆盖新 critic 结果"],
+    )
+
+    reply = compose_reply(decision)
+
+    assert "PRD v2" in reply
+    assert "先支持浏览器直开" in reply
+    assert "当前 Critic 判断是 block" in reply
+    assert "未明确权限边界" in reply
+    assert "首版权限要区分几种角色？" in reply
+    assert "这个旧 gaps 不该覆盖新 critic 结果" not in reply
+
+
+def test_compose_reply_prefers_top_level_fields_over_state_patch():
+    decision = _make_decision(
+        prd_draft={"status": "draft_hypothesis", "version": 1},
+        critic_result={
+            "overall_verdict": "revise",
+            "major_gaps": ["state_patch 的 critic 不应生效"],
+            "question_queue": ["state_patch 的问题不应生效"],
+        },
+    )
+    decision = object.__new__(type("DecisionCarrier", (), {}))
+    decision.phase = "refine_loop"
+    decision.phase_goal = "补齐关键缺口"
+    decision.gaps = []
+    decision.next_best_questions = []
+    decision.state_patch = {
+        "prd_draft": {"status": "draft_refined", "version": 2},
+        "critic_result": {
+            "overall_verdict": "block",
+            "major_gaps": ["state_patch 的 critic 不应生效"],
+            "question_queue": ["state_patch 的问题不应生效"],
+        },
+    }
+    decision.prd_draft = {"status": "ready_for_finalize", "version": 3, "missing_information": []}
+    decision.critic_result = {
+        "overall_verdict": "pass",
+        "major_gaps": [],
+        "question_queue": [],
+    }
+
+    reply = compose_reply(decision)
+
+    assert "PRD v3" in reply
+    assert "当前 Critic 判断是 pass" in reply
+    assert "state_patch 的 critic 不应生效" not in reply
+    assert "state_patch 的问题不应生效" not in reply
+
+
+def test_compose_reply_does_not_fallback_to_legacy_gaps_when_new_lists_are_explicitly_empty():
+    decision = _make_decision(
+        prd_draft={
+            "status": "draft_refined",
+            "version": 2,
+            "missing_information": [],
+        },
+        critic_result={
+            "overall_verdict": "pass",
+            "major_gaps": [],
+            "question_queue": [],
+        },
+        gaps=["旧 gaps 不应回流"],
+        phase="finalize",
+        phase_goal="整理最终版 PRD",
+        next_best_questions=[],
+    )
+
+    reply = compose_reply(decision)
+
+    assert "旧 gaps 不应回流" not in reply
+    assert "关键缺口已补齐" in reply
+    assert "如果当前摘要没有偏差，请直接回复“确认设计”" in reply
+
+
+def test_build_reply_sections_keeps_legacy_keys():
+    decision = _make_decision(
+        prd_draft={"status": "draft_refined", "version": 2},
+        critic_result={
+            "overall_verdict": "revise",
+            "major_gaps": ["未明确权限边界"],
+            "question_queue": ["需要区分访客、成员和管理员吗？"],
+        },
+    )
 
     sections = build_reply_sections(decision)
 
     assert [section["key"] for section in sections] == [
         "judgement",
-        "assumption",
-        "suggestion",
-        "confirmation",
+        "critic_verdict",
         "next_step",
     ]
     assert [section["title"] for section in sections] == [
-        JUDGEMENT_PREFIX,
-        ASSUMPTION_PREFIX,
-        SUGGEST_PREFIX_RECOMMEND,
-        CONFIRM_ITEMS_PREFIX,
-        NEXT_STEP_PREFIX,
+        DRAFT_SUMMARY_PREFIX,
+        CRITIC_VERDICT_PREFIX,
+        NEXT_QUESTION_PREFIX,
     ]
     assert all(section["content"] for section in sections)
 
 
-def test_build_reply_sections_includes_next_best_question_in_next_step_content():
-    decision = _base_decision("force_rank_or_choose")
-    suggestions, recommendation = build_suggestions(decision)
-    decision.suggestions = suggestions
-    decision.recommendation = recommendation
-    decision.next_best_questions = ["如果只能先选一个主线，你更愿意先收敛用户还是问题？"]
+def test_compose_reply_joins_sections_in_order():
+    decision = _make_decision(
+        prd_draft={"status": "draft_refined", "version": 2},
+        critic_result={
+            "overall_verdict": "revise",
+            "major_gaps": ["未明确权限边界"],
+            "question_queue": ["需要区分访客、成员和管理员吗？"],
+        },
+    )
 
     sections = build_reply_sections(decision)
+    reply = compose_reply(decision)
 
-    next_step_section = next(section for section in sections if section["key"] == "next_step")
-
-    assert "我下一轮最建议你直接回答" in next_step_section["content"]
-    assert "如果只能先选一个主线，你更愿意先收敛用户还是问题？" in next_step_section["content"]
+    assert reply == "\n\n".join(f"{section['title']}{section['content']}" for section in sections)

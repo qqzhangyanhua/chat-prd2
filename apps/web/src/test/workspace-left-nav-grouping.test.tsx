@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import fc from "fast-check";
 import type { SessionResponse } from "../lib/types";
@@ -266,8 +266,9 @@ describe("WorkspaceLeftNav - Session Grouping", () => {
       
       render(<WorkspaceLeftNav />);
       
-      // Wait for component to render
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitFor(() => {
+        expect(listSessions).toHaveBeenCalled();
+      });
       
       // No group headers should be rendered
       expect(screen.queryByText(/今天/)).not.toBeInTheDocument();

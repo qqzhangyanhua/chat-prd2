@@ -4,7 +4,6 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine, select
-from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -18,6 +17,8 @@ from app.db.models import (
     User,
 )
 from app.repositories import model_configs as model_configs_repository
+from app.repositories import prd as prd_repository
+from app.repositories import state as state_repository
 from app.schemas.session import SessionCreateRequest
 from app.services import sessions as session_service
 
@@ -155,6 +156,29 @@ def test_export_returns_real_prd_content_after_message_updates_snapshot(
 ):
     model_config_id = _create_enabled_model_config(testing_session_local)
     _mock_gateway_reply(monkeypatch)
+
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "prd_draft",
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
 
     with auth_client.stream(
         "POST",
@@ -462,16 +486,16 @@ def test_get_session_includes_messages_in_snapshot(
     assert data["turn_decisions"][0]["user_message_id"] == data["messages"][0]["id"]
     assert data["turn_decisions"][0]["next_move"]
     assert data["turn_decisions"][0]["decision_summary"]
-    assert len(data["turn_decisions"][0]["decision_sections"]) == 5
+    assert len(data["turn_decisions"][0]["decision_sections"]) == 3
     assert data["turn_decisions"][0]["decision_sections"][0]["key"] == "judgement"
     assert data["turn_decisions"][0]["decision_sections"][0]["title"]
     assert data["turn_decisions"][0]["decision_sections"][0]["content"]
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
-    assert data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"]
-    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][4]["meta"]
-    assert isinstance(data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"], list)
-    assert "建议" in data["turn_decisions"][0]["decision_summary"]
+    assert data["turn_decisions"][0]["decision_sections"][2]["meta"]["next_best_questions"]
+    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][2]["meta"]
+    assert isinstance(data["turn_decisions"][0]["decision_sections"][2]["meta"]["next_best_questions"], list)
+    assert "唯一下一问：" in data["turn_decisions"][0]["decision_summary"]
 
 
 def test_get_session_confirm_stage_includes_specific_positive_quick_replies(
@@ -483,27 +507,50 @@ def test_get_session_confirm_stage_includes_specific_positive_quick_replies(
     model_config_id = _create_enabled_model_config(testing_session_local)
     _mock_gateway_reply(monkeypatch)
 
-    for content in [
-        "独立开发者",
-        "不知道先验证哪个需求",
-        "通过连续追问沉淀结构化 PRD",
-        "创建会话、持续追问、导出 PRD",
-    ]:
-        with auth_client.stream(
-            "POST",
-            f"/api/sessions/{seeded_session}/messages",
-            json={
-                "content": content,
-                "model_config_id": model_config_id,
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "prd_draft",
+                "target_user": "独立开发者",
+                "problem": "不知道先验证哪个需求",
+                "solution": "通过连续追问沉淀结构化 PRD",
+                "mvp_scope": ["创建会话、持续追问、导出 PRD"],
+                "conversation_strategy": "confirm",
+                "pending_confirmations": ["目标用户是否准确"],
             },
-        ) as response:
-            assert response.status_code == 200
-            list(response.iter_text())
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "继续",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
 
     response = auth_client.get(f"/api/sessions/{seeded_session}")
     assert response.status_code == 200
     data = response.json()
-    quick_replies = data["turn_decisions"][-1]["decision_sections"][4]["meta"]["confirm_quick_replies"]
+    quick_replies = data["turn_decisions"][-1]["decision_sections"][2]["meta"]["confirm_quick_replies"]
 
     assert "确认，继续下一步" in quick_replies
     assert "确认，先看频率" in quick_replies
@@ -536,6 +583,29 @@ def test_get_session_returns_assistant_reply_groups_and_latest_projection(
 
     monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
 
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "prd_draft",
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
+
     with auth_client.stream(
         "POST",
         f"/api/sessions/{seeded_session}/messages",
@@ -566,18 +636,16 @@ def test_get_session_returns_assistant_reply_groups_and_latest_projection(
     assert len(data["turn_decisions"]) == 1
     assert data["turn_decisions"][0]["user_message_id"] == user_message_id
     assert data["turn_decisions"][0]["decision_summary"]
-    assert len(data["turn_decisions"][0]["decision_sections"]) == 5
+    assert len(data["turn_decisions"][0]["decision_sections"]) == 3
     assert [section["key"] for section in data["turn_decisions"][0]["decision_sections"]] == [
         "judgement",
-        "assumption",
-        "suggestion",
-        "confirmation",
+        "critic_verdict",
         "next_step",
     ]
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
     assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
-    assert data["turn_decisions"][0]["decision_sections"][4]["meta"]["next_best_questions"]
-    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][4]["meta"]
+    assert data["turn_decisions"][0]["decision_sections"][2]["meta"]["next_best_questions"]
+    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][2]["meta"]
     group = data["assistant_reply_groups"][0]
     assert group["session_id"] == seeded_session
     assert group["user_message_id"] == user_message_id
@@ -636,6 +704,106 @@ def test_get_session_keeps_legacy_messages_when_reply_groups_missing(
     assert data["messages"][1]["reply_group_id"] is None
     assert data["messages"][1]["version_no"] is None
     assert data["messages"][1]["is_latest"] is None
+
+
+def test_export_prefers_finalized_prd_draft_over_legacy_snapshot(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "completed",
+                "prd_draft": {
+                    "version": 3,
+                    "status": "finalized",
+                    "sections": {
+                        "summary": {"title": "一句话概述", "content": "最终版概述", "status": "confirmed"},
+                        "target_user": {"title": "目标用户", "content": "最终版用户", "status": "confirmed"},
+                        "problem": {"title": "核心问题", "content": "最终版问题", "status": "confirmed"},
+                        "solution": {"title": "解决方案", "content": "最终版方案", "status": "confirmed"},
+                        "mvp_scope": {"title": "MVP 范围", "content": "最终版范围", "status": "confirmed"},
+                    },
+                },
+                "critic_result": {"overall_verdict": "pass", "question_queue": []},
+                "finalization_ready": True,
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={
+                "target_user": {"title": "目标用户", "content": "旧快照用户", "status": "confirmed"},
+            },
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/export",
+        json={"format": "md"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "状态：终稿" in data["content"]
+    assert "最终版用户" in data["content"]
+    assert "旧快照用户" not in data["content"]
+
+
+def test_export_returns_draft_status_when_not_finalized(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "refine_loop",
+                "prd_draft": {
+                    "version": 2,
+                    "status": "draft_refined",
+                    "sections": {
+                        "target_user": {"title": "目标用户", "content": "草稿用户", "status": "confirmed"},
+                        "problem": {"title": "核心问题", "content": "草稿问题", "status": "confirmed"},
+                    },
+                },
+                "critic_result": {"overall_verdict": "revise", "question_queue": ["还缺成功指标"]},
+                "finalization_ready": False,
+            },
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/export",
+        json={"format": "md"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "状态：草稿" in data["content"]
+    assert "草稿用户" in data["content"]
 
 
 def test_delete_session_removes_owned_session(auth_client, seeded_session):

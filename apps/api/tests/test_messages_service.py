@@ -1,10 +1,13 @@
 from uuid import uuid4
+from types import SimpleNamespace
+import json
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.agent.types import Suggestion, TurnDecision
+from app.agent.types import NextAction, Suggestion, TurnDecision
 from app.db.models import User
 from app.db.models import AgentTurnDecision
 from app.db.models import ProjectStateVersion
@@ -16,11 +19,16 @@ from app.repositories import model_configs as model_configs_repository
 from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
+from app.services import sessions as session_service
 import app.services.messages as messages_service
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
 from app.services.messages import stream_regenerate_message_events
 from app.services.messages import stream_user_message_events
 from app.services.model_gateway import ModelGatewayError
+
+PRD_META_CONTRACT_CASES = json.loads(
+    Path(__file__).resolve().parents[3].joinpath("docs/contracts/prd-meta-cases.json").read_text(encoding="utf-8")
+)
 
 
 def test_apply_state_patch_empty_patch_returns_original():
@@ -62,6 +70,11 @@ def test_apply_prd_patch_overwrites_existing_section():
     }
     result = apply_prd_patch(state, {"target_user": {"content": "updated"}})
     assert result["prd_snapshot"]["sections"]["target_user"]["content"] == "updated"
+
+
+def test_preview_prd_meta_matches_shared_contract():
+    for contract_case in PRD_META_CONTRACT_CASES:
+        assert messages_service._preview_prd_meta({}, contract_case["state"]) == contract_case["expected"]
 
 
 def _create_session_with_state(db_session):
@@ -485,6 +498,207 @@ def test_handle_user_message_persists_turn_decision_audit(db_session, monkeypatc
     assert isinstance(decision.state_patch_json, dict)
     assert isinstance(decision.prd_patch_json, dict)
     assert isinstance(decision.recommendation_json, (dict, type(None)))
+
+
+def test_handle_user_message_persists_workflow_stage_and_critic_result(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=session_service.build_initial_state(session.initial_idea),
+    )
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="闭环持久化模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "忽略这条网关回复")
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="我想做一个在线3D图纸预览平台",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+    decision = db_session.execute(
+        select(AgentTurnDecision).where(
+            AgentTurnDecision.user_message_id == result.user_message_id
+        )
+    ).scalar_one()
+
+    assert latest_state["workflow_stage"] == "refine_loop"
+    assert latest_state["idea_parse_result"]["idea_summary"]
+    assert latest_state["prd_draft"]["version"] == 1
+    assert latest_state["critic_result"]["question_queue"]
+    assert latest_state["refine_history"] in ([], None)
+    assert latest_state["finalization_ready"] is False
+    assert latest_state["current_phase"] == "initial_draft"
+    assert latest_state["conversation_strategy"] == "clarify"
+    assert latest_state["next_best_questions"] == latest_state["critic_result"]["question_queue"]
+    assert decision.state_patch_json["workflow_stage"] == "refine_loop"
+    assert decision.state_patch_json["idea_parse_result"]["idea_summary"]
+    assert decision.state_patch_json["prd_draft"]["version"] == 1
+    assert decision.state_patch_json["critic_result"]["question_queue"]
+    assert decision.state_patch_json.get("finalization_ready") in (None, False)
+
+
+def test_handle_user_message_persists_prd_v2_after_refine_answer(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="refine 持久化模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json={
+            **_phase1_state(),
+            "workflow_stage": "refine_loop",
+            "prd_draft": {
+                "version": 1,
+                "status": "draft_hypothesis",
+                "sections": {"positioning": {"content": "在线3D图纸预览平台"}},
+                "assumptions": [],
+                "missing_information": ["未明确核心文件格式"],
+                "critic_ready": True,
+            },
+            "critic_result": {
+                "overall_verdict": "block",
+                "question_queue": ["第一版要支持哪些 3D/CAD 文件格式？"],
+            },
+            "finalization_ready": False,
+        },
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("refine loop local reply should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="第一版先支持 STEP 和 OBJ",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+    decision = db_session.execute(
+        select(AgentTurnDecision).where(
+            AgentTurnDecision.user_message_id == result.user_message_id
+        )
+    ).scalar_one()
+
+    assert latest_state["prd_draft"]["version"] == 2
+    assert latest_state["prd_draft"]["status"] == "draft_refined"
+    assert "STEP" in str(latest_state["prd_draft"]["sections"])
+    assert "OBJ" in str(latest_state["prd_draft"]["sections"])
+    assert latest_state["critic_result"]["overall_verdict"] == "pass"
+    assert latest_state["critic_result"]["question_queue"] == []
+    assert latest_state["finalization_ready"] is True
+    assert latest_state["workflow_stage"] == "finalize"
+    assert decision.state_patch_json["prd_draft"]["version"] == 2
+    assert decision.state_patch_json["critic_result"]["overall_verdict"] == "pass"
+    assert latest_prd_snapshot is not None
+    assert "STEP" in str(latest_prd_snapshot.sections)
+    assert "OBJ" in str(latest_prd_snapshot.sections)
+
+
+def test_merge_state_patch_with_decision_reads_workflow_fields_from_turn_decision_top_level():
+    turn_decision = SimpleNamespace(
+        phase="refine_loop",
+        conversation_strategy="clarify",
+        strategy_reason=None,
+        phase_goal="补齐关键缺口",
+        assumptions=[],
+        pm_risk_flags=[],
+        suggestions=[],
+        recommendation=None,
+        needs_confirmation=[],
+        next_best_questions=["下一问"],
+        workflow_stage="finalize",
+        idea_parse_result={"idea_summary": "在线 3D 图纸预览平台"},
+        prd_draft={"version": 2, "status": "draft_refined"},
+        critic_result={"overall_verdict": "pass", "question_queue": []},
+        refine_history=[{"question": "Q1", "answer": "A1"}],
+        finalization_ready=True,
+        state_patch={},
+    )
+
+    merged = messages_service._merge_state_patch_with_decision(
+        state_patch={},
+        turn_decision=turn_decision,
+        current_state=_phase1_state(),
+    )
+
+    assert merged["workflow_stage"] == "finalize"
+    assert merged["idea_parse_result"]["idea_summary"] == "在线 3D 图纸预览平台"
+    assert merged["prd_draft"]["version"] == 2
+    assert merged["critic_result"]["overall_verdict"] == "pass"
+    assert merged["refine_history"] == [{"question": "Q1", "answer": "A1"}]
+    assert merged["finalization_ready"] is True
+    assert merged["current_phase"] == "refine_loop"
+    assert merged["next_best_questions"] == ["下一问"]
+
+
+def test_merge_state_patch_with_decision_prefers_turn_decision_workflow_fields_over_state_patch_conflicts():
+    turn_decision = SimpleNamespace(
+        phase="refine_loop",
+        conversation_strategy="clarify",
+        strategy_reason=None,
+        phase_goal="补齐关键缺口",
+        assumptions=[],
+        pm_risk_flags=[],
+        suggestions=[],
+        recommendation=None,
+        needs_confirmation=[],
+        next_best_questions=["来自 turn_decision 的下一问"],
+        workflow_stage="finalize",
+        idea_parse_result={"idea_summary": "来自 turn_decision"},
+        prd_draft={"version": 3},
+        critic_result={"overall_verdict": "pass", "question_queue": []},
+        refine_history=[{"source": "turn_decision"}],
+        finalization_ready=True,
+        state_patch={},
+    )
+
+    merged = messages_service._merge_state_patch_with_decision(
+        state_patch={
+            "workflow_stage": "refine_loop",
+            "idea_parse_result": {"idea_summary": "来自 agent_result.state_patch"},
+            "prd_draft": {"version": 1},
+            "critic_result": {"overall_verdict": "block", "question_queue": ["旧问题"]},
+            "refine_history": [{"source": "agent_result.state_patch"}],
+            "finalization_ready": False,
+        },
+        turn_decision=turn_decision,
+        current_state=_phase1_state(),
+    )
+
+    assert merged["workflow_stage"] == "finalize"
+    assert merged["idea_parse_result"]["idea_summary"] == "来自 turn_decision"
+    assert merged["prd_draft"]["version"] == 3
+    assert merged["critic_result"]["overall_verdict"] == "pass"
+    assert merged["refine_history"] == [{"source": "turn_decision"}]
+    assert merged["finalization_ready"] is True
 
 
 def test_handle_user_message_prefers_model_structured_extraction_when_available(
@@ -1115,6 +1329,61 @@ def test_handle_user_message_closes_frequency_validation_with_local_verdict_and_
     assert latest_state["pending_confirmations"] == ["是否把这个问题定义为当前最值得优先验证的问题"]
 
 
+def test_handle_user_message_closes_conversion_resistance_validation_with_local_verdict_and_confirm_gate(
+    db_session,
+    monkeypatch,
+):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="转化阻力出口模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json=_phase1_state(
+            target_user="独立创业者",
+            problem="不知道先验证哪个需求",
+            solution="通过连续追问沉淀结构化 PRD",
+            mvp_scope=["创建会话", "持续追问", "导出 PRD"],
+            conversation_strategy="converge",
+            phase_goal="确认首要阻力是否直接打断转化",
+            stage_hint="转化阻力影响确认",
+            validation_focus="conversion_resistance",
+            validation_step=2,
+            evidence=["转化阻力线索：大多数人会卡在第一次接入"],
+        ),
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("conversion resistance verdict should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="一旦卡住，大多数人就会先放弃，等以后再说，少数人会直接去找人工替代",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert "基于你刚才补的阻力和流失结果，我现在倾向判断这是一个值得优先处理的转化阻力" in result.reply
+    assert latest_state["conversation_strategy"] == "confirm"
+    assert latest_state["validation_focus"] == "conversion_resistance"
+    assert latest_state["validation_step"] == 3
+    assert latest_state["phase_goal"] == "确认是否把该阻力作为当前优先验证对象"
+    assert latest_state["pending_confirmations"] == ["是否把这个阻力定义为当前最值得优先验证的问题"]
+
+
 def test_handle_user_message_keeps_frequency_validation_step_when_reply_is_too_vague(
     db_session,
     monkeypatch,
@@ -1440,6 +1709,7 @@ def test_persist_regenerated_reply_version_surfaces_structured_conflict_errors(d
             "base_url": model_config.base_url,
         },
         "action": {"action": "probe_deeper"},
+        "turn_decision": _sample_turn_decision(),
         "state": state_repository.get_latest_state(db_session, session.id),
         "state_patch": {},
         "prd_patch": {},
@@ -1497,13 +1767,14 @@ def test_persist_regenerated_reply_version_surfaces_reply_group_mismatch(db_sess
             user_message_id=user_message.id,
             reply_group_id=str(uuid4()),
             assistant_version_id=str(uuid4()),
-            version_no=2,
-            reply="重生成版本",
-            model_meta={},
-            action={"action": "probe_deeper"},
-            state=state_repository.get_latest_state(db_session, session.id),
-            state_patch={},
-            prd_patch={},
+                version_no=2,
+                reply="重生成版本",
+                model_meta={},
+                action={"action": "probe_deeper"},
+                turn_decision=_sample_turn_decision(),
+                state=state_repository.get_latest_state(db_session, session.id),
+                state_patch={},
+                prd_patch={},
         )
 
     assert exc_info.value.status_code == 409
@@ -1556,13 +1827,14 @@ def test_persist_regenerated_reply_version_surfaces_reply_version_sequence_misma
             user_message_id=user_message.id,
             reply_group_id=reply_group.id,
             assistant_version_id=str(uuid4()),
-            version_no=99,
-            reply="重生成版本",
-            model_meta={},
-            action={"action": "probe_deeper"},
-            state=state_repository.get_latest_state(db_session, session.id),
-            state_patch={},
-            prd_patch={},
+                version_no=99,
+                reply="重生成版本",
+                model_meta={},
+                action={"action": "probe_deeper"},
+                turn_decision=_sample_turn_decision(),
+                state=state_repository.get_latest_state(db_session, session.id),
+                state_patch={},
+                prd_patch={},
         )
 
     assert exc_info.value.status_code == 409
@@ -1655,6 +1927,9 @@ def test_stream_user_message_events_yields_multiple_deltas_and_persists_reply(db
     assert done_event.data["is_regeneration"] is False
     assert done_event.data["is_latest"] is True
     assert prd_updated_event.data["sections"]["target_user"]["content"] == "帮我梳理目标用户"
+    assert prd_updated_event.data["meta"]["stageLabel"] == "探索中"
+    assert prd_updated_event.data["meta"]["stageTone"] == "draft"
+    assert prd_updated_event.data["meta"]["criticSummary"] == "系统正在持续沉淀当前 PRD 草稿。"
 
     persisted_messages = messages_repository.get_messages_for_session(db_session, session.id)
     assert len(persisted_messages) == 2
@@ -1979,6 +2254,48 @@ def test_stream_regenerate_message_events_appends_version_without_new_user_messa
         return FakeReplyStream()
 
     monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
+    monkeypatch.setattr(
+        "app.services.messages.run_agent",
+        lambda state, user_input: SimpleNamespace(
+            action=NextAction(
+                action="summarize_understanding",
+                target=None,
+                reason="重生成后同步更新 PRD 预览。",
+            ),
+            turn_decision=_sample_turn_decision(),
+            state_patch={
+                "workflow_stage": "refine_loop",
+                "prd_draft": {
+                    "version": 2,
+                    "status": "draft_refined",
+                    "sections": {
+                        "solution": {
+                            "title": "解决方案",
+                            "content": "重生成后采用浏览器预览加评论分享。",
+                            "status": "confirmed",
+                        },
+                        "constraints": {
+                            "title": "约束条件",
+                            "content": "首版只支持浏览器端。",
+                            "status": "confirmed",
+                        },
+                    },
+                },
+            },
+            prd_patch={
+                "solution": {
+                    "title": "解决方案",
+                    "content": "重生成后采用浏览器预览加评论分享。",
+                    "status": "confirmed",
+                },
+                "constraints": {
+                    "title": "约束条件",
+                    "content": "首版只支持浏览器端。",
+                    "status": "confirmed",
+                },
+            },
+        ),
+    )
 
     events = list(
         stream_regenerate_message_events(
@@ -1996,10 +2313,12 @@ def test_stream_regenerate_message_events_appends_version_without_new_user_messa
         "assistant.delta",
         "assistant.delta",
         "assistant.delta",
+        "prd.updated",
         "assistant.done",
     ]
     started_event = next(event for event in events if event.type == "assistant.version.started")
     done_event = next(event for event in events if event.type == "assistant.done")
+    prd_updated_event = next(event for event in events if event.type == "prd.updated")
     assert started_event.data["session_id"] == session.id
     assert started_event.data["user_message_id"] == user_message.id
     assert started_event.data["version_no"] == 2
@@ -2024,6 +2343,8 @@ def test_stream_regenerate_message_events_appends_version_without_new_user_messa
     assert done_event.data["assistant_version_id"] == started_event.data["assistant_version_id"]
     assert done_event.data["is_regeneration"] is True
     assert done_event.data["is_latest"] is True
+    assert prd_updated_event.data["sections"]["solution"]["content"] == "重生成后采用浏览器预览加评论分享。"
+    assert prd_updated_event.data["sections"]["constraints"]["content"] == "首版只支持浏览器端。"
     assert captured["messages"] == [
         {"role": "system", "content": "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"},
         {"role": "user", "content": "请给我一个版本"},
@@ -2052,10 +2373,16 @@ def test_stream_regenerate_message_events_appends_version_without_new_user_messa
     assert latest_version is not None
     assert latest_version.content == "这是重生成版本"
     assert latest_version.state_version_id is not None
-    assert latest_version.state_version_id == version_1.state_version_id
-    assert latest_version.prd_snapshot_version == version_1.prd_snapshot_version
+    assert latest_version.state_version_id != version_1.state_version_id
+    assert latest_version.prd_snapshot_version != version_1.prd_snapshot_version
     assert latest_state_version is not None
-    assert latest_state_version.version == 2
+    assert latest_state_version.version == 3
+    assert latest_state_version.state_json["workflow_stage"] == "refine_loop"
+    assert latest_state_version.state_json["prd_snapshot"]["sections"]["solution"]["content"] == "重生成后采用浏览器预览加评论分享。"
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+    assert latest_prd_snapshot is not None
+    assert latest_prd_snapshot.version == 3
+    assert latest_prd_snapshot.sections["constraints"]["content"] == "首版只支持浏览器端。"
     assert len(user_messages) == 1
     assert len(assistant_messages) == 1
     assert assistant_messages[0].id == assistant_message.id
@@ -2217,3 +2544,126 @@ def test_get_latest_version_for_group_uses_group_latest_pointer(db_session, monk
     assert latest_version is not None
     assert latest_version.id == version_1.id
     assert latest_version.id != version_2.id
+
+
+def test_handle_user_message_persists_completed_stage_after_finalize(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="finalize 持久化模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json={
+            **_phase1_state(),
+            "workflow_stage": "finalize",
+            "prd_draft": {
+                "version": 2,
+                "status": "draft_refined",
+                "sections": {
+                    "summary": {"title": "一句话概述", "content": "AI PRD 助手", "status": "confirmed"},
+                    "target_user": {"title": "目标用户", "content": "独立开发者", "status": "confirmed"},
+                    "problem": {"title": "核心问题", "content": "需求难收敛", "status": "confirmed"},
+                    "solution": {"title": "解决方案", "content": "对话生成 PRD", "status": "confirmed"},
+                    "mvp_scope": {"title": "MVP 范围", "content": "追问、沉淀、导出", "status": "confirmed"},
+                },
+                "assumptions": [],
+                "missing_information": [],
+                "critic_ready": True,
+            },
+            "critic_result": {
+                "overall_verdict": "pass",
+                "question_queue": [],
+                "major_gaps": [],
+            },
+            "finalization_ready": True,
+        },
+    )
+    db_session.commit()
+
+    def fail_generate_reply(**_kwargs):
+        raise AssertionError("finalize local reply should not call generate_reply")
+
+    monkeypatch.setattr("app.services.messages.generate_reply", fail_generate_reply)
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="确认设计，按业务版输出",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    decision = db_session.execute(
+        select(AgentTurnDecision).where(AgentTurnDecision.user_message_id == result.user_message_id)
+    ).scalar_one()
+
+    assert latest_state["workflow_stage"] == "completed"
+    assert latest_state["prd_draft"]["status"] == "finalized"
+    assert latest_state["prd_draft"]["finalize_preferences"] == "business"
+    assert decision.state_patch_json["workflow_stage"] == "completed"
+
+
+def test_handle_user_message_persists_snapshot_from_finalized_sections(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="snapshot 派生模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json={
+            **_phase1_state(),
+            "workflow_stage": "finalize",
+            "prd_draft": {
+                "version": 2,
+                "status": "draft_refined",
+                "sections": {
+                    "target_user": {"title": "目标用户", "content": "独立开发者", "status": "confirmed"},
+                    "problem": {"title": "核心问题", "content": "需求难收敛", "status": "confirmed"},
+                    "solution": {"title": "解决方案", "content": "AI 辅助沉淀 PRD", "status": "confirmed"},
+                    "mvp_scope": {"title": "MVP 范围", "content": "创建会话、追问、导出", "status": "confirmed"},
+                    "refine_notes": {"title": "补充记录", "content": "- 内部备注", "status": "draft"},
+                },
+                "assumptions": [],
+                "missing_information": [],
+                "critic_ready": True,
+            },
+            "critic_result": {
+                "overall_verdict": "pass",
+                "question_queue": [],
+                "major_gaps": [],
+            },
+            "finalization_ready": True,
+        },
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.services.messages.generate_reply", lambda **_: "ignore")
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="确认设计",
+        model_config_id=model_config.id,
+    )
+
+    latest_prd_snapshot = prd_repository.get_latest_prd_snapshot(db_session, session.id)
+
+    assert latest_prd_snapshot is not None
+    assert latest_prd_snapshot.sections["target_user"]["content"] == "独立开发者"
+    assert "refine_notes" not in latest_prd_snapshot.sections

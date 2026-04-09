@@ -9,6 +9,8 @@ import { workspaceStore } from "../store/workspace-store";
 const getSessionMock = vi.fn();
 const getHealthStatusMock = vi.fn();
 const listEnabledModelConfigsMock = vi.fn();
+const sendMessageMock = vi.fn();
+const regenerateMessageMock = vi.fn();
 const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -21,6 +23,8 @@ vi.mock("../lib/api", () => ({
   getHealthStatus: (...args: unknown[]) => getHealthStatusMock(...args),
   getSession: (...args: unknown[]) => getSessionMock(...args),
   listEnabledModelConfigs: (...args: unknown[]) => listEnabledModelConfigsMock(...args),
+  sendMessage: (...args: unknown[]) => sendMessageMock(...args),
+  regenerateMessage: (...args: unknown[]) => regenerateMessageMock(...args),
   SCHEMA_OUTDATED_DETAIL: "数据库结构版本过旧，请先执行 alembic upgrade head",
 }));
 
@@ -29,6 +33,8 @@ describe("WorkspaceSessionShell", () => {
     getSessionMock.mockReset();
     getHealthStatusMock.mockReset();
     listEnabledModelConfigsMock.mockReset();
+    sendMessageMock.mockReset();
+    regenerateMessageMock.mockReset();
     pushMock.mockReset();
     window.sessionStorage.clear();
     useToastStore.getState().clearToast();
@@ -428,6 +434,219 @@ describe("WorkspaceSessionShell", () => {
     await waitFor(() => {
       expect(workspaceStore.getState().replyGroups["group-1"]?.latestVersionId).toBe("version-2");
     });
+  });
+
+  it("refreshes the PRD panel after regenerate emits prd.updated", async () => {
+    const encoder = new TextEncoder();
+    getSessionMock
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-1",
+          user_id: "user-1",
+          title: "AI Co-founder",
+          initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+        },
+        state: {
+          idea: "idea",
+          stage_hint: "明确问题",
+        },
+        prd_snapshot: {
+          sections: {
+            target_user: {
+              title: "目标用户",
+              content: "独立开发者",
+              status: "confirmed",
+            },
+          },
+        },
+        messages: [
+          {
+            id: "user-1",
+            session_id: "session-1",
+            role: "user",
+            content: "请给我一个版本",
+            message_type: "text",
+            reply_group_id: null,
+            version_no: null,
+            is_latest: true,
+          },
+          {
+            id: "assistant-1",
+            session_id: "session-1",
+            role: "assistant",
+            content: "先给你一个初版。",
+            message_type: "text",
+            reply_group_id: "group-1",
+            version_no: 1,
+            is_latest: true,
+          },
+        ],
+        assistant_reply_groups: [
+          {
+            id: "group-1",
+            session_id: "session-1",
+            user_message_id: "user-1",
+            latest_version_id: "version-1",
+            created_at: "2026-04-05T00:00:00Z",
+            updated_at: "2026-04-05T00:00:00Z",
+            versions: [
+              {
+                id: "version-1",
+                reply_group_id: "group-1",
+                session_id: "session-1",
+                user_message_id: "user-1",
+                version_no: 1,
+                content: "先给你一个初版。",
+                action_snapshot: {},
+                model_meta: {},
+                state_version_id: null,
+                prd_snapshot_version: 2,
+                created_at: "2026-04-05T00:00:00Z",
+                is_latest: true,
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-1",
+          user_id: "user-1",
+          title: "AI Co-founder",
+          initial_idea: "idea",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+        },
+        state: {
+          idea: "idea",
+          stage_hint: "明确问题",
+          workflow_stage: "refine_loop",
+          prd_draft: {
+            version: 2,
+            status: "draft_refined",
+            sections: {
+              solution: {
+                title: "解决方案",
+                content: "重生成后采用浏览器预览加评论分享。",
+                status: "confirmed",
+              },
+              constraints: {
+                title: "约束条件",
+                content: "首版只支持浏览器端。",
+                status: "confirmed",
+              },
+            },
+          },
+        },
+        prd_snapshot: {
+          sections: {
+            target_user: {
+              title: "目标用户",
+              content: "独立开发者",
+              status: "confirmed",
+            },
+            solution: {
+              title: "解决方案",
+              content: "重生成后采用浏览器预览加评论分享。",
+              status: "confirmed",
+            },
+          },
+        },
+        messages: [
+          {
+            id: "user-1",
+            session_id: "session-1",
+            role: "user",
+            content: "请给我一个版本",
+            message_type: "text",
+            reply_group_id: null,
+            version_no: null,
+            is_latest: true,
+          },
+          {
+            id: "assistant-1",
+            session_id: "session-1",
+            role: "assistant",
+            content: "这是重生成版本",
+            message_type: "text",
+            reply_group_id: "group-1",
+            version_no: 2,
+            is_latest: true,
+          },
+        ],
+        assistant_reply_groups: [
+          {
+            id: "group-1",
+            session_id: "session-1",
+            user_message_id: "user-1",
+            latest_version_id: "version-2",
+            created_at: "2026-04-05T00:00:00Z",
+            updated_at: "2026-04-05T00:00:00Z",
+            versions: [
+              {
+                id: "version-1",
+                reply_group_id: "group-1",
+                session_id: "session-1",
+                user_message_id: "user-1",
+                version_no: 1,
+                content: "先给你一个初版。",
+                action_snapshot: {},
+                model_meta: {},
+                state_version_id: null,
+                prd_snapshot_version: 2,
+                created_at: "2026-04-05T00:00:00Z",
+                is_latest: false,
+              },
+              {
+                id: "version-2",
+                reply_group_id: "group-1",
+                session_id: "session-1",
+                user_message_id: "user-1",
+                version_no: 2,
+                content: "这是重生成版本",
+                action_snapshot: {},
+                model_meta: {},
+                state_version_id: null,
+                prd_snapshot_version: 3,
+                created_at: "2026-04-05T00:00:00Z",
+                is_latest: true,
+              },
+            ],
+          },
+        ],
+      });
+    regenerateMessageMock.mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'event: action.decided\ndata: {"action":"summarize_understanding","target":null,"reason":"继续刷新 PRD"}\n\n' +
+                'event: assistant.version.started\ndata: {"session_id":"session-1","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-openai","is_regeneration":true,"is_latest":false}\n\n' +
+                'event: assistant.delta\ndata: {"session_id":"session-1","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-openai","delta":"这是重生成版本","is_regeneration":true,"is_latest":false}\n\n' +
+                'event: prd.updated\ndata: {"sections":{"solution":{"title":"解决方案","content":"重生成后采用浏览器预览加评论分享。","status":"confirmed"},"constraints":{"title":"约束条件","content":"首版只支持浏览器端。","status":"confirmed"}}}\n\n' +
+                'event: assistant.done\ndata: {"session_id":"session-1","user_message_id":"user-1","reply_group_id":"group-1","assistant_version_id":"version-2","version_id":"version-2","version_no":2,"assistant_message_id":"assistant-1","model_config_id":"model-openai","prd_snapshot_version":3,"is_regeneration":true,"is_latest":true}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    );
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    const regenerateButton = await screen.findByRole("button", { name: "重新生成" });
+    fireEvent.click(regenerateButton);
+
+    await waitFor(() => {
+      expect(regenerateMessageMock).toHaveBeenCalledTimes(1);
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(await screen.findByText("重生成后采用浏览器预览加评论分享。")).toBeInTheDocument();
+    expect(screen.getByText("草稿补充")).toBeInTheDocument();
+    expect(screen.getByText("首版只支持浏览器端。")).toBeInTheDocument();
   });
 
   it("hydrates turn decision guidance from the session snapshot", async () => {
