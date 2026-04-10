@@ -1,0 +1,36 @@
+apps/api/tests/test_model_gateway.py
+  415c93deb50a5a6c 313-314,321-323,325,336-338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "31215b57b3c86740fb15aa6d2ca33654bc828548",
+  "prompts": {
+    "415c93deb50a5a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3958795f-70e4-4f5f-9199-e4781d938935",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 1,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    },
+    "b337ede14ab033b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d75b4-d0cf-76f0-884d-e82674c2b3a9",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 431,
+      "overriden_lines": 0
+    }
+  }
+}
