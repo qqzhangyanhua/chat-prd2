@@ -310,13 +310,19 @@ def test_call_pm_mentor_llm_returns_parsed_dict(monkeypatch):
         }]
     }
 
+    captured = {}
+
     class FakeResponse:
         status_code = 200
         headers = {"content-type": "application/json"}
         def raise_for_status(self): pass
         def json(self): return fake_response_body
 
-    monkeypatch.setattr(httpx, "post", lambda *a, **kw: FakeResponse())
+    def fake_post(*args, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
 
     result = call_pm_mentor_llm(
         base_url="http://fake-api",
@@ -327,6 +333,9 @@ def test_call_pm_mentor_llm_returns_parsed_dict(monkeypatch):
     )
     assert result["observation"] == "obs"
     assert result["confidence"] == "medium"
+    assert captured.get("timeout") == 60.0
+    payload = captured.get("json", {})
+    assert payload.get("response_format") == {"type": "json_object"}
 
 
 def test_call_pm_mentor_llm_raises_on_timeout(monkeypatch):
