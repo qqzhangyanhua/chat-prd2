@@ -127,6 +127,6 @@ class PmMentorOutput:
     suggestion: str
     question: str
     reply: str
-    prd_updates: dict[str, dict[str, Any]]
-    confidence: Literal["high", "medium", "low"]
-    next_focus: str
+    prd_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
+    confidence: Literal["high", "medium", "low"] = "medium"
+    next_focus: str = "problem"
