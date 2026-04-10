@@ -4,7 +4,6 @@ import json
 import logging
 from typing import Any
 
-from app.agent.prd_updater import merge_prd_updates
 from app.agent.types import AgentResult, NextAction, PmMentorOutput, TurnDecision
 from app.services.model_gateway import ModelGatewayError, call_pm_mentor_llm
 
