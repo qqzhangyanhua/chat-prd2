@@ -33,6 +33,7 @@ def merge_prd_updates(
         if status == "missing":
             old = sections.get(key) or {}
             sections[key] = {
+                "content": old.get("content", ""),  # 保证 content 键始终存在
                 **old,
                 "status": "missing",
                 "missing_reason": content,
@@ -48,5 +49,5 @@ def merge_prd_updates(
 
 
 def should_emit_prd_updated(old_prd: dict[str, Any], new_prd: dict[str, Any]) -> bool:
-    """只要有任何 section 的 content 或 status 发生变化就返回 True。"""
+    """只要 PRD 对象发生任何变化就返回 True。"""
     return old_prd != new_prd

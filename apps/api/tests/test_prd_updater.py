@@ -1,4 +1,3 @@
-import pytest
 from app.agent.prd_updater import merge_prd_updates, should_emit_prd_updated
 
 
