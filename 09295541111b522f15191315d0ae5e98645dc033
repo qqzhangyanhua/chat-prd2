@@ -1,0 +1,38 @@
+apps/api/tests/test_agent_types_contract.py
+  415c93deb50a5a6c 155,180-196
+apps/api/app/agent/types.py
+  415c93deb50a5a6c 27,121-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "09295541111b522f15191315d0ae5e98645dc033",
+  "prompts": {
+    "415c93deb50a5a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3958795f-70e4-4f5f-9199-e4781d938935",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 31,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0
+    },
+    "b337ede14ab033b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d75b4-d0cf-76f0-884d-e82674c2b3a9",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 431,
+      "overriden_lines": 0
+    }
+  }
+}
