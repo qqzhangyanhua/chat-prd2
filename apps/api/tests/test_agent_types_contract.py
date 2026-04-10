@@ -152,6 +152,7 @@ def test_workflow_stage_encompasses_refine_loop():
         "critic_review",
         "refine_loop",
         "finalize",
+        "completed",
     }
 
     assert set(get_args(WorkflowStage)) == expected_stages
@@ -174,6 +175,23 @@ def test_critic_result_tracks_verdict_and_questions():
     assert review.blocking_questions == []
     assert review.recommended_next_focus is None
     assert review.revision_instructions == []
+
+
+def test_pm_mentor_output_dataclass():
+    from app.agent.types import PmMentorOutput
+    output = PmMentorOutput(
+        observation="obs",
+        challenge="ch",
+        suggestion="sg",
+        question="q?",
+        reply="full reply",
+        prd_updates={"target_user": {"content": "x", "status": "draft"}},
+        confidence="medium",
+        next_focus="problem",
+    )
+    assert output.observation == "obs"
+    assert output.prd_updates["target_user"]["status"] == "draft"
+    assert output.confidence == "medium"
 
 
 def test_app_db_models_resolution_stays_inside_current_repo_when_foreign_app_exists():

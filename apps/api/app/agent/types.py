@@ -24,6 +24,7 @@ WorkflowStage = Literal[
     "critic_review",
     "refine_loop",
     "finalize",
+    "completed",
 ]
 
 
@@ -117,3 +118,15 @@ class CriticResult:
     blocking_questions: list[str] = field(default_factory=list)
     recommended_next_focus: str | None = None
     revision_instructions: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class PmMentorOutput:
+    observation: str
+    challenge: str
+    suggestion: str
+    question: str
+    reply: str
+    prd_updates: dict[str, dict[str, Any]]
+    confidence: Literal["high", "medium", "low"]
+    next_focus: str
