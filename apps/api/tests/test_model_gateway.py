@@ -287,3 +287,61 @@ def test_generate_reply_raises_model_gateway_error_on_unusable_content(
             model="gpt-test",
             messages=[{"role": "user", "content": "hi"}],
         )
+
+
+def test_call_pm_mentor_llm_returns_parsed_dict(monkeypatch):
+    import json
+    from app.services.model_gateway import call_pm_mentor_llm
+
+    fake_response_body = {
+        "choices": [{
+            "message": {
+                "content": json.dumps({
+                    "observation": "obs",
+                    "challenge": "ch",
+                    "suggestion": "sg",
+                    "question": "q?",
+                    "reply": "full reply",
+                    "prd_updates": {},
+                    "confidence": "medium",
+                    "next_focus": "problem",
+                })
+            }
+        }]
+    }
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+        def raise_for_status(self): pass
+        def json(self): return fake_response_body
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **kw: FakeResponse())
+
+    result = call_pm_mentor_llm(
+        base_url="http://fake-api",
+        api_key="test-key",
+        model="gpt-4",
+        system_prompt="你是PM导师",
+        user_prompt='{"user_input": "我想做个工具"}',
+    )
+    assert result["observation"] == "obs"
+    assert result["confidence"] == "medium"
+
+
+def test_call_pm_mentor_llm_raises_on_timeout(monkeypatch):
+    from app.services.model_gateway import call_pm_mentor_llm
+
+    def fake_post(*args, **kwargs):
+        raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    with pytest.raises(ModelGatewayError, match="超时"):
+        call_pm_mentor_llm(
+            base_url="http://fake-api",
+            api_key="key",
+            model="gpt-4",
+            system_prompt="sys",
+            user_prompt="usr",
+        )

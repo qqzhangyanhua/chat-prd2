@@ -415,3 +415,46 @@ def generate_structured_extraction(
         _raise_for_non_json_response(response, url, exc)
 
     return _extract_json_object_content(body)
+
+
+def call_pm_mentor_llm(
+    base_url: str,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> dict[str, Any]:
+    """调用 LLM 获取 PM Mentor 结构化 JSON 输出。使用 response_format json_object。"""
+    url = _build_chat_completions_url(base_url)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        response = httpx.post(url, headers=headers, json=payload, timeout=60.0)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_for_gateway_http_error(exc, url)
+    except httpx.TimeoutException as exc:
+        logger.warning("PM Mentor LLM 调用超时: url=%s error=%s", url, exc)
+        raise ModelGatewayError("PM Mentor LLM 调用超时") from exc
+    except httpx.RequestError as exc:
+        logger.warning("PM Mentor LLM 网络异常: url=%s error=%s", url, exc)
+        raise ModelGatewayError("PM Mentor LLM 网络异常") from exc
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        _raise_for_non_json_response(response, url, exc)
+
+    return _extract_json_object_content(body)
