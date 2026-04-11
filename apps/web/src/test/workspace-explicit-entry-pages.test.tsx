@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import { WorkspaceEntry } from "../components/workspace/workspace-entry";
+import WorkspaceHomePage from "../app/workspace/home/page";
+import WorkspaceNewPage from "../app/workspace/new/page";
 
 const listSessionsMock = vi.fn();
 const pushMock = vi.fn();
@@ -24,50 +25,29 @@ vi.mock("../hooks/use-auth-guard", () => ({
   useAuthGuard: vi.fn(() => ({ hydrated: true })),
 }));
 
-describe("WorkspacePage", () => {
-  beforeEach(() => {
-    listSessionsMock.mockReset();
+describe("Workspace explicit entry pages", () => {
+  it("renders workspace home page without auto redirecting to latest session", async () => {
+    listSessionsMock.mockResolvedValue({
+      sessions: [
+        {
+          id: "session-1",
+          user_id: "user-1",
+          title: "最近活跃会话",
+          initial_idea: "most recent activity",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+        },
+      ],
+    });
     pushMock.mockReset();
-    listSessionsMock.mockResolvedValue({ sessions: [] });
-  });
 
-  it("renders the session entry surface", async () => {
-    render(<WorkspaceEntry />);
+    render(<WorkspaceHomePage />);
 
     expect(await screen.findByText("Describe your idea")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start Session" })).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("redirects to the latest existing session", async () => {
-    listSessionsMock.mockResolvedValue({
-      sessions: [
-        {
-          id: "session-1",
-          user_id: "user-1",
-          title: "最近活跃会话",
-          initial_idea: "most recent activity",
-          created_at: "2026-04-05T00:00:00Z",
-          updated_at: "2026-04-05T00:00:00Z",
-        },
-        {
-          id: "session-2",
-          user_id: "user-1",
-          title: "更早的会话",
-          initial_idea: "older idea",
-          created_at: "2026-04-04T00:00:00Z",
-          updated_at: "2026-04-04T00:00:00Z",
-        },
-      ],
-    });
-
-    render(<WorkspaceEntry />);
-
-    await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/workspace?session=session-1");
-    });
-  });
-
-  it("shows the entry surface when explicit home mode disables auto redirect", async () => {
+  it("renders workspace new page without auto redirecting to latest session", async () => {
     listSessionsMock.mockResolvedValue({
       sessions: [
         {
@@ -80,8 +60,9 @@ describe("WorkspacePage", () => {
         },
       ],
     });
+    pushMock.mockReset();
 
-    render(<WorkspaceEntry autoRedirectToLatest={false} />);
+    render(<WorkspaceNewPage />);
 
     expect(await screen.findByText("Describe your idea")).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
