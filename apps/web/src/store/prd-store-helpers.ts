@@ -98,15 +98,16 @@ export function derivePrimaryPrdSections(
 export function deriveExtraPrdSections(state: StateSnapshotResponse): PrdState["extraSections"] {
   const prdDraft = asRecord(state.prd_draft);
   const rawSections = asRecord(prdDraft.sections);
+  const extraSections: PrdState["extraSections"] = {};
 
-  return Object.fromEntries(
-    extraPrdSectionKeys
-      .map((key) => {
-        const normalized = normalizePrdSection(key, rawSections[key]);
-        return normalized ? ([key, normalized] as const) : null;
-      })
-      .filter((entry): entry is readonly [string, PrdState["sections"][string]] => entry !== null),
-  );
+  for (const key of extraPrdSectionKeys) {
+    const normalized = normalizePrdSection(key, rawSections[key]);
+    if (normalized) {
+      extraSections[key] = normalized;
+    }
+  }
+
+  return extraSections;
 }
 
 export function derivePrdMeta(state: StateSnapshotResponse): PrdState["meta"] {
