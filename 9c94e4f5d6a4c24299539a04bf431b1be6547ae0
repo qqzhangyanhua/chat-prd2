@@ -1,0 +1,48 @@
+apps/api/app/services/messages.py
+  b337ede14ab033b9 5,30-41,43-60,74,109,113,117,121,138,146,154,174,177,180,182,184,186-189,200-210,220,224-228,472,475,477-478,480,482-486
+apps/api/app/services/message_preparation.py
+  415c93deb50a5a6c 465-473
+apps/api/tests/test_message_service_modules.py
+  b337ede14ab033b9 1-158
+apps/api/app/services/message_state.py
+  b337ede14ab033b9 1-150
+apps/api/app/services/message_models.py
+  b337ede14ab033b9 1-5,7-13,15-19,21-34,36-48
+apps/api/app/services/sessions.py
+  415c93deb50a5a6c 15,31
+apps/api/tests/test_messages_stream.py
+  415c93deb50a5a6c 29-39,42,52,66,69,73,80-83,89,94,96-102,104-111,115-124,128,130-131,133-143,145-149,151-152,154-156,158,161-167,169,171-172,175-184,187,308-311,359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "9c94e4f5d6a4c24299539a04bf431b1be6547ae0",
+  "prompts": {
+    "415c93deb50a5a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3958795f-70e4-4f5f-9199-e4781d938935",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 109,
+      "total_deletions": 855,
+      "accepted_lines": 117,
+      "overriden_lines": 2
+    },
+    "b337ede14ab033b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d75b4-d0cf-76f0-884d-e82674c2b3a9",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 427,
+      "overriden_lines": 4
+    }
+  }
+}
