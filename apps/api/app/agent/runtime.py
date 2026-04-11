@@ -6,6 +6,20 @@ from app.agent.types import AgentResult, NextAction, TurnDecision
 
 
 def _build_completed_result(state: dict[str, Any]) -> AgentResult:
+    sections = state.get("prd_snapshot", {}).get("sections", {})
+    confirmed = [
+        v.get("title", k)
+        for k, v in sections.items()
+        if isinstance(v, dict) and v.get("status") == "confirmed"
+    ]
+    section_summary = "、".join(confirmed) if confirmed else "各核心模块"
+    reply = (
+        f"PRD 已整理完成！我们共同确认了：{section_summary}。\n\n"
+        "你现在可以：\n"
+        "- 点击右上角「导出 PRD」下载 Markdown 文档\n"
+        "- 继续告诉我需要调整的地方，我会帮你修改\n"
+        "- 或者基于这份 PRD，我们可以进一步拆解技术方案"
+    )
     turn_decision = TurnDecision(
         phase="completed",
         phase_goal=None,
@@ -31,7 +45,7 @@ def _build_completed_result(state: dict[str, Any]) -> AgentResult:
         conversation_strategy="confirm",
     )
     return AgentResult(
-        reply="PRD 已完成。你可以导出 PRD，或者继续告诉我需要修改的地方。",
+        reply=reply,
         action=NextAction(action="summarize_understanding", target=None, reason="PRD 已完成"),
         reply_mode="local",
         state_patch={},
@@ -87,7 +101,6 @@ def decide_next_action(state: dict[str, Any], user_input: str) -> NextAction:
 def run_agent(
     state: dict[str, Any],
     user_input: str,
-    model_result: Any = None,
     *,
     model_config: Any = None,
     conversation_history: list[dict[str, str]] | None = None,

@@ -11,6 +11,19 @@ logger = logging.getLogger(__name__)
 
 MAX_HISTORY_TURNS = 10
 
+ALLOWED_NEXT_FOCUS = {"target_user", "problem", "solution", "mvp_scope", "done"}
+ALLOWED_STATUS = {"missing", "draft", "confirmed"}
+ALLOWED_PRD_SECTION_KEYS = {
+    "target_user",
+    "problem",
+    "solution",
+    "mvp_scope",
+    "constraints",
+    "success_metrics",
+    "out_of_scope",
+    "open_questions",
+}
+
 PM_MENTOR_SYSTEM_PROMPT = """你是一位经验丰富的 AI 产品联合创始人（PM 导师风格）。
 你的职责是帮助用户把一个模糊的想法，逐步打磨成一份清晰可执行的 PRD。
 
@@ -74,15 +87,52 @@ def _build_user_prompt(
     )
 
 
+def _validate_prd_updates(raw_updates: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw_updates, dict):
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for key, val in raw_updates.items():
+        if key not in ALLOWED_PRD_SECTION_KEYS:
+            continue
+        if not isinstance(val, dict):
+            continue
+        status = val.get("status")
+        if status not in ALLOWED_STATUS:
+            val = {**val, "status": "draft"}
+        result[key] = val
+    return result
+
+
+def _infer_conversation_strategy(
+    confidence: str,
+    next_focus: str,
+    state: dict[str, Any],
+) -> str:
+    if next_focus == "done":
+        return "confirm"
+    sections = state.get("prd_snapshot", {}).get("sections", {})
+    missing_count = sum(
+        1 for v in sections.values()
+        if isinstance(v, dict) and v.get("status") == "missing"
+    )
+    if confidence == "high" and missing_count <= 1:
+        return "converge"
+    return "clarify"
+
+
 def parse_pm_mentor_output(raw: dict[str, Any]) -> PmMentorOutput:
     observation = raw.get("observation") or ""
     challenge = raw.get("challenge") or ""
     suggestion = raw.get("suggestion") or ""
     question = raw.get("question") or ""
-    prd_updates = raw.get("prd_updates") or {}
+
+    raw_next_focus = raw.get("next_focus") or "problem"
+    next_focus = raw_next_focus if raw_next_focus in ALLOWED_NEXT_FOCUS else "problem"
+
     confidence_raw = raw.get("confidence") or "medium"
     confidence = confidence_raw if confidence_raw in {"high", "medium", "low"} else "medium"
-    next_focus = raw.get("next_focus") or "problem"
+
+    prd_updates = _validate_prd_updates(raw.get("prd_updates"))
 
     reply = raw.get("reply") or ""
     if not reply.strip():
@@ -95,7 +145,7 @@ def parse_pm_mentor_output(raw: dict[str, Any]) -> PmMentorOutput:
         suggestion=suggestion,
         question=question,
         reply=reply,
-        prd_updates=prd_updates if isinstance(prd_updates, dict) else {},
+        prd_updates=prd_updates,
         confidence=confidence,
         next_focus=next_focus,
     )
@@ -127,10 +177,18 @@ def run_pm_mentor(
 
     prd_patch = mentor_output.prd_updates
 
+    conversation_strategy = _infer_conversation_strategy(
+        mentor_output.confidence, mentor_output.next_focus, state
+    )
+    next_move = {
+        "confirm": "summarize_and_confirm",
+        "converge": "assume_and_advance",
+    }.get(conversation_strategy, "probe_for_specificity")
+
     state_patch: dict[str, Any] = {
         "iteration": int(state.get("iteration") or 0) + 1,
         "stage_hint": mentor_output.next_focus,
-        "conversation_strategy": "clarify",
+        "conversation_strategy": conversation_strategy,
     }
     if mentor_output.next_focus == "done":
         state_patch["workflow_stage"] = "completed"
@@ -147,7 +205,7 @@ def run_pm_mentor(
         gaps=[],
         challenges=[mentor_output.challenge] if mentor_output.challenge else [],
         pm_risk_flags=[],
-        next_move="probe_for_specificity",
+        next_move=next_move,
         suggestions=[],
         recommendation=None,
         reply_brief={"focus": mentor_output.next_focus, "must_include": []},
@@ -157,7 +215,7 @@ def run_pm_mentor(
         confidence=mentor_output.confidence,
         strategy_reason=mentor_output.suggestion or None,
         next_best_questions=[mentor_output.question] if mentor_output.question else [],
-        conversation_strategy="clarify",
+        conversation_strategy=conversation_strategy,
     )
 
     return AgentResult(

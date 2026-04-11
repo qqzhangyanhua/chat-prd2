@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent.types import ConversationStrategy, WorkflowStage
 
@@ -45,3 +45,14 @@ class StateSnapshot(BaseModel):
     critic_result: dict[str, Any] | None = None
     refine_history: list[dict[str, Any]] = Field(default_factory=list)
     finalization_ready: bool = False
+
+    @field_validator("workflow_stage", mode="before")
+    @classmethod
+    def _normalize_legacy_workflow_stage(cls, value: object) -> object:
+        _legacy: dict[str, str] = {
+            "prd_draft": "refine_loop",
+            "critic_review": "refine_loop",
+        }
+        if isinstance(value, str):
+            return _legacy.get(value, value)
+        return value

@@ -38,11 +38,15 @@ class PreparedRegenerateStream(PreparedMessageStream):
 
 
 class LocalReplyStream:
+    CHUNK_SIZE = 30
+
     def __init__(self, reply: str) -> None:
         self._reply = reply
 
     def __iter__(self):
-        yield self._reply
+        text = self._reply
+        for i in range(0, max(len(text), 1), self.CHUNK_SIZE):
+            yield text[i:i + self.CHUNK_SIZE]
 
     def close(self):
         return None

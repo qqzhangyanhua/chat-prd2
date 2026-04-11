@@ -4,7 +4,6 @@ import sys
 from typing import get_args
 
 from app.agent.types import (
-    CriticResult,
     NextMove,
     Suggestion,
     TurnDecision,
@@ -145,36 +144,12 @@ def test_state_snapshot_accepts_legacy_state_without_current_phase():
     assert snapshot.workflow_stage == "idea_parser"
 
 
-def test_workflow_stage_encompasses_refine_loop():
-    expected_stages = {
-        "idea_parser",
-        "prd_draft",
-        "critic_review",
-        "refine_loop",
-        "finalize",
-        "completed",
-    }
-
-    assert set(get_args(WorkflowStage)) == expected_stages
-
-
-def test_critic_result_tracks_verdict_and_questions():
-    review = CriticResult(
-        overall_verdict="pass",
-        strengths=[],
-        major_gaps=[],
-        minor_gaps=[],
-        question_queue=["后续补全假设"],
-        blocking_questions=[],
-        recommended_next_focus=None,
-        revision_instructions=[],
-    )
-
-    assert review.overall_verdict == "pass"
-    assert review.question_queue == ["后续补全假设"]
-    assert review.blocking_questions == []
-    assert review.recommended_next_focus is None
-    assert review.revision_instructions == []
+def test_workflow_stage_active_values():
+    stages = set(get_args(WorkflowStage))
+    assert "completed" in stages
+    assert "idea_parser" in stages
+    assert "prd_draft" not in stages
+    assert "critic_review" not in stages
 
 
 def test_pm_mentor_output_dataclass():

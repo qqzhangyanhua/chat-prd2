@@ -7,7 +7,6 @@ from uuid import uuid4
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.agent.extractor import first_missing_section, normalize_model_extraction_result
 from app.agent.runtime import run_agent
 from app.core.api_error import raise_api_error
 from app.db.models import LLMModelConfig, ProjectSession
@@ -21,7 +20,7 @@ from app.services.message_models import (
     PreparedMessageStream,
     PreparedRegenerateStream,
 )
-from app.services.model_gateway import ModelGatewayError, generate_structured_extraction, open_reply_stream
+from app.services.model_gateway import ModelGatewayError, open_reply_stream
 
 logger = logging.getLogger(__name__)
 
@@ -33,37 +32,6 @@ def require_turn_decision(agent_result: object) -> object:
     if turn_decision is None:
         raise RuntimeError("Agent result must include turn_decision")
     return turn_decision
-
-
-def resolve_model_extraction_result(
-    state: dict,
-    user_input: str,
-    model_config: LLMModelConfig,
-) -> object | None:
-    target_section = first_missing_section(state)
-    if target_section is None:
-        return None
-
-    try:
-        payload = generate_structured_extraction(
-            base_url=model_config.base_url,
-            api_key=model_config.api_key,
-            model=model_config.model,
-            state=state,
-            target_section=target_section,
-            user_input=user_input,
-        )
-    except ModelGatewayError as exc:
-        logger.warning(
-            "结构化提取失败，回退规则结果: model_config_id=%s model=%s base_url=%s detail=%s",
-            model_config.id,
-            model_config.model,
-            model_config.base_url,
-            exc,
-        )
-        return None
-
-    return normalize_model_extraction_result(payload)
 
 
 def serialize_model_option(model_config: LLMModelConfig) -> dict[str, str]:
@@ -343,7 +311,6 @@ def prepare_message_stream(
     model_config_id: str,
     *,
     require_turn_decision_fn=require_turn_decision,
-    resolve_model_extraction_result_fn=resolve_model_extraction_result,
     run_agent_fn=run_agent,
     open_reply_stream_fn=open_reply_stream,
     raise_model_gateway_unavailable_fn=raise_model_gateway_unavailable,
@@ -366,10 +333,8 @@ def prepare_message_stream(
         # Exclude the just-created user message from history (it is passed as user_input)
         if conversation_history and conversation_history[-1] == {"role": "user", "content": content}:
             conversation_history = conversation_history[:-1]
-        model_extraction_result = resolve_model_extraction_result_fn(state, content, model_config)
         agent_result = run_agent_fn(
             state, content,
-            model_result=model_extraction_result,
             model_config=model_config,
             conversation_history=conversation_history,
         )

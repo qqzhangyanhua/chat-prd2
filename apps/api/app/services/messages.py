@@ -9,7 +9,6 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.agent.runtime import run_agent
-from app.agent.extractor import first_missing_section, normalize_model_extraction_result
 from app.core.api_error import raise_api_error
 from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
@@ -59,7 +58,6 @@ from app.services.message_state import (
     merge_state_patch_with_decision as _merge_state_patch_with_decision,
 )
 from app.services.model_gateway import ModelGatewayError, generate_reply
-from app.services.model_gateway import generate_structured_extraction
 from app.services.model_gateway import open_reply_stream
 from app.services.prd_runtime import build_prd_updated_event_data as _build_prd_updated_event_data
 from app.services.prd_runtime import preview_prd_meta as _preview_prd_meta
@@ -72,37 +70,6 @@ SYSTEM_PROMPT = "你是用户的 AI 产品协作助手，请基于上下文给�
 
 def _require_turn_decision(agent_result: object) -> object:
     return _require_turn_decision_impl(agent_result)
-
-
-def _resolve_model_extraction_result(
-    state: dict,
-    user_input: str,
-    model_config: LLMModelConfig,
-) -> object | None:
-    target_section = first_missing_section(state)
-    if target_section is None:
-        return None
-
-    try:
-        payload = generate_structured_extraction(
-            base_url=model_config.base_url,
-            api_key=model_config.api_key,
-            model=model_config.model,
-            state=state,
-            target_section=target_section,
-            user_input=user_input,
-        )
-    except ModelGatewayError as exc:
-        logger.warning(
-            "结构化提取失败，回退规则结果: model_config_id=%s model=%s base_url=%s detail=%s",
-            model_config.id,
-            model_config.model,
-            model_config.base_url,
-            exc,
-        )
-        return None
-
-    return normalize_model_extraction_result(payload)
 
 
 def _get_enabled_model_config(db: Session, model_config_id: str) -> LLMModelConfig:
@@ -204,7 +171,6 @@ def _prepare_message_stream(
         content=content,
         model_config_id=model_config_id,
         require_turn_decision_fn=_require_turn_decision,
-        resolve_model_extraction_result_fn=_resolve_model_extraction_result,
         run_agent_fn=run_agent,
         open_reply_stream_fn=open_reply_stream,
         raise_model_gateway_unavailable_fn=_raise_model_gateway_unavailable,
@@ -253,11 +219,9 @@ def handle_user_message(
         conversation_history = _build_conversation_history(db, session_id)
         if conversation_history and conversation_history[-1] == {"role": "user", "content": content}:
             conversation_history = conversation_history[:-1]
-        model_extraction_result = _resolve_model_extraction_result(state, content, model_config)
         agent_result = run_agent(
             state,
             content,
-            model_result=model_extraction_result,
             model_config=model_config,
             conversation_history=conversation_history,
         )

@@ -120,15 +120,12 @@ app/
     models.py                 -- ORM 模型定义（9 张表）
     session.py                -- SQLAlchemy engine + SessionLocal
   agent/
-    runtime.py                -- run_agent() 主入口，组合各子模块
-    decision_engine.py        -- build_turn_decision()：策略/阶段/信心决策
-    reply_composer.py         -- compose_reply()：TurnDecision -> 结构化回复文本
-    suggestion_planner.py     -- build_suggestions()：生成推进方向建议
-    understanding.py          -- understand_user_input()：理解层分析
+    runtime.py                -- run_agent() 入口；处理 completed / 无模型 两个边界，其余委托 pm_mentor
+    pm_mentor.py              -- PM Mentor LLM 调用；build prompt → call_pm_mentor_llm → parse output → AgentResult
     extractor.py              -- 规则提取 / first_missing_section / should_capture
-    validation_flows.py       -- 验证流程常量（频率/转化阻力验证步骤）
-    prompts.py                -- 固定回复模板常量
-    types.py                  -- Agent 数据类型（NextAction, AgentResult, TurnDecision 等）
+    prd_updater.py            -- PRD section 更新工具
+    finalize_flow.py          -- finalize 阶段流程
+    types.py                  -- Agent 数据类型（NextAction, AgentResult, TurnDecision, PmMentorOutput 等）
 alembic/
   env.py                      -- Alembic 迁移环境
   versions/                   -- 迁移脚本（0001-0009）
@@ -201,18 +198,19 @@ class ApiError(HTTPException):
 
 ## Agent 模块概述
 
-`run_agent()` 执行流程（优先级由高到低）：
+`run_agent()` 执行流程（`app/agent/runtime.py`）：
 
-1. 验证焦点切换命令（`_build_validation_switch_result`）
-2. 模糊验证回复兜底（`_build_vague_validation_result`）
-3. 验证追问流程（`_build_validation_followup_result`）
-4. 确认继续命令（`_build_confirm_continue_result`）
-5. 纠错/回滚命令（`_build_correction_result`）
-6. 通用路径：`understand_user_input` + 规则提取 + `build_turn_decision` + `compose_reply`
+1. `workflow_stage == "completed"` → `_build_completed_result()`（本地回复，动态列出已确认章节）
+2. `model_config is None` → `_build_fallback_result()`（降级本地回复）
+3. 其余 → `run_pm_mentor()`（调用 LLM PM Mentor）
 
-`reply_mode`:
-- `"local"` -- 使用本地规则生成回复（快捷命令路径）
-- `"gateway"` -- 调用 LLM 模型网关生成回复
+`run_pm_mentor()` 执行流程（`app/agent/pm_mentor.py`）：
+
+1. 构建 user prompt（含 PRD 当前状态 + 对话历史 + 用户输入）
+2. 调用 `call_pm_mentor_llm()`，失败时静默降级（返回空 dict）
+3. `parse_pm_mentor_output()`：白名单校验 next_focus / confidence / prd_updates
+4. `_infer_conversation_strategy()`：依据 confidence + missing_count 推断 clarify / converge / confirm
+5. 组装 `AgentResult`（reply_mode 固定为 `"local"`，reply 为 LLM 输出的 reply 字段）
 
 ## 测试与质量
 
@@ -229,12 +227,8 @@ class ApiError(HTTPException):
 | `test_messages_stream.py` | 消息发送 + SSE 流事件序列、`prd.updated` payload |
 | `test_messages_service.py` | 消息服务单元测试、regenerate 持久化、PRD runtime 契约 |
 | `test_models.py` | ORM 模型实例化 |
-| `test_agent_runtime.py` | Agent run_agent() 完整路径 |
-| `test_agent_decision_engine.py` | build_turn_decision() 策略逻辑 |
-| `test_agent_reply_composer.py` | compose_reply() 文本生成 |
-| `test_agent_understanding.py` | understand_user_input() 理解层 |
-| `test_agent_suggestion_planner.py` | build_suggestions() 建议规划 |
-| `test_agent_types_contract.py` | 类型契约/dataclass 字段 |
+| `test_agent_runtime.py` | run_agent() 边界条件（completed / fallback / pm_mentor 路由） |
+| `test_agent_types_contract.py` | 类型契约/dataclass 字段（NextMove, TurnDecision, PmMentorOutput, StateSnapshot） |
 | `test_model_gateway.py` | LLM 网关错误处理 |
 | `test_model_configs.py` | 模型配置 CRUD 端点 |
 | `test_config.py` | 环境变量加载 + Settings |
@@ -294,13 +288,10 @@ apps/api/
   app/db/models.py
   app/db/session.py
   app/agent/runtime.py
-  app/agent/decision_engine.py
-  app/agent/reply_composer.py
-  app/agent/suggestion_planner.py
-  app/agent/understanding.py
+  app/agent/pm_mentor.py
   app/agent/extractor.py
-  app/agent/validation_flows.py
-  app/agent/prompts.py
+  app/agent/prd_updater.py
+  app/agent/finalize_flow.py
   app/agent/types.py
   tests/conftest.py
   tests/test_health.py
@@ -310,10 +301,6 @@ apps/api/
   tests/test_messages_service.py
   tests/test_models.py
   tests/test_agent_runtime.py
-  tests/test_agent_decision_engine.py
-  tests/test_agent_reply_composer.py
-  tests/test_agent_understanding.py
-  tests/test_agent_suggestion_planner.py
   tests/test_agent_types_contract.py
   tests/test_model_gateway.py
   tests/test_model_configs.py
@@ -324,6 +311,7 @@ apps/api/
 
 | 日期 | 操作 | 说明 |
 |------|------|------|
+| 2026-04-11 | UPDATED | Agent 模块重构：移除 decision_engine / reply_composer / suggestion_planner / understanding / validation_flows / prompts，改为 runtime → pm_mentor 两层架构；更新测试文件表、文件清单、模块描述 |
 | 2026-04-09 | UPDATED | 同步 PRD 运行时结构：补充 `docs/contracts` 入口、`prd_runtime.py`、`prd.updated.meta` 与 regenerate 持久化说明 |
 | 2026-04-08 | UPDATED | 新增 ApiError/recovery_action、模型配置管理路由、recommended_scene/usage 字段、迁移 0008/0009、Agent 子模块详解（validation_flows, suggestion_planner 等）、重新生成接口、完整测试文件列表 |
 | 2026-04-03 | CREATED | init-architect 首次生成模块文档 |
