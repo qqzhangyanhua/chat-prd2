@@ -1,0 +1,38 @@
+apps/web/src/test/session-sidebar.test.tsx
+  f8693a231f7fd7ee 172-173,193,210-211,314-315,340-341
+apps/web/src/components/workspace/workspace-left-nav.tsx
+  f8693a231f7fd7ee 11,15,35,60-61,64,69-70,73,91,95-96,98,108-112,125-126,166,201,207,220,322,329-333,335,337,342-343,346-348,356,362-370,373,378,381-382,387-466,477,479,483,486,492,495,500,502-504,507,515,523,529,531
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "b6d3d7ddf8c00db8e402735b17762d283e3ae9d4",
+  "prompts": {
+    "415c93deb50a5a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3958795f-70e4-4f5f-9199-e4781d938935",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 9,
+      "overriden_lines": 0
+    },
+    "f8693a231f7fd7ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad7e9fb3-6a2a-4dce-8d73-0c91de288e19",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 188,
+      "total_deletions": 212,
+      "accepted_lines": 155,
+      "overriden_lines": 0
+    }
+  }
+}
