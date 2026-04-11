@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getSession } from "../lib/api";
 
 import { WorkspaceSessionShell } from "../components/workspace/workspace-session-shell";
 import { useToastStore } from "../store/toast-store";
@@ -159,6 +158,8 @@ describe("WorkspaceSessionShell", () => {
         },
       ],
       prd: {
+        extraSections: {},
+        meta: workspaceStore.getInitialState().prd.meta,
         sections: {
           target_user: {
             title: "目标用户",
@@ -293,7 +294,7 @@ describe("WorkspaceSessionShell", () => {
     const actionButton = await screen.findByRole("button", { name: "返回工作台首页" });
     fireEvent.click(actionButton);
 
-    expect(pushMock).toHaveBeenCalledWith("/workspace");
+    expect(pushMock).toHaveBeenCalledWith("/workspace/home");
   });
 
   it("shows an explicit migration hint when session loading fails because schema is outdated", async () => {

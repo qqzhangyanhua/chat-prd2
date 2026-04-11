@@ -152,7 +152,15 @@ describe("WorkspaceLeftNav (session mode)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "New Session" }));
 
-    expect(pushMock).toHaveBeenCalledWith("/workspace?new=1");
+    expect(pushMock).toHaveBeenCalledWith("/workspace/new");
+  });
+
+  it("navigates to workspace entry when clicking Home", async () => {
+    render(<WorkspaceLeftNav sessionId="session-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Home" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/workspace/home");
   });
 
   it("renames the active session", async () => {
@@ -235,7 +243,7 @@ describe("WorkspaceLeftNav (session mode)", () => {
     await waitFor(() => {
       expect(deleteSessionMock).toHaveBeenCalledWith("session-1", null);
     });
-    expect(pushMock).toHaveBeenCalledWith("/workspace");
+    expect(pushMock).toHaveBeenCalledWith("/workspace/home");
   });
 
   it("shows delete error when request fails", async () => {
@@ -270,7 +278,7 @@ describe("WorkspaceLeftNav (session mode)", () => {
 
     resolveDelete?.();
     await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith("/workspace");
+      expect(pushMock).toHaveBeenCalledWith("/workspace/home");
     });
   });
 
