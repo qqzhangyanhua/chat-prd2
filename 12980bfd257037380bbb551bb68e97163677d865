@@ -1,0 +1,78 @@
+apps/api/app/agent/types.py
+  1ea137d7188544cc 21
+apps/api/app/agent/pm_mentor.py
+  1ea137d7188544cc 14-26,90-122,128-131,134-135,148,180-187,191,208,218
+apps/api/app/services/message_preparation.py
+  1ea137d7188544cc 23
+apps/api/tests/test_agent_types_contract.py
+  1ea137d7188544cc 147-152
+docs/backend-flow.md
+  1ea137d7188544cc 1-506
+apps/api/app/services/message_models.py
+  1ea137d7188544cc 41-42,47-49
+apps/api/app/agent/runtime.py
+  1ea137d7188544cc 9-22,48
+apps/api/CLAUDE.md
+  1ea137d7188544cc 123-124,126-128,201,203-205,207-213,230-231,291,293-294,314
+apps/api/app/schemas/state.py
+  1ea137d7188544cc 5,48-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "12980bfd257037380bbb551bb68e97163677d865",
+  "prompts": {
+    "0c8963ce3f771303": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7b96-5e78-7c11-99a8-2658f7e38e40",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    },
+    "1ea137d7188544cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5b601aa-73fd-4c67-9e4c-c60e1c183dac",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 1353,
+      "total_deletions": 410,
+      "accepted_lines": 1347,
+      "overriden_lines": 0
+    },
+    "415c93deb50a5a6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3958795f-70e4-4f5f-9199-e4781d938935",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 9,
+      "overriden_lines": 0
+    },
+    "f8693a231f7fd7ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad7e9fb3-6a2a-4dce-8d73-0c91de288e19",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 1
+    }
+  }
+}
