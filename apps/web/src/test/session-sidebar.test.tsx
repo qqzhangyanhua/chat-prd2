@@ -169,7 +169,8 @@ describe("WorkspaceLeftNav (session mode)", () => {
 
     render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), {
+    fireEvent.click(await screen.findByRole("button", { name: "重命名会话标题" }));
+    fireEvent.change(screen.getByLabelText("重命名"), {
       target: { value: "产品调研" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
@@ -189,6 +190,7 @@ describe("WorkspaceLeftNav (session mode)", () => {
   it("does not submit rename when title is empty after trimming", async () => {
     render(<WorkspaceLeftNav sessionId="session-1" />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "重命名会话标题" }));
     await screen.findByDisplayValue("产品调研");
 
     fireEvent.change(screen.getByLabelText("重命名"), { target: { value: "   " } });
@@ -205,7 +207,8 @@ describe("WorkspaceLeftNav (session mode)", () => {
 
     render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), { target: { value: "访谈提纲" } });
+    fireEvent.click(await screen.findByRole("button", { name: "重命名会话标题" }));
+    fireEvent.change(screen.getByLabelText("重命名"), { target: { value: "访谈提纲" } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     expect(await screen.findByText("重命名失败")).toBeInTheDocument();
@@ -308,7 +311,8 @@ describe("WorkspaceLeftNav (session mode)", () => {
 
     render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), { target: { value: "访谈提纲" } });
+    fireEvent.click(await screen.findByRole("button", { name: "重命名会话标题" }));
+    fireEvent.change(screen.getByLabelText("重命名"), { target: { value: "访谈提纲" } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
@@ -333,7 +337,8 @@ describe("WorkspaceLeftNav (session mode)", () => {
 
     render(<WorkspaceLeftNav sessionId="session-1" />);
 
-    fireEvent.change(await screen.findByLabelText("重命名"), { target: { value: "访谈提纲" } });
+    fireEvent.click(await screen.findByRole("button", { name: "重命名会话标题" }));
+    fireEvent.change(screen.getByLabelText("重命名"), { target: { value: "访谈提纲" } });
     fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
 
     await waitFor(() => {
