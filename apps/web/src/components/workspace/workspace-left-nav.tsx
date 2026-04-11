@@ -285,7 +285,7 @@ export function WorkspaceLeftNav({ sessionId }: WorkspaceLeftNavProps) {
       showToast({ id: `delete-session-${sessionId}`, message: "正在删除会话...", tone: "info" });
       await deleteSession(sessionId, accessToken);
       showToast({ id: `delete-session-${sessionId}`, message: "会话已删除", tone: "success" });
-      router.push("/workspace");
+      router.push("/workspace/home");
     } catch (error) {
       const message = error instanceof Error ? error.message : "删除失败，请稍后再试";
       setDeleteError(message);
@@ -346,7 +346,7 @@ export function WorkspaceLeftNav({ sessionId }: WorkspaceLeftNavProps) {
           className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
             !sessionId ? "bg-stone-950 text-white" : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"
           }`}
-          onClick={() => router.push("/workspace")}
+          onClick={() => router.push("/workspace/home")}
         >
           <Home className="h-3.5 w-3.5" />
           Home
@@ -354,7 +354,7 @@ export function WorkspaceLeftNav({ sessionId }: WorkspaceLeftNavProps) {
         <button
           type="button"
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-stone-600 transition-all hover:bg-stone-100 hover:text-stone-900"
-          onClick={() => router.push("/workspace?new=1")}
+          onClick={() => router.push("/workspace/new")}
         >
           <Plus className="h-3.5 w-3.5" />
           New Session

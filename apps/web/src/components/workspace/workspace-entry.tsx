@@ -52,7 +52,7 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
       router.push("/login");
     },
     onOpenWorkspaceHome: () => {
-      router.push("/workspace");
+      router.push("/workspace/home");
     },
   });
 

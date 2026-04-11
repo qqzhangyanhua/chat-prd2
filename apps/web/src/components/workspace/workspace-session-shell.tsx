@@ -42,7 +42,7 @@ export function WorkspaceSessionShell({ sessionId }: WorkspaceSessionShellProps)
   const schemaRecoveryAction = resolveRecoveryAction(schemaHealth?.error?.recovery_action);
   const loadRecoveryAction = resolveRecoveryAction(getRecoveryActionFromError(loadErrorCause), {
     onOpenWorkspaceHome: () => {
-      push("/workspace");
+      push("/workspace/home");
     },
     onReloadSession: () => {
       setIsRetrying(true);
