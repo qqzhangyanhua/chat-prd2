@@ -8,7 +8,6 @@ import {
   Brain,
   Download,
 } from "lucide-react";
-import { HomeAuthRedirect } from "@/components/home/home-auth-redirect";
 
 const FEATURES = [
   {
@@ -56,9 +55,7 @@ const PARTNERS = ["Founder Studio", "Product Labs", "Venture Works", "Build Co",
 
 export default function HomePage() {
   return (
-    <>
-      <HomeAuthRedirect />
-      <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-[family-name:var(--font-sans)] overflow-x-hidden">
+    <div className="min-h-screen bg-[#0a0a0a] text-neutral-200 font-[family-name:var(--font-sans)] overflow-x-hidden">
 
         {/* ── Announcement bar ── */}
         <div className="w-full bg-gradient-to-r from-[#8a7356] via-[#c6a87c] to-[#8a7356] py-2 px-4 text-center">
@@ -332,6 +329,5 @@ export default function HomePage() {
           </div>
         </footer>
       </div>
-    </>
   );
 }
