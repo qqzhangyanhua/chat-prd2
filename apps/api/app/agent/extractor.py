@@ -46,7 +46,7 @@ NEXT_STAGE_HINTS = {
 }
 
 
-@dataclass(slots=True)
+@dataclass
 class StructuredExtractionResult:
     should_update: bool
     state_patch: dict = field(default_factory=dict)

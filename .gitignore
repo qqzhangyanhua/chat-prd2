@@ -13,3 +13,7 @@ coverage
 .superpowers
 *.log
 *.tsbuildinfo
+.claude/worktrees/
+.kiro/
+.vscode/
+output/

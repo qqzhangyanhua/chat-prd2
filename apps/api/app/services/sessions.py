@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from types import SimpleNamespace
 
 from fastapi import HTTPException, status
@@ -5,7 +7,28 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.agent.reply_composer import build_reply_sections
+def build_reply_sections(decision: object) -> list[dict]:
+    phase_goal = getattr(decision, "phase_goal", None) or "继续推进当前 PRD"
+    strategy_reason = getattr(decision, "strategy_reason", None) or "继续澄清当前关键信息。"
+    next_best_questions = getattr(decision, "next_best_questions", None) or []
+    next_question = next_best_questions[0] if next_best_questions else "为了继续推进，请先补一个最具体的真实场景。"
+    return [
+        {
+            "key": "judgement",
+            "title": "当前判断：",
+            "content": str(strategy_reason),
+        },
+        {
+            "key": "critic_verdict",
+            "title": "当前目标：",
+            "content": str(phase_goal),
+        },
+        {
+            "key": "next_step",
+            "title": "唯一下一问：",
+            "content": str(next_question),
+        },
+    ]
 from app.core.api_error import raise_api_error
 from app.db.models import AgentTurnDecision, AssistantReplyGroup
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository

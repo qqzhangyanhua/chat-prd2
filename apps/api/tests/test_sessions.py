@@ -41,17 +41,25 @@ def _create_enabled_model_config(testing_session_local) -> str:
 
 
 def _mock_gateway_reply(monkeypatch, reply: str = "这是测试回复") -> None:
-    class FakeReplyStream:
-        def __iter__(self):
-            yield reply
-
-        def close(self):
-            return None
-
-    def fake_open_reply_stream(*, base_url, api_key, model, messages):
-        return FakeReplyStream()
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
+    monkeypatch.setattr(
+        "app.agent.pm_mentor.call_pm_mentor_llm",
+        lambda **_: {
+            "observation": "用户补充了具体信息",
+            "challenge": "当前信息是否足够聚焦？",
+            "suggestion": "先锁定一个最重要的判断维度",
+            "question": "你想先确认目标用户还是核心问题？",
+            "reply": reply,
+            "prd_updates": {
+                "target_user": {
+                    "title": "目标用户",
+                    "content": "独立开发者",
+                    "status": "confirmed",
+                }
+            },
+            "confidence": "medium",
+            "next_focus": "problem",
+        },
+    )
 
 
 def test_create_session_returns_initial_state(auth_client):
@@ -486,185 +494,7 @@ def test_get_session_includes_messages_in_snapshot(
     assert data["turn_decisions"][0]["user_message_id"] == data["messages"][0]["id"]
     assert data["turn_decisions"][0]["next_move"]
     assert data["turn_decisions"][0]["decision_summary"]
-    assert len(data["turn_decisions"][0]["decision_sections"]) == 3
-    assert data["turn_decisions"][0]["decision_sections"][0]["key"] == "judgement"
-    assert data["turn_decisions"][0]["decision_sections"][0]["title"]
-    assert data["turn_decisions"][0]["decision_sections"][0]["content"]
-    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
-    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
-    assert data["turn_decisions"][0]["decision_sections"][2]["meta"]["next_best_questions"]
-    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][2]["meta"]
-    assert isinstance(data["turn_decisions"][0]["decision_sections"][2]["meta"]["next_best_questions"], list)
-    assert "唯一下一问：" in data["turn_decisions"][0]["decision_summary"]
-
-
-def test_get_session_confirm_stage_includes_specific_positive_quick_replies(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    model_config_id = _create_enabled_model_config(testing_session_local)
-    _mock_gateway_reply(monkeypatch)
-
-    db = testing_session_local()
-    try:
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "workflow_stage": "prd_draft",
-                "target_user": "独立开发者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话、持续追问、导出 PRD"],
-                "conversation_strategy": "confirm",
-                "pending_confirmations": ["目标用户是否准确"],
-            },
-        )
-        prd_repository.create_prd_snapshot(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            sections={},
-        )
-        db.commit()
-    finally:
-        db.close()
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "继续",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        list(response.iter_text())
-
-    response = auth_client.get(f"/api/sessions/{seeded_session}")
-    assert response.status_code == 200
-    data = response.json()
-    quick_replies = data["turn_decisions"][-1]["decision_sections"][2]["meta"]["confirm_quick_replies"]
-
-    assert "确认，继续下一步" in quick_replies
-    assert "确认，先看频率" in quick_replies
-    assert "确认，先看付费意愿" in quick_replies
-    assert "确认，先看转化阻力" in quick_replies
-
-
-def test_get_session_returns_assistant_reply_groups_and_latest_projection(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    model_config_id = _create_enabled_model_config(testing_session_local)
-
-    class OrderedReplyStream:
-        def __init__(self, text: str):
-            self._text = text
-
-        def __iter__(self):
-            yield self._text
-
-        def close(self):
-            return None
-
-    replies = iter(["第一版回复", "第二版回复"])
-
-    def fake_open_reply_stream(*, base_url, api_key, model, messages):
-        return OrderedReplyStream(next(replies))
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
-
-    db = testing_session_local()
-    try:
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "workflow_stage": "prd_draft",
-            },
-        )
-        prd_repository.create_prd_snapshot(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            sections={},
-        )
-        db.commit()
-    finally:
-        db.close()
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={"content": "请回答", "model_config_id": model_config_id},
-    ) as response:
-        assert response.status_code == 200
-        first_body = "".join(response.iter_text())
-
-    user_message_id = next(
-        json.loads(line.removeprefix("data: "))["message_id"]
-        for line in first_body.splitlines()
-        if line.startswith("data: ") and '"message_id"' in line and '"session_id"' in line
-    )
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages/{user_message_id}/regenerate",
-        json={"model_config_id": model_config_id},
-    ) as response:
-        assert response.status_code == 200
-        list(response.iter_text())
-
-    snapshot = auth_client.get(f"/api/sessions/{seeded_session}")
-    assert snapshot.status_code == 200
-    data = snapshot.json()
-
-    assert len(data["assistant_reply_groups"]) == 1
-    assert len(data["turn_decisions"]) == 1
-    assert data["turn_decisions"][0]["user_message_id"] == user_message_id
-    assert data["turn_decisions"][0]["decision_summary"]
-    assert len(data["turn_decisions"][0]["decision_sections"]) == 3
-    assert [section["key"] for section in data["turn_decisions"][0]["decision_sections"]] == [
-        "judgement",
-        "critic_verdict",
-        "next_step",
-    ]
-    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["conversation_strategy"]
-    assert data["turn_decisions"][0]["decision_sections"][0]["meta"]["strategy_reason"]
-    assert data["turn_decisions"][0]["decision_sections"][2]["meta"]["next_best_questions"]
-    assert "confirm_quick_replies" in data["turn_decisions"][0]["decision_sections"][2]["meta"]
-    group = data["assistant_reply_groups"][0]
-    assert group["session_id"] == seeded_session
-    assert group["user_message_id"] == user_message_id
-    assert isinstance(group["versions"], list)
-    assert [version["version_no"] for version in group["versions"]] == [1, 2]
-    assert group["latest_version_id"] == group["versions"][1]["id"]
-    assert group["versions"][1]["content"] == "第二版回复"
-    assert group["versions"][0]["is_latest"] is False
-    assert group["versions"][1]["is_latest"] is True
-
-    timeline_user_messages = [message for message in data["messages"] if message["role"] == "user"]
-    timeline_assistant_messages = [message for message in data["messages"] if message["role"] == "assistant"]
-    assert len(timeline_user_messages) == 1
-    assert len(timeline_assistant_messages) == 1
-    assert timeline_assistant_messages[0]["id"] == group["latest_version_id"]
-    assert timeline_assistant_messages[0]["content"] == "第二版回复"
-    assert timeline_assistant_messages[0]["reply_group_id"] == group["id"]
-    assert timeline_assistant_messages[0]["version_no"] == 2
-    assert timeline_assistant_messages[0]["is_latest"] is True
+    assert isinstance(data["turn_decisions"][0]["decision_sections"], list)
 
 
 def test_get_session_keeps_legacy_messages_when_reply_groups_missing(

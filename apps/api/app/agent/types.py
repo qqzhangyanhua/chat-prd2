@@ -28,14 +28,14 @@ WorkflowStage = Literal[
 ]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NextAction:
     action: ActionName
     target: ActionTarget | None
     reason: str
 
 
-@dataclass(slots=True)
+@dataclass
 class AgentResult:
     reply: str
     action: NextAction
@@ -47,7 +47,7 @@ class AgentResult:
     turn_decision: "TurnDecision | None" = None
 
 
-@dataclass(slots=True)
+@dataclass
 class Suggestion:
     type: SuggestionType
     label: str
@@ -56,7 +56,7 @@ class Suggestion:
     priority: int
 
 
-@dataclass(slots=True)
+@dataclass
 class UnderstandingResult:
     summary: str
     candidate_updates: dict[str, Any]
@@ -65,7 +65,7 @@ class UnderstandingResult:
     risk_hints: list[UnderstandingRiskHint]
 
 
-@dataclass(slots=True)
+@dataclass
 class TurnDecision:
     phase: str
     phase_goal: str | None
@@ -87,7 +87,7 @@ class TurnDecision:
     conversation_strategy: ConversationStrategy = "clarify"
 
 
-@dataclass(slots=True)
+@dataclass
 class IdeaParseResult:
     idea_summary: str
     product_type: str | None = None
@@ -98,7 +98,7 @@ class IdeaParseResult:
     confidence: Literal["high", "medium", "low"] = "medium"
 
 
-@dataclass(slots=True)
+@dataclass
 class PrdDraftResult:
     version: int = 1
     status: Literal["draft_hypothesis", "draft_refined", "ready_for_finalize"] = "draft_hypothesis"
@@ -108,7 +108,7 @@ class PrdDraftResult:
     critic_ready: bool = False
 
 
-@dataclass(slots=True)
+@dataclass
 class CriticResult:
     overall_verdict: Literal["pass", "revise", "block"]
     strengths: list[str] = field(default_factory=list)
@@ -120,7 +120,7 @@ class CriticResult:
     revision_instructions: list[str] = field(default_factory=list)
 
 
-@dataclass(slots=True)
+@dataclass
 class PmMentorOutput:
     observation: str
     challenge: str

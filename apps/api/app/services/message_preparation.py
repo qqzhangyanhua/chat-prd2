@@ -454,18 +454,23 @@ def prepare_regenerate_stream(
         conversation_history = build_conversation_history(
             db, session_id, up_to_message_id=user_message_id
         )
+        if conversation_history and conversation_history[-1] == {"role": "user", "content": user_message.content}:
+            conversation_history = conversation_history[:-1]
         agent_result = run_agent_fn(
             state, user_message.content,
             model_config=model_config,
             conversation_history=conversation_history,
         )
         turn_decision = require_turn_decision_fn(agent_result)
-        reply_stream = open_reply_stream_fn(
-            base_url=model_config.base_url,
-            api_key=model_config.api_key,
-            model=model_config.model,
-            messages=build_gateway_messages_for_regenerate(db, session_id, user_message_id),
-        )
+        if agent_result.reply_mode == "local":
+            reply_stream = LocalReplyStream(agent_result.reply)
+        else:
+            reply_stream = open_reply_stream_fn(
+                base_url=model_config.base_url,
+                api_key=model_config.api_key,
+                model=model_config.model,
+                messages=build_gateway_messages_for_regenerate(db, session_id, user_message_id),
+            )
     except ModelGatewayError as exc:
         logger.warning(
             "消息重生成调用模型失败: session_id=%s user_message_id=%s model_config_id=%s model=%s base_url=%s detail=%s",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -113,7 +114,7 @@ class AssistantReplyGroup(Base):
         ForeignKey("conversation_messages.id"),
         unique=True,
     )
-    latest_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    latest_version_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -156,11 +157,11 @@ class AssistantReplyVersion(Base):
     content: Mapped[str] = mapped_column(Text)
     action_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     model_meta: Mapped[dict] = mapped_column(JSON, default=dict)
-    state_version_id: Mapped[str | None] = mapped_column(
+    state_version_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("project_state_versions.id"),
         nullable=True,
     )
-    prd_snapshot_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prd_snapshot_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -181,13 +182,13 @@ class AgentTurnDecision(Base):
         unique=True,
     )
     phase: Mapped[str] = mapped_column(String)
-    phase_goal: Mapped[str | None] = mapped_column(String, nullable=True)
+    phase_goal: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     understanding_summary: Mapped[str] = mapped_column(Text)
     assumptions_json: Mapped[list[dict]] = mapped_column(JSON, default=list)
     risk_flags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     next_move: Mapped[str] = mapped_column(String)
     suggestions_json: Mapped[list[dict]] = mapped_column(JSON, default=list)
-    recommendation_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    recommendation_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     needs_confirmation_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     confidence: Mapped[str] = mapped_column(String)
     state_patch_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -203,8 +204,8 @@ class LLMModelConfig(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    recommended_scene: Mapped[str | None] = mapped_column(String, nullable=True)
-    recommended_usage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommended_scene: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    recommended_usage: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     base_url: Mapped[str] = mapped_column(String, nullable=False)
     api_key: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)

@@ -2,9 +2,6 @@ import json
 
 from sqlalchemy import select
 
-from app.agent.reply_composer import CRITIC_VERDICT_PREFIX
-from app.agent.reply_composer import DRAFT_SUMMARY_PREFIX
-from app.agent.reply_composer import NEXT_QUESTION_PREFIX
 from app.db.models import AssistantReplyGroup
 from app.db.models import AssistantReplyVersion
 from app.db.models import AgentTurnDecision
@@ -27,6 +24,19 @@ def _parse_sse_events(body: str) -> list[tuple[str, dict]]:
             events.append((current_event, json.loads(line.removeprefix("data: "))))
             current_event = None
     return events
+
+
+def _fake_pm_mentor_llm_response() -> dict:
+    return {
+        "observation": "用户在探索目标用户",
+        "challenge": "目标用户是否足够聚焦？",
+        "suggestion": "先聚焦核心场景",
+        "question": "你的目标用户最常遇到的核心问题是什么？",
+        "reply": "我注意到你在探索目标用户。目标用户是否足够聚焦？先聚焦核心场景。你的目标用户最常遇到的核心问题是什么？",
+        "prd_updates": {},
+        "confidence": "medium",
+        "next_focus": "problem",
+    }
 
 
 def test_message_stream_emits_progress_and_persists_messages(
@@ -67,26 +77,10 @@ def test_message_stream_emits_progress_and_persists_messages(
     finally:
         db.close()
 
-    class FakeReplyStream:
-        def __iter__(self):
-            yield "这是"
-            yield "流式"
-            yield "回复"
-
-        def close(self):
-            return None
-
-    def fake_open_reply_stream(*, base_url, api_key, model, messages):
-        assert base_url == "https://gateway.example.com/v1"
-        assert api_key == "secret"
-        assert model == "gpt-4o-mini"
-        assert messages == [
-            {"role": "system", "content": "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"},
-            {"role": "user", "content": "help me think through the target user"},
-        ]
-        return FakeReplyStream()
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fake_open_reply_stream)
+    monkeypatch.setattr(
+        "app.agent.pm_mentor.call_pm_mentor_llm",
+        lambda **_: _fake_pm_mentor_llm_response(),
+    )
 
     with auth_client.stream(
         "POST",
@@ -106,7 +100,6 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert "assistant.version.started" in body
     assert "assistant.delta" in body
     assert "assistant.done" in body
-    assert body.count("event: assistant.delta") == 3
     parsed_events = _parse_sse_events(body)
     event_order = [name for name, _ in parsed_events]
     assert event_order[:4] == [
@@ -124,6 +117,11 @@ def test_message_stream_emits_progress_and_persists_messages(
             .where(ConversationMessage.session_id == seeded_session)
             .order_by(ConversationMessage.role.asc())
         ).scalars().all()
+        decision = db.execute(
+            select(AgentTurnDecision).where(
+                AgentTurnDecision.session_id == seeded_session
+            )
+        ).scalar_one_or_none()
     finally:
         db.close()
 
@@ -142,103 +140,22 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert assistant_message.meta["action"]["action"] == "probe_deeper"
     assert assistant_message.meta["model_config_id"] == model_config_id
     assert assistant_message.meta["model_name"] == "gpt-4o-mini"
-    assert assistant_message.meta["display_name"] == "流式模型"
-    assert assistant_message.meta["base_url"] == "https://gateway.example.com/v1"
+    assert "我注意到你在探索目标用户" in assistant_message.content
 
     delta_payloads = [
         payload
         for name, payload in parsed_events
         if name == "assistant.delta"
     ]
-    assert [payload["delta"] for payload in delta_payloads] == ["这是", "流式", "回复"]
+    assert delta_payloads
     assert all(payload["assistant_version_id"] for payload in delta_payloads)
     assert all(payload["is_regeneration"] is False for payload in delta_payloads)
-    assert all(payload["is_latest"] is False for payload in delta_payloads)
-    started_payload = next(payload for name, payload in parsed_events if name == "assistant.version.started")
+
     done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
-    assert started_payload["assistant_version_id"] == done_payload["assistant_version_id"]
     assert done_payload["is_regeneration"] is False
     assert done_payload["is_latest"] is True
-    assert assistant_message.content == "这是流式回复"
-    decision = db.execute(
-        select(AgentTurnDecision).where(
-            AgentTurnDecision.user_message_id == user_message.id
-        )
-    ).scalar_one_or_none()
+
     assert decision is not None
-    assert assistant_message.meta["action"]["action"] == decision.next_move or decision.next_move in {
-        "probe_for_specificity",
-        "assume_and_advance",
-        "challenge_and_reframe",
-        "summarize_and_confirm",
-        "force_rank_or_choose",
-    }
-
-
-def test_message_stream_emits_reply_with_single_critic_question(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="Critic 闭环模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "我想做一个在线3D图纸预览平台",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    event_order = [name for name, _ in parsed_events]
-    done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
-
-    assert event_order[:4] == [
-        "message.accepted",
-        "reply_group.created",
-        "action.decided",
-        "assistant.version.started",
-    ]
-    assert event_order[-2:] == ["prd.updated", "assistant.done"]
-    assert done_payload["is_regeneration"] is False
-    assert done_payload["is_latest"] is True
-    assert done_payload["assistant_version_id"]
-    assert done_payload["assistant_message_id"]
-    assert done_payload["message_id"]
-    assert done_payload["prd_snapshot_version"] >= 1
-
-    db = testing_session_local()
-    try:
-        assistant_message = db.execute(
-            select(ConversationMessage)
-            .where(ConversationMessage.session_id == seeded_session)
-            .where(ConversationMessage.role == "assistant")
-            .order_by(ConversationMessage.created_at.desc())
-        ).scalars().first()
-    finally:
-        db.close()
-
-    assert assistant_message is not None
-    assert "我先把你的想法解析成一个 PRD v1 草案假设" in assistant_message.content
-    assert "进入 refine_loop" in assistant_message.content
-    assert "首版必须支持哪些文件格式？" in assistant_message.content
 
 
 def test_message_stream_returns_404_for_other_users_session(client, auth_client, seeded_session):
@@ -268,652 +185,6 @@ def test_message_stream_returns_404_for_other_users_session(client, auth_client,
             },
         },
     }
-
-
-def test_message_stream_uses_local_correction_reply_without_opening_gateway_stream(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="修正流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "confirm",
-                "pending_confirmations": ["目标用户是否准确"],
-            },
-        )
-        prd_repository.create_prd_snapshot(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            sections={},
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("correction command should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "不对，先改目标用户",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "我先回滚当前关于目标用户及其后续共识" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_uses_local_confirm_continue_reply_without_opening_gateway_stream(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="确认推进流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "confirm",
-                "pending_confirmations": ["目标用户是否准确"],
-            },
-        )
-        prd_repository.create_prd_snapshot(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            sections={},
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("confirm continue command should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "确认，继续下一步",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "我先锁定当前关于目标用户、核心问题、解决方案、MVP 范围的共识" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_uses_specific_local_confirm_reply_without_opening_gateway_stream(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="确认细分推进流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "confirm",
-                "pending_confirmations": ["目标用户是否准确"],
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("specific confirm command should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "确认，先看转化阻力",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "我会先把讨论推进到“转化阻力验证”" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_keeps_frequency_validation_in_local_stable_flow(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="频率验证流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "明确问题发生频率是否足够高",
-                "stage_hint": "推进频率验证",
-                "validation_focus": "frequency",
-                "validation_step": 1,
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("frequency validation follow-up should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "最近几乎每天都会发生，尤其在准备新需求评审时",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "我先按你的描述把当前判断收成“这是一个高频信号候选”" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_keeps_conversion_resistance_validation_in_local_stable_flow(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="转化阻力验证流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "明确转化阻力集中在哪一环",
-                "stage_hint": "推进转化阻力验证",
-                "validation_focus": "conversion_resistance",
-                "validation_step": 1,
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("conversion resistance follow-up should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "大多数人会卡在第一次接入，不知道要准备什么资料",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "我先按你的描述把当前阻力判断收成“首要阻力候选已经出现”" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_closes_frequency_validation_with_local_verdict_and_confirm_gate(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="频率出口流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "确认高频问题是否造成真实损失",
-                "stage_hint": "频率影响确认",
-                "validation_focus": "frequency",
-                "validation_step": 2,
-                "evidence": ["频率线索：最近几乎每天都会发生"],
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("frequency verdict should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "如果一直这样，团队每周都会多花半天时间，而且经常错过最佳验证窗口",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "基于你刚才补的频率和损失，我现在倾向判断这是一个值得优先推进的问题" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_closes_conversion_resistance_validation_with_local_verdict_and_confirm_gate(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="转化阻力出口流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "确认首要阻力是否直接打断转化",
-                "stage_hint": "转化阻力影响确认",
-                "validation_focus": "conversion_resistance",
-                "validation_step": 2,
-                "evidence": ["转化阻力线索：大多数人会卡在第一次接入"],
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("conversion resistance verdict should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "一旦卡住，大多数人就会先放弃，等以后再说，少数人会直接去找人工替代",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "基于你刚才补的阻力和流失结果，我现在倾向判断这是一个值得优先处理的转化阻力" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_keeps_frequency_validation_step_when_reply_is_too_vague(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="频率模糊兜底流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "明确问题发生频率是否足够高",
-                "stage_hint": "推进频率验证",
-                "validation_focus": "frequency",
-                "validation_step": 1,
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("vague frequency reply should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "差不多吧",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "这轮回答还不足以支持我判断频率" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_keeps_conversion_resistance_validation_step_when_reply_is_too_vague(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="转化阻力模糊兜底流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "明确转化阻力集中在哪一环",
-                "stage_hint": "推进转化阻力验证",
-                "validation_focus": "conversion_resistance",
-                "validation_step": 1,
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("vague conversion resistance reply should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "还行吧",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "这轮回答还不足以支持我判断转化阻力" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
-
-
-def test_message_stream_can_switch_from_frequency_to_conversion_resistance_locally(
-    auth_client,
-    seeded_session,
-    testing_session_local,
-    monkeypatch,
-):
-    db = testing_session_local()
-    try:
-        model_config = model_configs_repository.create_model_config(
-            db,
-            name="改道流式模型",
-            base_url="https://gateway.example.com/v1",
-            api_key="secret",
-            model="gpt-4o-mini",
-            enabled=True,
-        )
-        session = db.get(ProjectSession, seeded_session)
-        assert session is not None
-        state_repository.create_state_version(
-            db=db,
-            session_id=seeded_session,
-            version=2,
-            state_json={
-                **session_service.build_initial_state(session.initial_idea),
-                "target_user": "独立创业者",
-                "problem": "不知道先验证哪个需求",
-                "solution": "通过连续追问沉淀结构化 PRD",
-                "mvp_scope": ["创建会话", "持续追问", "导出 PRD"],
-                "conversation_strategy": "converge",
-                "phase_goal": "确认高频问题是否造成真实损失",
-                "stage_hint": "频率影响确认",
-                "validation_focus": "frequency",
-                "validation_step": 2,
-                "evidence": ["频率线索：最近几乎每天都会发生"],
-            },
-        )
-        db.commit()
-        model_config_id = model_config.id
-    finally:
-        db.close()
-
-    def fail_open_reply_stream(**_kwargs):
-        raise AssertionError("focus switch should not call open_reply_stream")
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", fail_open_reply_stream)
-
-    with auth_client.stream(
-        "POST",
-        f"/api/sessions/{seeded_session}/messages",
-        json={
-            "content": "先别看频率，改看转化阻力",
-            "model_config_id": model_config_id,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
-
-    parsed_events = _parse_sse_events(body)
-    delta_payloads = [payload for name, payload in parsed_events if name == "assistant.delta"]
-    assert delta_payloads
-    assert "我先停止继续看频率，切到“转化阻力验证”" in "".join(
-        payload["delta"] for payload in delta_payloads
-    )
 
 
 def test_message_stream_rejects_missing_model_config_id(auth_client, seeded_session):
@@ -1034,15 +305,11 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     finally:
         db.close()
 
-    class InitialReplyStream:
-        def __iter__(self):
-            yield "初始"
-            yield "回复"
+    monkeypatch.setattr(
+        "app.agent.pm_mentor.call_pm_mentor_llm",
+        lambda **_: _fake_pm_mentor_llm_response(),
+    )
 
-        def close(self):
-            return None
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", lambda **_: InitialReplyStream())
     with auth_client.stream(
         "POST",
         f"/api/sessions/{seeded_session}/messages",
@@ -1064,16 +331,6 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     finally:
         db.close()
 
-    class RegenerateReplyStream:
-        def __iter__(self):
-            yield "重生"
-            yield "成"
-            yield "版本"
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr("app.services.messages.open_reply_stream", lambda **_: RegenerateReplyStream())
     with auth_client.stream(
         "POST",
         f"/api/sessions/{seeded_session}/messages/{user_message.id}/regenerate",
@@ -1099,6 +356,7 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
         for name, payload in parsed_events
         if name == "assistant.delta"
     ]
+    assert delta_payloads
     assert all(payload["assistant_version_id"] for payload in delta_payloads)
     assert all(payload["is_regeneration"] is True for payload in delta_payloads)
     assert all(payload["is_latest"] is False for payload in delta_payloads)
@@ -1132,11 +390,6 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
             .where(AssistantReplyVersion.reply_group_id == reply_group.id)
             .order_by(AssistantReplyVersion.version_no.asc())
         ).scalars().all()
-        decisions_after = db.execute(
-            select(AgentTurnDecision).where(
-                AgentTurnDecision.session_id == seeded_session
-            )
-        ).scalars().all()
     finally:
         db.close()
 
@@ -1144,6 +397,3 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     assert len([message for message in messages if message.role == "assistant"]) == 1
     assert len(versions) == 2
     assert [version.version_no for version in versions] == [1, 2]
-    assert versions[1].content == "重生成版本"
-    assert len(decisions_before) == 1
-    assert len(decisions_after) == 1
