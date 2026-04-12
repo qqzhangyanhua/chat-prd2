@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { RefreshCw, AlertTriangle, ChevronRight, Layers } from "lucide-react";
 import type { DecisionGuidance, NextAction } from "../../lib/types";
-import { workspaceStore } from "../../store/workspace-store";
-import { ActionOptions } from "./action-options";
 import {
   AssistantVersionHistoryDialog,
   type AssistantReplyVersionItem,
@@ -23,12 +21,6 @@ interface AssistantTurnCardProps {
   decisionGuidance?: DecisionGuidance | null;
   onSelectDecisionGuidanceQuestion?: (question: string) => void;
 }
-
-const defaultOptions = [
-  "先继续确认目标用户是谁，再决定切入场景。",
-  "先把最痛的问题讲清楚，再判断方案是否成立。",
-  "先把 MVP 范围压小，只保留第一版必须成立的能力。",
-];
 
 export function AssistantTurnCard({
   canRegenerate = false,
@@ -52,14 +44,16 @@ export function AssistantTurnCard({
   const [selectedHistoryVersionId, setSelectedHistoryVersionId] = useState<string | null>(
     latestReplyVersion?.assistantVersionId ?? null,
   );
-  const nextQuestion =
-    currentAction?.target === "target_user"
-      ? "你现在最想服务的第一类用户是谁？请尽量具体到角色、场景和触发时机。"
-      : "如果只能先做一个最小版本，你希望它优先解决哪一个关键问题？";
   const confirmationReplies =
     decisionGuidance?.conversationStrategy === "confirm"
       ? decisionGuidance.confirmQuickReplies ?? []
       : [];
+  const hasAnalysis = !!(
+    currentAction?.observation ||
+    currentAction?.challenge ||
+    currentAction?.suggestion ||
+    currentAction?.question
+  );
 
   const openHistory = () => {
     setSelectedHistoryVersionId(latestReplyVersion?.assistantVersionId ?? null);
@@ -187,49 +181,56 @@ export function AssistantTurnCard({
             </div>
           ) : null}
 
-        {showAnalysis ? (
+        {hasAnalysis && showAnalysis ? (
           <>
-            <div className="mt-2 rounded-xl bg-stone-50 p-4">
-              <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-                我的判断
-              </p>
-              <p className="mt-3 text-sm leading-7 text-stone-700">
-                {currentAction?.reason ?? "我会继续找出还没被说透的前提、目标和决策点。"}
-              </p>
-            </div>
-
-            <div className="mt-2 rounded-xl border border-red-100 bg-red-50/60 p-4">
-              <div className="flex items-center gap-2 border-b border-red-100 pb-3">
-                <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-red-500">
-                  风险 / 不确定点
+            {currentAction?.observation ? (
+              <div className="mt-2 rounded-xl bg-stone-50 p-4">
+                <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                  我的判断
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-700">
+                  {currentAction.observation}
                 </p>
               </div>
-              <p className="mt-3 text-sm leading-7 text-red-700">
-                如果目标用户、核心问题和第一版边界都还模糊，方案很容易看起来完整，但落地时失焦。
-              </p>
-            </div>
+            ) : null}
 
-            <div className="mt-2 rounded-xl bg-stone-50 p-4">
-              <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-                可选推进方式
-              </p>
-              <ActionOptions
-                onSelect={(option) => workspaceStore.getState().setInputValue(option)}
-                options={defaultOptions}
-              />
-            </div>
-
-            <div className="mt-2 rounded-xl bg-stone-950 p-4">
-              <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
-                <ChevronRight className="h-3.5 w-3.5 text-stone-400" />
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-                  下一步
+            {currentAction?.challenge ? (
+              <div className="mt-2 rounded-xl border border-red-100 bg-red-50/60 p-4">
+                <div className="flex items-center gap-2 border-b border-red-100 pb-3">
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-red-500">
+                    风险 / 不确定点
+                  </p>
+                </div>
+                <p className="mt-3 text-sm leading-7 text-red-700">
+                  {currentAction.challenge}
                 </p>
               </div>
-              <p className="mt-3 text-sm leading-7 text-stone-100">{nextQuestion}</p>
-            </div>
-            
+            ) : null}
+
+            {currentAction?.suggestion ? (
+              <div className="mt-2 rounded-xl bg-stone-50 p-4">
+                <p className="border-b border-stone-100 pb-3 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                  PM 建议
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-700">
+                  {currentAction.suggestion}
+                </p>
+              </div>
+            ) : null}
+
+            {currentAction?.question ? (
+              <div className="mt-2 rounded-xl bg-stone-950 p-4">
+                <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
+                  <ChevronRight className="h-3.5 w-3.5 text-stone-400" />
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                    下一步
+                  </p>
+                </div>
+                <p className="mt-3 text-sm leading-7 text-stone-100">{currentAction.question}</p>
+              </div>
+            ) : null}
+
             <button
               onClick={() => setShowAnalysis(false)}
               className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50 py-2.5 text-xs text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800"
@@ -237,14 +238,14 @@ export function AssistantTurnCard({
               收起深度分析
             </button>
           </>
-        ) : (
+        ) : hasAnalysis ? (
           <button
             onClick={() => setShowAnalysis(true)}
             className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50/50 py-2.5 text-xs text-stone-500 transition-colors hover:bg-stone-50 hover:text-stone-800"
           >
             展开 AI 深度分析及推理
           </button>
-        )}
+        ) : null}
       </div>
       <AssistantVersionHistoryDialog
         onClose={() => setHistoryOpen(false)}

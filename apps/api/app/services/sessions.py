@@ -270,6 +270,7 @@ def _infer_conversation_strategy(decision: AgentTurnDecision) -> str:
 
 def _conversation_strategy_label(strategy: str) -> str:
     labels = {
+        "greet": "欢迎问候",
         "clarify": "继续澄清",
         "choose": "推动取舍",
         "converge": "收敛推进",
@@ -505,11 +506,26 @@ def update_session(
 
 
 def delete_session(db: Session, session_id: str, user_id: str) -> None:
+    from app.db.models import (
+        AgentTurnDecision,
+        AssistantReplyGroup,
+        AssistantReplyVersion,
+        ConversationMessage,
+        PrdSnapshot,
+        ProjectStateVersion,
+    )
+
     session = sessions_repository.get_session_for_user(db, session_id, user_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     try:
+        db.query(AssistantReplyVersion).filter(AssistantReplyVersion.session_id == session_id).delete()
+        db.query(AssistantReplyGroup).filter(AssistantReplyGroup.session_id == session_id).delete()
+        db.query(AgentTurnDecision).filter(AgentTurnDecision.session_id == session_id).delete()
+        db.query(ConversationMessage).filter(ConversationMessage.session_id == session_id).delete()
+        db.query(ProjectStateVersion).filter(ProjectStateVersion.session_id == session_id).delete()
+        db.query(PrdSnapshot).filter(PrdSnapshot.session_id == session_id).delete()
         db.delete(session)
         db.commit()
     except Exception:

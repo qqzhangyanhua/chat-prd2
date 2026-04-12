@@ -8,6 +8,8 @@ from app.agent.types import ConversationStrategy, WorkflowStage
 
 
 class StateSnapshot(BaseModel):
+    model_config = {"extra": "ignore"}
+
     idea: str
     stage_hint: str
     iteration: int

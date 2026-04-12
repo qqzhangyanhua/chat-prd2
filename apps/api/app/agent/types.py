@@ -12,7 +12,7 @@ NextMove = Literal[
     "summarize_and_confirm",
     "force_rank_or_choose",
 ]
-ConversationStrategy = Literal["clarify", "converge", "confirm", "choose"]
+ConversationStrategy = Literal["greet", "clarify", "converge", "confirm", "choose"]
 SuggestionType = Literal["direction", "tradeoff", "recommendation", "warning"]
 
 UnderstandingRiskHint = Literal["user_too_broad", "problem_too_vague", "solution_before_problem"]
@@ -26,6 +26,10 @@ class NextAction:
     action: ActionName
     target: ActionTarget | None
     reason: str
+    observation: str = ""
+    challenge: str = ""
+    suggestion: str = ""
+    question: str = ""
 
 
 @dataclass

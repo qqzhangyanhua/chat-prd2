@@ -162,6 +162,10 @@ export interface NextAction {
   action: string;
   reason: string;
   target: string | null;
+  observation?: string;
+  challenge?: string;
+  suggestion?: string;
+  question?: string;
 }
 
 export interface WorkspaceMessage {

@@ -49,6 +49,16 @@ class ProjectSession(Base):
     messages: Mapped[list[ConversationMessage]] = relationship(
         back_populates="session", cascade="all, delete-orphan",
     )
+    reply_groups: Mapped[list[AssistantReplyGroup]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+    )
+    reply_versions: Mapped[list[AssistantReplyVersion]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+        foreign_keys="[AssistantReplyVersion.session_id]",
+    )
+    turn_decisions: Mapped[list[AgentTurnDecision]] = relationship(
+        back_populates="session", cascade="all, delete-orphan",
+    )
 
 
 class ProjectStateVersion(Base):
@@ -124,6 +134,8 @@ class AssistantReplyGroup(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+    session: Mapped[ProjectSession] = relationship(back_populates="reply_groups")
+
 
 class AssistantReplyVersion(Base):
     __tablename__ = "assistant_reply_versions"
@@ -167,6 +179,10 @@ class AssistantReplyVersion(Base):
         default=lambda: datetime.now(timezone.utc),
     )
 
+    session: Mapped[ProjectSession] = relationship(
+        back_populates="reply_versions", foreign_keys=[session_id],
+    )
+
 
 class AgentTurnDecision(Base):
     __tablename__ = "agent_turn_decisions"
@@ -197,6 +213,8 @@ class AgentTurnDecision(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+
+    session: Mapped[ProjectSession] = relationship(back_populates="turn_decisions")
 
 
 class LLMModelConfig(Base):
