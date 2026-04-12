@@ -13,7 +13,7 @@
 - **默认端口**: 8000
 - **健康检查**: `GET /api/health`（返回 schema 状态，若 outdated 返回 503 + recovery_action）
 
-如果你正在维护“生成 PRD”链路，先看：
+如果你正在维护"生成 PRD"链路，先看：
 
 - [`/Users/zhangyanhua/AI/chat-prd2/docs/contracts/README.md`](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/README.md)
 - [`/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-runtime-contract.md`](/Users/zhangyanhua/AI/chat-prd2/docs/contracts/prd-runtime-contract.md)
@@ -103,7 +103,11 @@ app/
     auth.py                   -- 认证业务逻辑
     sessions.py               -- 会话业务（含 SCHEMA_OUTDATED_DETAIL 常量）
     exports.py                -- PRD 导出业务
-    messages.py               -- 消息发送/重新生成，Agent 调用，SSE 流组装
+    messages.py               -- 消息发送/重新生成编排层（委托给 message_* 模块）
+    message_preparation.py    -- 消息准备：加载状态、模型配置、构建上下文
+    message_state.py          -- 状态管理：更新 state、保存版本
+    message_persistence.py    -- 持久化：保存消息、回复组、回复版本、决策记录
+    message_models.py         -- 消息相关数据模型（MessageContext, MessageResult 等）
     prd_runtime.py            -- PRD 运行时 helper（预览 sections / meta，组装 `prd.updated` payload）
     model_gateway.py          -- LLM HTTP 客户端（httpx），流式/结构化提取
   repositories/
@@ -128,7 +132,7 @@ app/
     types.py                  -- Agent 数据类型（NextAction, AgentResult, TurnDecision, PmMentorOutput 等）
 alembic/
   env.py                      -- Alembic 迁移环境
-  versions/                   -- 迁移脚本（0001-0009）
+  versions/                   -- 迁移脚本（0001-0009 + merge head）
 ```
 
 ## 关键依赖与配置
@@ -212,6 +216,15 @@ class ApiError(HTTPException):
 4. `_infer_conversation_strategy()`：依据 confidence + missing_count 推断 clarify / converge / confirm
 5. 组装 `AgentResult`（reply_mode 固定为 `"local"`，reply 为 LLM 输出的 reply 字段）
 
+## 消息服务模块化
+
+`messages.py` 作为编排层，具体逻辑分散在：
+
+- **message_preparation.py**: 准备消息上下文（加载状态、模型配置、构建 MessageContext）
+- **message_state.py**: 状态管理（更新 state、保存版本）
+- **message_persistence.py**: 持久化（保存消息、回复组、回复版本、决策记录）
+- **message_models.py**: 消息相关数据模型（MessageContext, MessageResult 等）
+
 ## 测试与质量
 
 - **框架**: pytest + FastAPI TestClient
@@ -226,12 +239,18 @@ class ApiError(HTTPException):
 | `test_sessions.py` | 会话 CRUD |
 | `test_messages_stream.py` | 消息发送 + SSE 流事件序列、`prd.updated` payload |
 | `test_messages_service.py` | 消息服务单元测试、regenerate 持久化、PRD runtime 契约 |
+| `test_message_service_modules.py` | 消息服务模块（preparation/state/persistence）单元测试 |
+| `test_message_pipeline_modules.py` | 消息管道模块集成测试 |
 | `test_models.py` | ORM 模型实例化 |
 | `test_agent_runtime.py` | run_agent() 边界条件（completed / fallback / pm_mentor 路由） |
+| `test_pm_mentor.py` | PM Mentor 模块测试 |
+| `test_prd_updater.py` | PRD 更新器测试 |
 | `test_agent_types_contract.py` | 类型契约/dataclass 字段（NextMove, TurnDecision, PmMentorOutput, StateSnapshot） |
 | `test_model_gateway.py` | LLM 网关错误处理 |
 | `test_model_configs.py` | 模型配置 CRUD 端点 |
 | `test_config.py` | 环境变量加载 + Settings |
+| `test_greeting_bug_exploration.py` | 问候语友好响应测试（bug condition exploration） |
+| `test_preservation_properties.py` | 保留属性测试（产品需求输入处理） |
 
 运行: `pytest apps/api/tests -q` 或 `pnpm test:api`
 
@@ -252,6 +271,7 @@ apps/api/
   alembic/versions/0007_add_agent_turn_decisions.py
   alembic/versions/0008_add_recommended_usage_to_llm_model_configs.py
   alembic/versions/0009_add_recommended_scene_to_llm_model_configs.py
+  alembic/versions/d6068a59fd07_merge_heads.py
   app/main.py
   app/core/config.py
   app/core/security.py
@@ -274,6 +294,10 @@ apps/api/
   app/services/sessions.py
   app/services/exports.py
   app/services/messages.py
+  app/services/message_preparation.py
+  app/services/message_state.py
+  app/services/message_persistence.py
+  app/services/message_models.py
   app/services/prd_runtime.py
   app/services/model_gateway.py
   app/repositories/auth.py
@@ -299,18 +323,25 @@ apps/api/
   tests/test_sessions.py
   tests/test_messages_stream.py
   tests/test_messages_service.py
+  tests/test_message_service_modules.py
+  tests/test_message_pipeline_modules.py
   tests/test_models.py
   tests/test_agent_runtime.py
+  tests/test_pm_mentor.py
+  tests/test_prd_updater.py
   tests/test_agent_types_contract.py
   tests/test_model_gateway.py
   tests/test_model_configs.py
   tests/test_config.py
+  tests/test_greeting_bug_exploration.py
+  tests/test_preservation_properties.py
 ```
 
 ## 变更记录 (Changelog)
 
 | 日期 | 操作 | 说明 |
 |------|------|------|
+| 2026-04-12 | UPDATED | 消息服务模块化：新增 message_preparation/state/persistence/models；新增测试文件：greeting_bug_exploration, preservation_properties, pm_mentor, prd_updater, message_service_modules, message_pipeline_modules；补充 merge head 迁移 |
 | 2026-04-11 | UPDATED | Agent 模块重构：移除 decision_engine / reply_composer / suggestion_planner / understanding / validation_flows / prompts，改为 runtime → pm_mentor 两层架构；更新测试文件表、文件清单、模块描述 |
 | 2026-04-09 | UPDATED | 同步 PRD 运行时结构：补充 `docs/contracts` 入口、`prd_runtime.py`、`prd.updated.meta` 与 regenerate 持久化说明 |
 | 2026-04-08 | UPDATED | 新增 ApiError/recovery_action、模型配置管理路由、recommended_scene/usage 字段、迁移 0008/0009、Agent 子模块详解（validation_flows, suggestion_planner 等）、重新生成接口、完整测试文件列表 |

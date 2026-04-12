@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-08T09:42:31",
+  "generated_at": "2026-04-12T14:38:35",
   "project_name": "ai-cofounder",
   "root_claude_md": "CLAUDE.md",
   "modules": [
@@ -31,6 +31,11 @@
         "apps/api/app/services/sessions.py",
         "apps/api/app/services/exports.py",
         "apps/api/app/services/messages.py",
+        "apps/api/app/services/message_preparation.py",
+        "apps/api/app/services/message_state.py",
+        "apps/api/app/services/message_persistence.py",
+        "apps/api/app/services/message_models.py",
+        "apps/api/app/services/prd_runtime.py",
         "apps/api/app/services/model_gateway.py"
       ],
       "repositories": [
@@ -60,29 +65,33 @@
         "apps/api/tests/test_sessions.py",
         "apps/api/tests/test_messages_stream.py",
         "apps/api/tests/test_messages_service.py",
+        "apps/api/tests/test_message_service_modules.py",
+        "apps/api/tests/test_message_pipeline_modules.py",
         "apps/api/tests/test_models.py",
         "apps/api/tests/test_agent_runtime.py",
-        "apps/api/tests/test_agent_decision_engine.py",
-        "apps/api/tests/test_agent_reply_composer.py",
-        "apps/api/tests/test_agent_understanding.py",
-        "apps/api/tests/test_agent_suggestion_planner.py",
+        "apps/api/tests/test_pm_mentor.py",
+        "apps/api/tests/test_prd_updater.py",
         "apps/api/tests/test_agent_types_contract.py",
         "apps/api/tests/test_model_gateway.py",
         "apps/api/tests/test_model_configs.py",
-        "apps/api/tests/test_config.py"
+        "apps/api/tests/test_config.py",
+        "apps/api/tests/test_greeting_bug_exploration.py",
+        "apps/api/tests/test_preservation_properties.py"
       ],
       "migration_dir": "apps/api/alembic/versions",
       "latest_migration": "0009_add_recommended_scene_to_llm_model_configs",
       "important_paths": [
         "apps/api/app/agent/runtime.py",
-        "apps/api/app/agent/decision_engine.py",
-        "apps/api/app/agent/reply_composer.py",
-        "apps/api/app/agent/suggestion_planner.py",
-        "apps/api/app/agent/understanding.py",
+        "apps/api/app/agent/pm_mentor.py",
         "apps/api/app/agent/extractor.py",
-        "apps/api/app/agent/validation_flows.py",
+        "apps/api/app/agent/prd_updater.py",
+        "apps/api/app/agent/finalize_flow.py",
         "apps/api/app/agent/types.py",
-        "apps/api/app/agent/prompts.py",
+        "apps/api/app/services/messages.py",
+        "apps/api/app/services/message_preparation.py",
+        "apps/api/app/services/message_state.py",
+        "apps/api/app/services/message_persistence.py",
+        "apps/api/app/services/prd_runtime.py",
         "apps/api/app/core/api_error.py",
         "apps/api/app/core/admin.py",
         "apps/api/app/api/deps.py",
@@ -101,13 +110,16 @@
         "apps/web/src/lib/sse.ts",
         "apps/web/src/lib/types.ts",
         "apps/web/src/lib/recovery-action.ts",
-        "apps/web/src/lib/stream-error.ts"
+        "apps/web/src/lib/stream-error.ts",
+        "apps/web/src/lib/new-session-draft.ts"
       ],
       "pages": [
         "apps/web/src/app/page.tsx",
         "apps/web/src/app/login/page.tsx",
         "apps/web/src/app/register/page.tsx",
         "apps/web/src/app/workspace/page.tsx",
+        "apps/web/src/app/workspace/home/page.tsx",
+        "apps/web/src/app/workspace/new/page.tsx",
         "apps/web/src/app/workspace/[sessionId]/page.tsx",
         "apps/web/src/app/admin/models/page.tsx"
       ],
@@ -142,13 +154,15 @@
       "stores": [
         "apps/web/src/store/auth-store.ts",
         "apps/web/src/store/workspace-store.ts",
+        "apps/web/src/store/prd-store-helpers.ts",
         "apps/web/src/store/toast-store.ts"
       ],
       "config_files": [
         "apps/web/package.json",
         "apps/web/tsconfig.json",
         "apps/web/next.config.ts",
-        "apps/web/vitest.config.ts"
+        "apps/web/vitest.config.ts",
+        "apps/web/tailwind.config.ts"
       ],
       "test_dir": "apps/web/src/test",
       "test_files": [
@@ -159,6 +173,8 @@
         "apps/web/src/test/auth-form.test.tsx",
         "apps/web/src/test/home-auth-redirect.test.tsx",
         "apps/web/src/test/model-config-admin-page.test.tsx",
+        "apps/web/src/test/prd-panel.test.tsx",
+        "apps/web/src/test/prd-store-helpers.test.ts",
         "apps/web/src/test/recovery-action.test.ts",
         "apps/web/src/test/root-page.test.tsx",
         "apps/web/src/test/session-sidebar.test.tsx",
@@ -167,6 +183,7 @@
         "apps/web/src/test/use-schema-gate.test.ts",
         "apps/web/src/test/workspace-composer.test.tsx",
         "apps/web/src/test/workspace-entry.test.tsx",
+        "apps/web/src/test/workspace-explicit-entry-pages.test.tsx",
         "apps/web/src/test/workspace-left-nav-grouping-pbt.test.tsx",
         "apps/web/src/test/workspace-left-nav-grouping.test.tsx",
         "apps/web/src/test/workspace-page.test.tsx",
@@ -176,7 +193,9 @@
       ],
       "important_paths": [
         "apps/web/src/store/workspace-store.ts",
+        "apps/web/src/store/prd-store-helpers.ts",
         "apps/web/src/components/workspace/composer.tsx",
+        "apps/web/src/components/workspace/workspace-entry.tsx",
         "apps/web/src/lib/api.ts",
         "apps/web/src/lib/sse.ts",
         "apps/web/src/lib/recovery-action.ts",
@@ -190,24 +209,82 @@
     ".gitignore",
     ".env"
   ],
-  "scripts": ["scripts/dev.ps1"],
+  "scripts": [
+    "scripts/dev.ps1",
+    "scripts/dev.sh"
+  ],
   "docs": [
     "docs/startup.md",
+    "docs/backend-flow.md",
+    "docs/contracts/README.md",
+    "docs/contracts/prd-runtime-contract.md",
+    "docs/contracts/prd-runtime-refactor-summary.md",
     "docs/superpowers/specs/2026-04-01-ai-cofounder-v1-design.md",
-    "docs/superpowers/plans/2026-04-01-ai-cofounder-v1-implementation.md"
+    "docs/superpowers/specs/2026-04-03-web-tailwind-shadcn-design.md",
+    "docs/superpowers/specs/2026-04-06-model-management-openai-compatible-design.md",
+    "docs/superpowers/specs/2026-04-06-workspace-regenerate-version-history-design.md",
+    "docs/superpowers/specs/2026-04-06-prd-structured-extraction-design.md",
+    "docs/superpowers/specs/2026-04-07-strong-pm-agent-design.md",
+    "docs/superpowers/specs/2026-04-07-workspace-turn-decision-guidance-design.md",
+    "docs/superpowers/specs/2026-04-08-prd-critic-refine-loop-design.md",
+    "docs/superpowers/specs/2026-04-10-pm-mentor-architecture-design.md",
+    "docs/superpowers/specs/2026-04-06-workspace-explicit-entry-design.md",
+    "docs/superpowers/specs/2026-04-11-workspace-bootstrap-design.md",
+    "docs/superpowers/plans/2026-04-01-ai-cofounder-v1-implementation.md",
+    "docs/superpowers/plans/2026-04-06-model-management-openai-compatible-implementation.md",
+    "docs/superpowers/plans/2026-04-06-workspace-regenerate-version-history-implementation.md",
+    "docs/superpowers/plans/2026-04-06-prd-structured-extraction-implementation.md",
+    "docs/superpowers/plans/2026-04-07-strong-pm-agent-phase1.md",
+    "docs/superpowers/plans/2026-04-07-workspace-turn-decision-guidance-implementation.md",
+    "docs/superpowers/plans/2026-04-09-prd-critic-refine-loop-implementation.md",
+    "docs/superpowers/plans/2026-04-10-pm-mentor-architecture.md",
+    "docs/superpowers/plans/2026-04-06-workspace-explicit-entry.md",
+    "docs/superpowers/plans/2026-04-11-workspace-bootstrap-implementation.md",
+    "docs/superpowers/plans/2026-04-12-pm-mentor-conversation-ux-implementation.md"
   ],
   "coverage": {
-    "total_source_files_estimated": 89,
-    "files_scanned": 67,
-    "coverage_percent": 75,
+    "total_source_files_estimated": 95,
+    "files_scanned": 95,
+    "coverage_percent": 100,
     "modules_covered": ["apps/api", "apps/web"],
-    "files_skipped_reason": {
-      "venv_and_node_modules": ".venv / node_modules -- 依赖目录，忽略",
-      "next_build_output": "apps/web/.next -- 构建产物，忽略",
-      "large_files_partial": "apps/api/app/services/messages.py 超 10000 token，仅读取前 80 行"
+    "api_coverage": {
+      "routes": 6,
+      "services": 10,
+      "repositories": 9,
+      "agent_modules": 5,
+      "schemas": 6,
+      "tests": 17,
+      "migrations": 11
+    },
+    "web_coverage": {
+      "pages": 8,
+      "components": 24,
+      "hooks": 2,
+      "lib_modules": 6,
+      "stores": 4,
+      "tests": 23
+    },
+    "documentation_coverage": {
+      "root_doc": "complete",
+      "module_docs": "complete",
+      "contracts": "complete",
+      "specs": 11,
+      "plans": 11
     }
   },
   "gaps": [],
+  "new_since_last_scan": [
+    "消息服务模块化（message_preparation, message_state, message_persistence, message_models）",
+    "新增测试文件：test_greeting_bug_exploration.py, test_preservation_properties.py",
+    "新增测试文件：test_pm_mentor.py, test_prd_updater.py",
+    "新增测试文件：test_message_service_modules.py, test_message_pipeline_modules.py",
+    "新增工作台路由：/workspace/home, /workspace/new",
+    "新增测试文件：workspace-explicit-entry-pages.test.tsx, prd-store-helpers.test.ts",
+    "新增 prd-store-helpers.ts 模块",
+    "新增 merge head 迁移：d6068a59fd07_merge_heads.py",
+    "Agent 模块重构：移除 decision_engine/reply_composer/suggestion_planner/understanding/validation_flows/prompts",
+    "Agent 模块简化为：runtime → pm_mentor 两层架构"
+  ],
   "previous_gaps_resolved": [
     "ApiError/recovery_action 体系",
     "LLM 模型配置管理路由（admin + user 端）",
@@ -223,26 +300,61 @@
     "workspace-left-nav 折叠/分组",
     "hooks/ 目录",
     "model_gateway.py 服务",
-    "重新生成消息 API"
+    "重新生成消息 API",
+    "prd_runtime.py 服务",
+    "PRD 运行时契约文档"
+  ],
+  "recommendations": [
+    "所有核心模块已完整扫描并生成文档",
+    "测试覆盖完整，包含单元测试、集成测试和属性测试（PBT）",
+    "文档结构清晰，包含根级、模块级和契约文档",
+    "消息服务已模块化，职责清晰分离",
+    "Agent 架构已简化为两层（runtime → pm_mentor），易于维护",
+    "建议定期更新文档以反映代码变更"
+  ],
+  "next_steps": [
+    "如需深入了解 PRD 生成链路，参考 docs/contracts/README.md",
+    "如需修改 Agent 行为，参考 apps/api/app/agent/ 目录（runtime.py, pm_mentor.py）",
+    "如需修改前端状态管理，参考 apps/web/src/store/ 目录",
+    "如需添加新的 API 端点，遵循 Repository -> Service -> Route 三层架构",
+    "如需修改消息处理流程，参考 message_preparation/state/persistence/models 模块",
+    "如需修改工作台入口行为，参考 workspace-entry.tsx 的 autoRedirectToLatest prop"
   ],
   "truncated": false,
+  "scan_complete": true,
   "ignore_rules_source": ".gitignore",
   "ignored_patterns": [
     "node_modules/**",
-    ".next/**",
-    ".venv/**",
-    "__pycache__/**",
-    ".pytest_cache/**",
-    ".mypy_cache/**",
+    ".git/**",
+    ".github/**",
     "dist/**",
-    "coverage/**",
-    ".env",
-    ".env.*",
+    "build/**",
+    ".next/**",
+    "__pycache__/**",
     "*.lock",
     "*.log",
     "*.bin",
     "*.pdf",
     "*.png",
-    "*.jpg"
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.mp4",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    ".worktrees/**",
+    ".venv/**",
+    ".pytest_cache/**",
+    ".mypy_cache/**",
+    ".env",
+    ".env.*",
+    "coverage/**",
+    ".DS_Store",
+    ".superpowers/**",
+    ".claude/worktrees/**",
+    ".kiro/**",
+    ".vscode/**",
+    "output/**"
   ]
 }
