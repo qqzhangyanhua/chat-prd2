@@ -94,3 +94,6 @@ class PmMentorOutput:
     prd_updates: dict[str, dict[str, Any]] = field(default_factory=dict)
     confidence: Literal["high", "medium", "low"] = "medium"
     next_focus: str = "problem"
+    suggestions: list[Suggestion] = field(default_factory=list)
+    recommendation: dict[str, Any] | None = None
+    next_move: NextMove | None = None

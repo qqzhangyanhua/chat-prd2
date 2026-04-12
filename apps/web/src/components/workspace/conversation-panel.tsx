@@ -22,6 +22,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const decisionGuidance = useWorkspaceStore((state) => state.decisionGuidance);
   const collaborationModeLabel = useWorkspaceStore((state) => state.collaborationModeLabel);
+  const prdMeta = useWorkspaceStore((state) => state.prd.meta);
   const streamPhase = useWorkspaceStore((state) => state.streamPhase);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -59,7 +60,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
       ? (replyGroups[latestAssistantMessageMeta.replyGroupId]?.versions ?? []).map((version) => ({
           assistantVersionId: version.id,
           content: version.content,
-          createdAt: undefined,
+          createdAt: version.createdAt,
           isLatest: version.isLatest,
           versionNo: version.versionNo,
         }))
@@ -68,6 +69,70 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
     latestAssistantMessageMeta?.replyGroupId
       ? replyGroups[latestAssistantMessageMeta.replyGroupId]?.userMessageId ?? null
       : null;
+
+  const assistantStatus = (() => {
+    if (isStreaming && pendingRequestMode === "regenerate") {
+      return {
+        label: "重新生成中",
+        tone: "active" as const,
+        hint: "正在基于同一轮问题生成新版本。",
+      };
+    }
+
+    if (streamPhase === "waiting") {
+      return {
+        label: "等待回应",
+        tone: "active" as const,
+        hint: "已收到你的输入，正在组织下一轮回复。",
+      };
+    }
+
+    if (isStreaming) {
+      return {
+        label: "生成回复中",
+        tone: "active" as const,
+        hint: "AI 正在补全当前回复。",
+      };
+    }
+
+    if (lastInterrupted && latestAssistantMessage.length > 0) {
+      return {
+        label: "已暂停",
+        tone: "warning" as const,
+        hint: "你可以继续补充调整点，我会从当前上下文接着推进。",
+      };
+    }
+
+    if (prdMeta.stageTone === "final") {
+      return {
+        label: prdMeta.stageLabel,
+        tone: "success" as const,
+        hint: "如果还想调整内容，直接继续说要改哪里，我会基于终稿继续修改。",
+      };
+    }
+
+    if (prdMeta.stageTone === "ready") {
+      return {
+        label: prdMeta.stageLabel,
+        tone: "neutral" as const,
+        hint: prdMeta.nextQuestion ?? "当前信息已接近终稿，可以继续确认或补充细节。",
+      };
+    }
+
+    if (decisionGuidance?.strategyLabel) {
+      return {
+        label: decisionGuidance.strategyLabel,
+        tone: "active" as const,
+        hint: null,
+      };
+    }
+
+    return {
+      label: prdMeta.stageLabel,
+      tone: "active" as const,
+      hint: null,
+    };
+  })();
 
   const hasNoHistory = historyMessages.length === 0 && !isStreaming;
   const shouldShowGuidance = streamPhase !== "waiting" && !isStreaming;
@@ -117,6 +182,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
           canRegenerate={Boolean(selectedModelConfigId && regenerateUserMessageId)}
           collaborationModeLabel={collaborationModeLabel}
           currentAction={currentAction}
+          statusBadge={assistantStatus}
           isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
           isWaiting={isWaitingForNew}
           latestAssistantMessage={latestAssistantMessage}

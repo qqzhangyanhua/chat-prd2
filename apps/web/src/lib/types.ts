@@ -98,7 +98,15 @@ export interface AssistantReplyGroup {
   versions: AssistantReplyVersion[];
 }
 
-export type DecisionStrategy = "clarify" | "choose" | "converge" | "confirm";
+export type DecisionStrategy = "greet" | "clarify" | "choose" | "converge" | "confirm";
+
+export interface SuggestionOption {
+  content: string;
+  label: string;
+  priority: number;
+  rationale: string;
+  type: string;
+}
 
 export interface AgentTurnDecisionSectionMeta {
   conversation_strategy?: string;
@@ -106,6 +114,7 @@ export interface AgentTurnDecisionSectionMeta {
   strategy_reason?: string;
   next_best_questions?: unknown[];
   confirm_quick_replies?: unknown[];
+  suggestion_options?: unknown[];
 }
 
 export interface AgentTurnDecisionSection {
@@ -140,6 +149,7 @@ export interface DecisionGuidance {
   strategyReason: string | null;
   nextBestQuestions: string[];
   confirmQuickReplies?: string[];
+  suggestionOptions?: SuggestionOption[];
 }
 
 export interface SessionSnapshotResponse {
@@ -309,10 +319,27 @@ export type WorkspaceEvent =
             assistant_message_id: string;
             model_config_id: string;
             prd_snapshot_version: number;
+            created_at?: string | null;
             is_regeneration: boolean;
             is_latest: boolean;
             message_id?: string;
           };
+    }
+  | {
+      type: "assistant.error";
+      data: {
+        session_id: string;
+        user_message_id: string;
+        reply_group_id?: string | null;
+        assistant_version_id?: string | null;
+        version_no?: number | null;
+        model_config_id: string;
+        code: string;
+        message: string;
+        recovery_action: ApiRecoveryAction;
+        is_regeneration: boolean;
+        is_latest: boolean;
+      };
     }
   | {
       type: "prd.updated";

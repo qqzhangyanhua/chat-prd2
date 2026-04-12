@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationPanel } from "../components/workspace/conversation-panel";
@@ -410,6 +410,165 @@ describe("ConversationPanel empty state", () => {
     render(<ConversationPanel sessionId="session-1" />);
 
     expect(screen.getByText(/开始描述你的想法/i)).toBeInTheDocument();
+  });
+});
+
+describe("ConversationPanel status and history", () => {
+  beforeEach(() => {
+    vi.mocked(sendMessage).mockReset();
+    vi.mocked(regenerateMessage).mockReset();
+    useToastStore.getState().clearToast();
+    workspaceStore.setState(workspaceStore.getInitialState(), true);
+    workspaceStore.getState().setAvailableModelConfigs([
+      {
+        id: "model-openai",
+        name: "OpenAI GPT-4.1",
+        model: "gpt-4.1",
+      },
+    ]);
+  });
+
+  it("shows a finalized badge instead of the hardcoded ongoing label when workflow is completed", () => {
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      state: {
+        workflow_stage: "completed",
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+        finalization_ready: true,
+        critic_result: {
+          overall_verdict: "pass",
+        },
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "这是最终整理后的 PRD 版本。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "demo-session",
+          user_message_id: "user-1",
+          latest_version_id: "version-1",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "这是最终整理后的 PRD 版本。",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 4,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+    }));
+
+    render(<ConversationPanel sessionId="demo-session" />);
+
+    expect(screen.getByText("已生成终稿")).toBeInTheDocument();
+    expect(screen.queryByText("持续引导中")).not.toBeInTheDocument();
+  });
+
+  it("shows reply version timestamps in the history dialog", () => {
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-2",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "第二版回复",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 2,
+          is_latest: true,
+        },
+      ],
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "demo-session",
+          user_message_id: "user-1",
+          latest_version_id: "version-2",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "第一版回复",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 2,
+              created_at: "2026-04-05 10:00",
+              is_latest: false,
+            },
+            {
+              id: "version-2",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 2,
+              content: "第二版回复",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 3,
+              created_at: "2026-04-05 10:30",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+    }));
+
+    render(<ConversationPanel sessionId="demo-session" />);
+    fireEvent.click(screen.getByRole("button", { name: "重新生成历史" }));
+
+    const dialog = screen.getByRole("dialog", { name: "重新生成历史" });
+    expect(within(dialog).getAllByText("2026-04-05 10:30")).toHaveLength(2);
+    expect(within(dialog).getByText("2026-04-05 10:00")).toBeInTheDocument();
   });
 });
 
@@ -1024,35 +1183,39 @@ describe("ConversationPanel decision guidance", () => {
     expect(screen.queryByText("下一步建议")).not.toBeInTheDocument();
   });
 
-  it("writes stable confirmation quick replies into the composer during confirm stage", async () => {
+  it("fills the composer input when a structured suggestion option is clicked", async () => {
     const guidance: DecisionGuidance = {
-      conversationStrategy: "confirm",
-      strategyLabel: "确认中",
-      strategyReason: "需要先锁定当前共识",
-      nextBestQuestions: ["请确认当前理解是否准确"],
-      confirmQuickReplies: [
-        "确认，继续下一步",
-        "不对，先改目标用户",
-        "不对，先改核心问题",
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户几个容易选择的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "从模糊方向开始",
+          content: "我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。",
+          rationale: "适合还在很早期、需要 AI 先给框架的情况。",
+          priority: 1,
+          type: "direction",
+        },
       ],
     };
 
     workspaceStore.setState({
-      ...workspaceStore.getState(),
       messages: [
-        { id: "user-1", role: "user", content: "先讲清问题" },
-        { id: "assistant-1", role: "assistant", content: "我们先锁定共识" },
+        { id: "user-1", role: "user", content: "你好" },
+        { id: "assistant-1", role: "assistant", content: "先选一个最接近你的方向。" },
       ],
       decisionGuidance: guidance,
     });
 
     render(<ConversationPanel sessionId="session-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "确认，继续下一步" }));
+    fireEvent.click(screen.getByRole("button", { name: /从模糊方向开始/i }));
 
     await waitFor(() => {
-      expect(workspaceStore.getState().inputValue).toBe("确认，继续下一步");
-      expect(screen.getByRole("textbox")).toHaveValue("确认，继续下一步");
+      expect(workspaceStore.getState().inputValue).toBe("我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。");
+      expect(screen.getByRole("textbox")).toHaveValue("我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。");
     });
   });
 });

@@ -116,6 +116,70 @@ describe("AssistantTurnCard", () => {
     });
   });
 
+  it("renders structured suggestion options before question chips", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户几个容易选择的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "讨论产品想法",
+          content: "我有一个产品想法，想和你一起梳理成清晰的 PRD。",
+          rationale: "适合已经有方向、想快速进入产品讨论的情况。",
+          priority: 1,
+          type: "direction",
+        },
+      ],
+    };
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        latestAssistantMessage="先选一个最接近你的方向。"
+      />,
+    );
+
+    expect(screen.getByText("可直接选择一个方向")).toBeInTheDocument();
+    expect(screen.getByText("讨论产品想法")).toBeInTheDocument();
+    expect(screen.getByText("我有一个产品想法，想和你一起梳理成清晰的 PRD。")).toBeInTheDocument();
+  });
+
+  it("uses suggestion option content for the selection callback", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户几个容易选择的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "从模糊方向开始",
+          content: "我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。",
+          rationale: "适合还在很早期、需要 AI 先给框架的情况。",
+          priority: 1,
+          type: "direction",
+        },
+      ],
+    };
+    const onSelect = vi.fn();
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        onSelectDecisionGuidanceQuestion={onSelect}
+        latestAssistantMessage="先选一个最接近你的方向。"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /从模糊方向开始/i }));
+
+    expect(onSelect).toHaveBeenCalledWith("我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。");
+  });
+
   it("shows collaboration mode label when provided", () => {
     render(
       <AssistantTurnCard

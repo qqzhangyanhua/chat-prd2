@@ -40,25 +40,27 @@ def _create_enabled_model_config(testing_session_local) -> str:
         db.close()
 
 
-def _mock_gateway_reply(monkeypatch, reply: str = "这是测试回复") -> None:
+def _mock_gateway_reply(monkeypatch, reply: str = "这是测试回复", **overrides) -> None:
+    payload = {
+        "observation": "用户补充了具体信息",
+        "challenge": "当前信息是否足够聚焦？",
+        "suggestion": "先锁定一个最重要的判断维度",
+        "question": "你想先确认目标用户还是核心问题？",
+        "reply": reply,
+        "prd_updates": {
+            "target_user": {
+                "title": "目标用户",
+                "content": "独立开发者",
+                "status": "confirmed",
+            }
+        },
+        "confidence": "medium",
+        "next_focus": "problem",
+    }
+    payload.update(overrides)
     monkeypatch.setattr(
         "app.agent.pm_mentor.call_pm_mentor_llm",
-        lambda **_: {
-            "observation": "用户补充了具体信息",
-            "challenge": "当前信息是否足够聚焦？",
-            "suggestion": "先锁定一个最重要的判断维度",
-            "question": "你想先确认目标用户还是核心问题？",
-            "reply": reply,
-            "prd_updates": {
-                "target_user": {
-                    "title": "目标用户",
-                    "content": "独立开发者",
-                    "status": "confirmed",
-                }
-            },
-            "confidence": "medium",
-            "next_focus": "problem",
-        },
+        lambda **_: payload,
     )
 
 
@@ -209,15 +211,56 @@ def test_export_returns_real_prd_content_after_message_updates_snapshot(
     assert "独立开发者" in data["content"]
 
 
-def test_get_session_returns_latest_snapshot(auth_client, seeded_session):
+
+
+def test_get_session_exposes_suggestion_options_in_turn_decision_meta(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(
+        monkeypatch,
+        suggestions=[
+            {
+                "type": "direction",
+                "label": "先聊独立开发者",
+                "content": "我想先从独立开发者的场景开始聊。",
+                "rationale": "更容易快速举出真实例子。",
+                "priority": 1,
+            }
+        ],
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "我有个想法，但不知道怎么说",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
     response = auth_client.get(f"/api/sessions/{seeded_session}")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["session"]["id"] == seeded_session
-    assert data["state"]["idea"]
-    assert "sections" in data["prd_snapshot"]
-    assert "assistant_reply_groups" in data
+    latest_decision = data["turn_decisions"][-1]
+    next_step = next(
+        section for section in latest_decision["decision_sections"] if section["key"] == "next_step"
+    )
+    assert next_step["meta"]["suggestion_options"] == [
+        {
+            "label": "先聊独立开发者",
+            "content": "我想先从独立开发者的场景开始聊。",
+            "rationale": "更容易快速举出真实例子。",
+            "priority": 1,
+            "type": "direction",
+        }
+    ]
 
 
 def test_get_session_returns_explicit_503_when_turn_decision_table_is_missing():

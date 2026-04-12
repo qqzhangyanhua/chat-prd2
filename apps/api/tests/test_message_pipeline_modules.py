@@ -108,7 +108,7 @@ def test_persist_assistant_reply_and_version_creates_reply_group_and_assistant_m
     )
     db_session.commit()
 
-    assistant_message_id, reply_group_id, version_no, version_id, prd_snapshot_version = (
+    assistant_message_id, reply_group_id, version_no, version_id, prd_snapshot_version, created_at = (
         persist_assistant_reply_and_version(
             db=db_session,
             session_id=session.id,
@@ -161,4 +161,5 @@ def test_persist_assistant_reply_and_version_creates_reply_group_and_assistant_m
     assert version_no == 1
     assert version_id == "version-1"
     assert prd_snapshot_version == 2
+    assert created_at is not None
     assert assistant_message.content == "这是整理后的回复"

@@ -23,6 +23,7 @@ from app.repositories import prd as prd_repository
 from app.repositories import state as state_repository
 from app.schemas.message import AssistantDeltaEventData
 from app.schemas.message import AssistantDoneEventData
+from app.schemas.message import AssistantErrorEventData
 from app.schemas.message import AssistantVersionStartedEventData
 from app.schemas.message import MessageAcceptedEventData
 from app.schemas.message import ReplyGroupCreatedEventData
@@ -67,6 +68,39 @@ from app.services.prd_runtime import preview_prd_sections as _preview_prd_sectio
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"
+
+
+def _build_assistant_error_event(
+    *,
+    session_id: str,
+    user_message_id: str,
+    reply_group_id: str | None,
+    assistant_version_id: str | None,
+    version_no: int | None,
+    model_config_id: str,
+    message: str,
+    is_regeneration: bool,
+) -> MessageStreamEvent:
+    return MessageStreamEvent(
+        type="assistant.error",
+        data=AssistantErrorEventData(
+            session_id=session_id,
+            user_message_id=user_message_id,
+            reply_group_id=reply_group_id,
+            assistant_version_id=assistant_version_id,
+            version_no=version_no,
+            model_config_id=model_config_id,
+            code="MODEL_STREAM_FAILED",
+            message=message,
+            recovery_action={
+                "type": "retry",
+                "label": "稍后重试",
+                "target": None,
+            },
+            is_regeneration=is_regeneration,
+            is_latest=False,
+        ).model_dump(),
+    )
 
 def _require_turn_decision(agent_result: object) -> object:
     return _require_turn_decision_impl(agent_result)
@@ -137,7 +171,7 @@ def _persist_assistant_reply_and_version(
     state_patch: dict,
     prd_patch: dict,
     model_config: LLMModelConfig | None = None,
-) -> tuple[str, str, int, str, int]:
+) -> tuple[str, str, int, str, int, str | None]:
     return _persist_assistant_reply_and_version_impl(
         db=db,
         session_id=session_id,
@@ -236,7 +270,7 @@ def handle_user_message(
                 messages=_build_gateway_messages(db, session_id),
             )
 
-        assistant_message_id, _, _, _, _ = _persist_assistant_reply_and_version(
+        assistant_message_id, _, _, _, _, _ = _persist_assistant_reply_and_version(
             db=db,
             session_id=session_id,
             session=session,
@@ -332,6 +366,7 @@ def stream_user_message_events(
         )
 
         reply_parts: list[str] = []
+        error_event: MessageStreamEvent | None = None
         try:
             for delta in prepared.reply_stream:
                 reply_parts.append(delta)
@@ -358,14 +393,27 @@ def stream_user_message_events(
                 prepared.model_meta["base_url"],
                 exc,
             )
-            return
+            error_event = _build_assistant_error_event(
+                session_id=session_id,
+                user_message_id=prepared.user_message_id,
+                reply_group_id=prepared.reply_group_id,
+                assistant_version_id=prepared.assistant_version_id,
+                version_no=prepared.next_version_no,
+                model_config_id=prepared.model_meta["model_config_id"],
+                message=str(exc),
+                is_regeneration=False,
+            )
         finally:
             close = getattr(prepared.reply_stream, "close", None)
             if callable(close):
                 close()
 
+        if error_event is not None:
+            yield error_event
+            return
+
         try:
-            assistant_message_id, reply_group_id, version_no, version_id, prd_snapshot_version = _persist_assistant_reply_and_version(
+            assistant_message_id, reply_group_id, version_no, version_id, prd_snapshot_version, created_at = _persist_assistant_reply_and_version(
                 db=db,
                 session_id=session_id,
                 session=session,
@@ -409,6 +457,7 @@ def stream_user_message_events(
                 assistant_message_id=assistant_message_id,
                 model_config_id=prepared.model_meta["model_config_id"],
                 prd_snapshot_version=prd_snapshot_version,
+                created_at=created_at,
                 is_regeneration=False,
                 is_latest=True,
             ).model_dump() | {"message_id": assistant_message_id},
@@ -432,7 +481,7 @@ def _persist_regenerated_reply_version(
     state: dict,
     state_patch: dict,
     prd_patch: dict,
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, str | None]:
     return _persist_regenerated_reply_version_impl(
         db=db,
         session_id=session_id,
@@ -486,6 +535,7 @@ def stream_regenerate_message_events(
         )
 
         reply_parts: list[str] = []
+        error_event: MessageStreamEvent | None = None
         try:
             for delta in prepared.reply_stream:
                 reply_parts.append(delta)
@@ -513,14 +563,27 @@ def stream_regenerate_message_events(
                 prepared.model_meta["base_url"],
                 exc,
             )
-            return
+            error_event = _build_assistant_error_event(
+                session_id=session_id,
+                user_message_id=prepared.user_message_id,
+                reply_group_id=prepared.reply_group_id,
+                assistant_version_id=prepared.assistant_version_id,
+                version_no=prepared.next_version_no,
+                model_config_id=prepared.model_meta["model_config_id"],
+                message=str(exc),
+                is_regeneration=True,
+            )
         finally:
             close = getattr(prepared.reply_stream, "close", None)
             if callable(close):
                 close()
 
+        if error_event is not None:
+            yield error_event
+            return
+
         try:
-            version_id, version_no, prd_snapshot_version = _persist_regenerated_reply_version(
+            version_id, version_no, prd_snapshot_version, created_at = _persist_regenerated_reply_version(
                 db=db,
                 session_id=session_id,
                 session=session,
@@ -560,6 +623,7 @@ def stream_regenerate_message_events(
                 assistant_message_id=prepared.assistant_message_id,
                 model_config_id=prepared.model_meta["model_config_id"],
                 prd_snapshot_version=prd_snapshot_version,
+                created_at=created_at,
                 is_regeneration=True,
                 is_latest=True,
             ).model_dump(),

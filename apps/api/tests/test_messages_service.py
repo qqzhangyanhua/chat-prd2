@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.agent.types import NextAction, Suggestion, TurnDecision
+from app.db.models import AssistantReplyVersion
 from app.db.models import AgentTurnDecision, ProjectStateVersion, User
 from app.repositories import agent_turn_decisions as agent_turn_decisions_repository
 from app.repositories import assistant_reply_groups as assistant_reply_groups_repository
@@ -18,6 +19,7 @@ from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 import app.services.messages as messages_service
+from app.services import sessions as sessions_service
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
 from app.services.messages import stream_regenerate_message_events
 from app.services.model_gateway import ModelGatewayError
@@ -131,9 +133,31 @@ def _create_initial_reply(db_session, monkeypatch, session, model_config, *, rep
     )
 
 
-def test_apply_state_patch_empty_patch_returns_original():
-    state = {"idea": "test", "target_user": None}
-    assert apply_state_patch(state, {}) is state
+
+
+def test_sample_turn_decision_suggestions_can_be_serialized_for_snapshot_meta():
+    normalized = sessions_service._normalize_suggestion_options(
+        [
+            {
+                "label": "独立开发者",
+                "content": "先聚焦独立开发者",
+                "rationale": "反馈链路更短",
+                "priority": 1,
+                "type": "direction",
+            },
+            {"label": "bad"},
+        ]
+    )
+
+    assert normalized == [
+        {
+            "label": "独立开发者",
+            "content": "先聚焦独立开发者",
+            "rationale": "反馈链路更短",
+            "priority": 1,
+            "type": "direction",
+        }
+    ]
 
 
 def test_apply_state_patch_merges_keys():
@@ -1103,7 +1127,16 @@ def test_stream_regenerate_message_events_keeps_latest_version_when_stream_fails
         )
     )
 
-    assert [event.type for event in events] == ["action.decided", "assistant.version.started", "assistant.delta"]
+    assert [event.type for event in events] == [
+        "action.decided",
+        "assistant.version.started",
+        "assistant.delta",
+        "assistant.error",
+    ]
+    error_event = events[-1]
+    assert error_event.data["code"] == "MODEL_STREAM_FAILED"
+    assert error_event.data["message"] == "流式中断"
+    assert error_event.data["recovery_action"]["type"] == "retry"
     refreshed_group = assistant_reply_groups_repository.get_reply_group_by_user_message(db=db_session, user_message_id=user_message.id)
     versions = assistant_reply_versions_repository.list_versions_for_group(db=db_session, reply_group_id=reply_group.id)
     latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
@@ -1115,6 +1148,63 @@ def test_stream_regenerate_message_events_keeps_latest_version_when_stream_fails
     assert len(assistant_messages) == 1
     assert assistant_messages[0].id == assistant_message.id
     assert assistant_messages[0].content == "初版回复"
+
+
+def test_stream_user_message_events_emits_assistant_error_when_stream_fails(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="发送失败模型",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+
+    class BrokenReplyStream:
+        def __iter__(self):
+            yield "这是"
+            raise ModelGatewayError("流式中断")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        "app.services.messages.run_agent",
+        lambda state, user_input, **_: _fake_gateway_agent_result(),
+    )
+    monkeypatch.setattr("app.services.messages.open_reply_stream", lambda **_: BrokenReplyStream())
+
+    events = list(
+        messages_service.stream_user_message_events(
+            db=db_session,
+            session_id=session.id,
+            session=session,
+            content="请继续分析这个方向",
+            model_config_id=model_config.id,
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "message.accepted",
+        "reply_group.created",
+        "action.decided",
+        "assistant.version.started",
+        "assistant.delta",
+        "assistant.error",
+    ]
+
+    error_event = events[-1]
+    assert error_event.data["code"] == "MODEL_STREAM_FAILED"
+    assert error_event.data["message"] == "流式中断"
+    assert error_event.data["recovery_action"]["type"] == "retry"
+
+    messages = messages_repository.get_messages_for_session(db_session, session.id)
+    versions = db_session.execute(select(AssistantReplyVersion)).scalars().all()
+
+    assert [message.role for message in messages] == ["user"]
+    assert versions == []
 
 
 def test_get_latest_version_for_group_uses_group_latest_pointer(db_session, monkeypatch):

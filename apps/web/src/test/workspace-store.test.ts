@@ -185,6 +185,85 @@ describe("workspace store", () => {
     expect(store.getState().lastSubmittedInput).toBe("我想先服务独立开发者");
   });
 
+  it("closes streaming state and preserves accepted user message when assistant.error arrives", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想先服务独立开发者");
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: {
+        message_id: "user-1",
+        session_id: "session-1",
+      },
+    });
+    store.getState().applyEvent({
+      type: "reply_group.created",
+      data: {
+        reply_group_id: "group-1",
+        user_message_id: "user-1",
+        session_id: "session-1",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        delta: "先继续明确他们最痛的一次产品决策卡点。",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.error",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        model_config_id: "model-openai",
+        code: "MODEL_STREAM_FAILED",
+        message: "流式中断",
+        recovery_action: {
+          type: "retry",
+          label: "稍后重试",
+          target: null,
+        },
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+
+    expect(store.getState().errorMessage).toBe("流式中断");
+    expect(store.getState().isStreaming).toBe(false);
+    expect(store.getState().streamPhase).toBe("idle");
+    expect(store.getState().messages.some((message) => message.role === "user" && message.id === "user-1")).toBe(true);
+    expect(store.getState().activeAssistantVersionId).toBeNull();
+    expect(store.getState().activeReplyGroupId).toBeNull();
+  });
+
   it("marks the latest assistant draft as interrupted after manual cancel", () => {
     const store = createWorkspaceStore();
 
@@ -1060,6 +1139,79 @@ describe("workspace store", () => {
     expect(store.getState().messages.at(-1)?.content).toBe("第二版");
   });
 
+  it("stores assistant version createdAt when assistant.done arrives", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().startRequest("我想先服务独立开发者");
+    store.getState().applyEvent({
+      type: "message.accepted",
+      data: { message_id: "user-1", session_id: "session-1" },
+    });
+    store.getState().applyEvent({
+      type: "reply_group.created",
+      data: {
+        reply_group_id: "group-1",
+        user_message_id: "user-1",
+        session_id: "session-1",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.version.started",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.delta",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: null,
+        model_config_id: "model-openai",
+        delta: "第一版",
+        is_regeneration: false,
+        is_latest: false,
+      },
+    });
+    store.getState().applyEvent({
+      type: "assistant.done",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        reply_group_id: "group-1",
+        assistant_version_id: "version-1",
+        version_id: "version-1",
+        version_no: 1,
+        assistant_message_id: "assistant-1",
+        model_config_id: "model-openai",
+        prd_snapshot_version: 2,
+        created_at: "2026-04-07T10:00:00Z",
+        is_regeneration: false,
+        is_latest: true,
+        message_id: "assistant-1",
+      },
+    });
+
+    expect(store.getState().replyGroups["group-1"]?.versions[0]).toMatchObject({
+      id: "version-1",
+      createdAt: "2026-04-07T10:00:00Z",
+      isLatest: true,
+    });
+  });
+
   it("updates the visible assistant card after regenerate on a hydrated session", () => {
     const store = createWorkspaceStore();
 
@@ -1498,24 +1650,97 @@ describe("decision guidance", () => {
     expect(store.getState().decisionGuidance?.strategyReason).toBe("最后一条");
   });
 
-  it("normalizes next best questions, filters/reduces duplicates, and defaults strategy values", () => {
+  it("hydrates structured suggestion options from next_step meta", () => {
     const store = createWorkspaceStore();
     const snapshot = buildSnapshotWithDecisions([
       {
-        id: "decision-normalize",
+        id: "decision-suggestions",
         session_id: "session-1",
-        created_at: "2026-04-07T13:00:00Z",
-        state_patch_json: {
-          next_best_questions: [
-            " 先问对方的关键指标  ",
-            "",
-            "先问对方的关键指标",
-            "再确认痛点",
-            "再确认预算",
-            "再确认交付",
-            "保持开放",
-          ],
+        created_at: "2026-04-07T10:00:00Z",
+        decision_sections: [
+          {
+            key: "judgement",
+            meta: {
+              conversation_strategy: "greet",
+              strategy_label: "欢迎引导",
+              strategy_reason: "先给用户几个容易选择的方向。",
+            },
+          },
+          {
+            key: "next_step",
+            meta: {
+              suggestion_options: [
+                {
+                  label: "讨论产品想法",
+                  content: "我有一个产品想法，想和你一起梳理成清晰的 PRD。",
+                  rationale: "适合已经有方向、想快速进入产品讨论的情况。",
+                  priority: 2,
+                  type: "direction",
+                },
+                {
+                  label: "从模糊方向开始",
+                  content: "我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。",
+                  rationale: "适合还在很早期、需要 AI 先给框架的情况。",
+                  priority: 1,
+                  type: "direction",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户几个容易选择的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "从模糊方向开始",
+          content: "我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。",
+          rationale: "适合还在很早期、需要 AI 先给框架的情况。",
+          priority: 1,
+          type: "direction",
         },
+        {
+          label: "讨论产品想法",
+          content: "我有一个产品想法，想和你一起梳理成清晰的 PRD。",
+          rationale: "适合已经有方向、想快速进入产品讨论的情况。",
+          priority: 2,
+          type: "direction",
+        },
+      ],
+    });
+  });
+
+  it("keeps guidance when only structured suggestion options are present", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-options-only",
+        session_id: "session-1",
+        created_at: "2026-04-07T14:00:00Z",
+        decision_sections: [
+          {
+            key: "next_step",
+            meta: {
+              suggestion_options: [
+                {
+                  label: "先聊目标用户",
+                  content: "我想先把目标用户讲清楚，再继续往下拆。",
+                  rationale: "先定用户，后续问题和方案更容易收敛。",
+                  priority: 1,
+                  type: "direction",
+                },
+              ],
+            },
+          },
+        ],
       },
     ]);
 
@@ -1525,59 +1750,18 @@ describe("decision guidance", () => {
       conversationStrategy: "clarify",
       strategyLabel: "澄清中",
       strategyReason: null,
-      nextBestQuestions: [
-        "先问对方的关键指标",
-        "再确认痛点",
-        "再确认预算",
-        "再确认交付",
-      ],
+      nextBestQuestions: [],
       confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "先聊目标用户",
+          content: "我想先把目标用户讲清楚，再继续往下拆。",
+          rationale: "先定用户，后续问题和方案更容易收敛。",
+          priority: 1,
+          type: "direction",
+        },
+      ],
     });
-  });
-
-  it("drops non-string recommendations instead of throwing", () => {
-    const store = createWorkspaceStore();
-    const snapshot = buildSnapshotWithDecisions([
-      {
-        id: "decision-non-string",
-        session_id: "session-1",
-        created_at: "2026-04-07T16:00:00Z",
-        state_patch_json: {
-          next_best_questions: [
-            "可用问题",
-            null,
-            42,
-            { text: "结构体" },
-            "最后一个",
-          ],
-        },
-      },
-    ]);
-
-    store.getState().hydrateSession(snapshot);
-
-    expect(store.getState().decisionGuidance?.nextBestQuestions).toEqual([
-      "可用问题",
-      "最后一个",
-    ]);
-  });
-
-  it("does not generate guidance when normalized recommendations are empty", () => {
-    const store = createWorkspaceStore();
-    const snapshot = buildSnapshotWithDecisions([
-      {
-        id: "decision-empty",
-        session_id: "session-1",
-        created_at: "2026-04-07T14:00:00Z",
-        state_patch_json: {
-          next_best_questions: ["", "   "],
-        },
-      },
-    ]);
-
-    store.getState().hydrateSession(snapshot);
-
-    expect(store.getState().decisionGuidance).toBeNull();
   });
 });
 

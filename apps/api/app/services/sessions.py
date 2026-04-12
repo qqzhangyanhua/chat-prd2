@@ -7,6 +7,38 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+
+def _normalize_suggestion_options(raw_options: object) -> list[dict]:
+    if not isinstance(raw_options, list):
+        return []
+
+    normalized: list[dict] = []
+    for item in raw_options:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        content = item.get("content")
+        rationale = item.get("rationale")
+        priority = item.get("priority")
+        suggestion_type = item.get("type")
+        if not isinstance(label, str) or not label.strip():
+            continue
+        if not isinstance(content, str) or not content.strip():
+            continue
+        if not isinstance(rationale, str) or not rationale.strip():
+            continue
+        normalized.append(
+            {
+                "label": label.strip(),
+                "content": content.strip(),
+                "rationale": rationale.strip(),
+                "priority": priority if isinstance(priority, int) and priority > 0 else len(normalized) + 1,
+                "type": suggestion_type if isinstance(suggestion_type, str) else "direction",
+            }
+        )
+    return sorted(normalized, key=lambda item: item["priority"])
+
+
 def build_reply_sections(decision: object) -> list[dict]:
     phase_goal = getattr(decision, "phase_goal", None) or "继续推进当前 PRD"
     strategy_reason = getattr(decision, "strategy_reason", None) or "继续澄清当前关键信息。"
@@ -225,6 +257,7 @@ def _build_turn_decision_sections(
     strategy_reason = _infer_strategy_reason(decision, conversation_strategy)
     next_best_questions = _infer_next_best_questions(decision, conversation_strategy)
     confirm_quick_replies = _infer_confirm_quick_replies(decision, conversation_strategy)
+    suggestion_options = _normalize_suggestion_options(decision.suggestions_json or [])
     snapshot = SimpleNamespace(
         phase=decision.phase,
         phase_goal=decision.phase_goal,
@@ -251,6 +284,7 @@ def _build_turn_decision_sections(
             meta = {
                 "next_best_questions": next_best_questions,
                 "confirm_quick_replies": confirm_quick_replies,
+                "suggestion_options": suggestion_options,
             }
         sections.append(
             AgentTurnDecisionSectionResponse.model_validate({**section, "meta": meta})
@@ -265,12 +299,15 @@ def _infer_conversation_strategy(decision: AgentTurnDecision) -> str:
         return "converge"
     if decision.next_move == "summarize_and_confirm":
         return "confirm"
+    strategy_from_state = (decision.state_patch_json or {}).get("conversation_strategy")
+    if strategy_from_state in {"greet", "clarify", "choose", "converge", "confirm"}:
+        return strategy_from_state
     return "clarify"
 
 
 def _conversation_strategy_label(strategy: str) -> str:
     labels = {
-        "greet": "欢迎问候",
+        "greet": "欢迎引导",
         "clarify": "继续澄清",
         "choose": "推动取舍",
         "converge": "收敛推进",
@@ -280,6 +317,11 @@ def _conversation_strategy_label(strategy: str) -> str:
 
 
 def _infer_next_best_questions(decision: AgentTurnDecision, strategy: str) -> list[str]:
+    explicit_questions = (decision.state_patch_json or {}).get("next_best_questions")
+    if isinstance(explicit_questions, list):
+        cleaned = [item.strip() for item in explicit_questions if isinstance(item, str) and item.strip()]
+        if cleaned:
+            return cleaned
     confirmations = decision.needs_confirmation_json or []
     if strategy == "confirm":
         return confirmations or ["请确认当前理解是否准确"]
@@ -322,7 +364,13 @@ def _infer_confirm_quick_replies(decision: AgentTurnDecision, strategy: str) -> 
 
 
 def _infer_strategy_reason(decision: AgentTurnDecision, strategy: str) -> str:
+    state_patch = decision.state_patch_json or {}
+    explicit_reason = state_patch.get("strategy_reason")
+    if isinstance(explicit_reason, str) and explicit_reason.strip():
+        return explicit_reason.strip()
     risk_flags = decision.risk_flags_json or []
+    if strategy == "greet":
+        return "先用可选方向承接用户，再逐步进入正式梳理。"
     if strategy == "choose":
         return "目标用户仍然过泛，当前先推动你做主线取舍。"
     if strategy == "converge":
@@ -438,23 +486,20 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
     if state_version is None or prd_snapshot is None:
         _raise_session_snapshot_missing()
 
-    try:
-        sessions_repository.touch_session(db, session)
-        db.commit()
-        db.refresh(session)
-    except Exception:
-        db.rollback()
-        raise
+    session = sessions_repository.touch_session(db, session)
+    db.commit()
+    db.refresh(session)
 
     raw_messages = messages_repository.get_messages_for_session(db, session_id)
     assistant_reply_groups = _list_assistant_reply_groups(db, session_id)
+    messages = _build_timeline_messages(raw_messages, assistant_reply_groups)
     turn_decisions = _list_turn_decisions(db, session_id)
 
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(state_version.state_json),
         prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
-        messages=_build_timeline_messages(raw_messages, assistant_reply_groups),
+        messages=messages,
         assistant_reply_groups=assistant_reply_groups,
         turn_decisions=turn_decisions,
     )
@@ -463,7 +508,7 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
 def list_sessions(db: Session, user_id: str) -> SessionListResponse:
     sessions = sessions_repository.list_sessions_for_user(db, user_id)
     return SessionListResponse(
-        sessions=[SessionResponse.model_validate(session) for session in sessions],
+        sessions=[SessionResponse.model_validate(item) for item in sessions]
     )
 
 
@@ -477,57 +522,35 @@ def update_session(
     if session is None:
         _raise_session_not_found()
 
-    state_version = state_repository.get_latest_state_version(db, session_id)
-    prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
-
-    if state_version is None or prd_snapshot is None:
-        _raise_session_snapshot_missing()
-
-    try:
-        session = sessions_repository.update_session_title(db, session, payload.title)
-        db.commit()
-        db.refresh(session)
-    except Exception:
-        db.rollback()
-        raise
-
-    raw_messages = messages_repository.get_messages_for_session(db, session_id)
-    assistant_reply_groups = _list_assistant_reply_groups(db, session_id)
-    turn_decisions = _list_turn_decisions(db, session_id)
-
-    return SessionCreateResponse(
-        session=SessionResponse.model_validate(session),
-        state=StateSnapshot.model_validate(state_version.state_json),
-        prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
-        messages=_build_timeline_messages(raw_messages, assistant_reply_groups),
-        assistant_reply_groups=assistant_reply_groups,
-        turn_decisions=turn_decisions,
-    )
+    updated = sessions_repository.update_session_title(db, session, payload.title)
+    db.commit()
+    db.refresh(updated)
+    return get_session_snapshot(db, session_id, user_id)
 
 
 def delete_session(db: Session, session_id: str, user_id: str) -> None:
-    from app.db.models import (
-        AgentTurnDecision,
-        AssistantReplyGroup,
-        AssistantReplyVersion,
-        ConversationMessage,
-        PrdSnapshot,
-        ProjectStateVersion,
-    )
-
     session = sessions_repository.get_session_for_user(db, session_id, user_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        _raise_session_not_found()
 
-    try:
-        db.query(AssistantReplyVersion).filter(AssistantReplyVersion.session_id == session_id).delete()
-        db.query(AssistantReplyGroup).filter(AssistantReplyGroup.session_id == session_id).delete()
-        db.query(AgentTurnDecision).filter(AgentTurnDecision.session_id == session_id).delete()
-        db.query(ConversationMessage).filter(ConversationMessage.session_id == session_id).delete()
-        db.query(ProjectStateVersion).filter(ProjectStateVersion.session_id == session_id).delete()
-        db.query(PrdSnapshot).filter(PrdSnapshot.session_id == session_id).delete()
-        db.delete(session)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+    db.delete(session)
+    db.commit()
+
+
+def export_session_markdown(db: Session, session_id: str, user_id: str) -> str:
+    session = sessions_repository.get_session_for_user(db, session_id, user_id)
+    if session is None:
+        _raise_session_not_found()
+
+    latest_prd = prd_repository.get_latest_prd_snapshot(db, session_id)
+    if latest_prd is None:
+        return "# PRD\n\n暂无内容。"
+
+    lines = ["# PRD", ""]
+    for key, section in latest_prd.sections.items():
+        if not isinstance(section, dict):
+            continue
+        title = section.get("title") or key
+        content = section.get("content") or ""
+        lines.extend([f"## {title}", str(content), ""])
+    return "\n".join(lines).strip() + "\n"

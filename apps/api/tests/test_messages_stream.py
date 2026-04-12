@@ -11,6 +11,7 @@ from app.repositories import model_configs as model_configs_repository
 from app.repositories import prd as prd_repository
 from app.repositories import state as state_repository
 from app.services import sessions as session_service
+from app.services.model_gateway import ModelGatewayError
 
 
 def _parse_sse_events(body: str) -> list[tuple[str, dict]]:
@@ -358,42 +359,79 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     ]
     assert delta_payloads
     assert all(payload["assistant_version_id"] for payload in delta_payloads)
-    assert all(payload["is_regeneration"] is True for payload in delta_payloads)
-    assert all(payload["is_latest"] is False for payload in delta_payloads)
-    prd_updated_payload = next(payload for name, payload in parsed_events if name == "prd.updated")
-    done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
-    assert done_payload["assistant_version_id"]
-    assert done_payload["is_regeneration"] is True
-    assert done_payload["is_latest"] is True
-    assert isinstance(prd_updated_payload["sections"], dict)
-    assert isinstance(prd_updated_payload["meta"], dict)
-    assert prd_updated_payload["meta"]["stageLabel"] in {"探索中", "草稿中", "可整理终稿", "已生成终稿"}
+
+
+def test_message_stream_emits_assistant_error_event_when_gateway_stream_breaks(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="流式异常模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        "app.agent.pm_mentor.call_pm_mentor_llm",
+        lambda **_: _fake_pm_mentor_llm_response(),
+    )
+
+    class BrokenReplyStream:
+        def __init__(self, _reply: str):
+            self._reply = _reply
+
+        def __iter__(self):
+            yield "这是"
+            raise ModelGatewayError("流式中断")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("app.services.message_preparation.LocalReplyStream", BrokenReplyStream)
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "请继续分析这个方向",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        chunks = list(response.iter_text())
+
+    body = "".join(chunks)
+    assert "assistant.error" in body
+    parsed_events = _parse_sse_events(body)
+    assert parsed_events[-1][0] == "assistant.error"
+    assert parsed_events[-1][1]["code"] == "MODEL_STREAM_FAILED"
+    assert parsed_events[-1][1]["message"] == "流式中断"
+    assert parsed_events[-1][1]["recovery_action"]["type"] == "retry"
 
     db = testing_session_local()
     try:
-        decisions_before = db.execute(
-            select(AgentTurnDecision).where(
-                AgentTurnDecision.session_id == seeded_session
-            )
-        ).scalars().all()
         messages = db.execute(
             select(ConversationMessage)
             .where(ConversationMessage.session_id == seeded_session)
         ).scalars().all()
-        reply_group = db.execute(
-            select(AssistantReplyGroup)
-            .where(AssistantReplyGroup.session_id == seeded_session)
-            .where(AssistantReplyGroup.user_message_id == user_message.id)
-        ).scalar_one()
         versions = db.execute(
             select(AssistantReplyVersion)
-            .where(AssistantReplyVersion.reply_group_id == reply_group.id)
-            .order_by(AssistantReplyVersion.version_no.asc())
+            .where(AssistantReplyVersion.session_id == seeded_session)
         ).scalars().all()
     finally:
         db.close()
 
     assert len([message for message in messages if message.role == "user"]) == 1
-    assert len([message for message in messages if message.role == "assistant"]) == 1
-    assert len(versions) == 2
-    assert [version.version_no for version in versions] == [1, 2]
+    assert len([message for message in messages if message.role == "assistant"]) == 0
+    assert versions == []

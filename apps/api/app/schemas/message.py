@@ -60,6 +60,27 @@ class AssistantDoneEventData(BaseModel):
     assistant_message_id: str
     model_config_id: str
     prd_snapshot_version: int
+    created_at: str | None = None
+    is_regeneration: bool
+    is_latest: bool
+
+
+class AssistantErrorRecoveryAction(BaseModel):
+    type: str
+    label: str
+    target: str | None = None
+
+
+class AssistantErrorEventData(BaseModel):
+    session_id: str
+    user_message_id: str
+    reply_group_id: str | None = None
+    assistant_version_id: str | None = None
+    version_no: int | None = None
+    model_config_id: str
+    code: str
+    message: str
+    recovery_action: AssistantErrorRecoveryAction
     is_regeneration: bool
     is_latest: bool
 

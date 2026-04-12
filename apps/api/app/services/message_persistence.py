@@ -29,7 +29,7 @@ def persist_assistant_reply_and_version(
     state_patch: dict,
     prd_patch: dict,
     model_config: LLMModelConfig | None = None,
-) -> tuple[str, str, int, str, int]:
+) -> tuple[str, str, int, str, int, str | None]:
     merged_state_patch = merge_state_patch_with_decision(
         state_patch,
         turn_decision,
@@ -96,6 +96,7 @@ def persist_assistant_reply_and_version(
         reply_version.version_no,
         assistant_version_id,
         next_state_version,
+        reply_version.created_at.isoformat() if reply_version.created_at is not None else None,
     )
 
 
@@ -114,7 +115,7 @@ def persist_regenerated_reply_version(
     state: dict,
     state_patch: dict,
     prd_patch: dict,
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, str | None]:
     base_state_version = state_repository.get_latest_state_version(db, session_id)
     if base_state_version is None:
         raise_regeneration_conflict("STATE_SNAPSHOT_MISSING", "State snapshot not found")
@@ -184,4 +185,9 @@ def persist_regenerated_reply_version(
     )
     messages_repository.touch_session_activity(db, session)
     db.commit()
-    return assistant_version_id, version_no, next_state_version
+    return (
+        assistant_version_id,
+        version_no,
+        next_state_version,
+        created_version.created_at.isoformat() if created_version.created_at is not None else None,
+    )

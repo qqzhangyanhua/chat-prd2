@@ -13,6 +13,7 @@ import type {
   PrdState,
   RecommendedScene,
   SessionSnapshotResponse,
+  SuggestionOption,
   WorkspaceEvent,
   WorkspaceMessage,
 } from "../lib/types";
@@ -33,6 +34,7 @@ type RequestMode = "new" | "regenerate";
 interface WorkspaceReplyVersion {
   assistantMessageId: string | null;
   content: string;
+  createdAt?: string;
   id: string;
   isLatest: boolean;
   isRegeneration: boolean;
@@ -88,6 +90,7 @@ interface WorkspaceState {
 }
 
 const STRATEGY_LABEL_MAP: Record<DecisionStrategy, string> = {
+  greet: "欢迎引导",
   clarify: "澄清中",
   choose: "取舍中",
   converge: "收敛中",
@@ -120,6 +123,51 @@ function normalizeBestQuestions(items?: unknown[]): string[] {
   }
 
   return normalized;
+}
+
+function normalizeSuggestionOptions(items?: unknown[]): SuggestionOption[] {
+  if (!items?.length) {
+    return [];
+  }
+
+  const normalized: SuggestionOption[] = [];
+
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    const label = typeof candidate.label === "string" ? candidate.label.trim() : "";
+    const content = typeof candidate.content === "string" ? candidate.content.trim() : "";
+    const rationale = typeof candidate.rationale === "string" ? candidate.rationale.trim() : "";
+    const type = typeof candidate.type === "string" ? candidate.type.trim() : "direction";
+    const priority = typeof candidate.priority === "number" && candidate.priority > 0
+      ? candidate.priority
+      : normalized.length + 1;
+
+    if (!label || !content || !rationale) {
+      continue;
+    }
+
+    if (normalized.some((option) => option.label === label && option.content === content)) {
+      continue;
+    }
+
+    normalized.push({
+      label,
+      content,
+      rationale,
+      priority,
+      type,
+    });
+
+    if (normalized.length >= 4) {
+      break;
+    }
+  }
+
+  return normalized.sort((a, b) => a.priority - b.priority);
 }
 
 function pickLatestDecision(decisions?: AgentTurnDecision[]): AgentTurnDecision | null {
@@ -162,8 +210,9 @@ function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance |
   const fallbackNextQuestions = decision.state_patch_json?.next_best_questions;
   const nextBestQuestions = normalizeBestQuestions(metaNextQuestions ?? fallbackNextQuestions);
   const confirmQuickReplies = normalizeBestQuestions(nextStepMeta?.confirm_quick_replies);
+  const suggestionOptions = normalizeSuggestionOptions(nextStepMeta?.suggestion_options);
 
-  if (!nextBestQuestions.length) {
+  if (!nextBestQuestions.length && !suggestionOptions.length) {
     return null;
   }
 
@@ -173,6 +222,7 @@ function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance |
     strategyReason,
     nextBestQuestions,
     confirmQuickReplies,
+    ...(suggestionOptions.length ? { suggestionOptions } : {}),
   };
 }
 
@@ -184,7 +234,7 @@ function mapStrategy(value?: string): DecisionStrategy {
   if (!value) {
     return "clarify";
   }
-  if (value === "clarify" || value === "choose" || value === "converge" || value === "confirm") {
+  if (value === "greet" || value === "clarify" || value === "choose" || value === "converge" || value === "confirm") {
     return value;
   }
   return "clarify";
@@ -228,6 +278,7 @@ function normalizeReplyGroups(groups: AssistantReplyGroup[]): Record<string, Wor
             id: version.id,
             versionNo: version.version_no,
             content: version.content,
+            createdAt: version.created_at,
             assistantMessageId: null,
             isRegeneration: version.version_no > 1,
             isLatest: version.is_latest ?? version.id === group.latest_version_id,
@@ -326,6 +377,12 @@ function extractAssistantDoneData(
   data: WorkspaceEvent["data"],
 ): Extract<WorkspaceEvent, { type: "assistant.done" }>["data"] {
   return data as Extract<WorkspaceEvent, { type: "assistant.done" }>["data"];
+}
+
+function extractAssistantErrorData(
+  data: WorkspaceEvent["data"],
+): Extract<WorkspaceEvent, { type: "assistant.error" }>["data"] {
+  return data as Extract<WorkspaceEvent, { type: "assistant.error" }>["data"];
 }
 
 function createInitialState(): Omit<
@@ -593,6 +650,7 @@ export function createWorkspaceStore() {
                     ? {
                         ...item,
                         assistantMessageId: doneData.assistant_message_id,
+                        createdAt: doneData.created_at ?? item.createdAt,
                         isLatest: true,
                       }
                     : { ...item, isLatest: false },
@@ -699,6 +757,28 @@ export function createWorkspaceStore() {
                   id: doneData.message_id,
                 },
               ],
+            };
+          }
+          case "assistant.error": {
+            const errorData = extractAssistantErrorData(event.data);
+            if (
+              errorData.assistant_version_id &&
+              state.activeAssistantVersionId &&
+              state.activeAssistantVersionId !== errorData.assistant_version_id
+            ) {
+              return state;
+            }
+
+            return {
+              ...state,
+              activeAssistantVersionId: null,
+              activeReplyGroupId: null,
+              errorMessage: errorData.message,
+              isStreaming: false,
+              lastInterrupted: false,
+              pendingRequestMode: null,
+              pendingUserInput: null,
+              streamPhase: "idle",
             };
           }
           case "prd.updated": {

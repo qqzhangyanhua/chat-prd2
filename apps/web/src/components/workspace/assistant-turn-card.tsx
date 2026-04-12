@@ -5,8 +5,15 @@ import {
   AssistantVersionHistoryDialog,
   type AssistantReplyVersionItem,
 } from "./assistant-version-history-dialog";
+import { ActionOptions } from "./action-options";
 
 export const DECISION_GUIDANCE_REASON_LABEL = "decision-guidance-reason";
+
+interface AssistantStatusBadge {
+  hint?: string | null;
+  label: string;
+  tone: "active" | "success" | "warning" | "neutral";
+}
 
 interface AssistantTurnCardProps {
   canRegenerate?: boolean;
@@ -17,6 +24,7 @@ interface AssistantTurnCardProps {
   latestAssistantMessage: string;
   onRegenerate?: () => void;
   replyVersions?: AssistantReplyVersionItem[];
+  statusBadge?: AssistantStatusBadge | null;
   showInterruptedMarker?: boolean;
   decisionGuidance?: DecisionGuidance | null;
   onSelectDecisionGuidanceQuestion?: (question: string) => void;
@@ -31,6 +39,7 @@ export function AssistantTurnCard({
   latestAssistantMessage,
   onRegenerate,
   replyVersions = [],
+  statusBadge = null,
   showInterruptedMarker = false,
   decisionGuidance = null,
   onSelectDecisionGuidanceQuestion,
@@ -48,12 +57,27 @@ export function AssistantTurnCard({
     decisionGuidance?.conversationStrategy === "confirm"
       ? decisionGuidance.confirmQuickReplies ?? []
       : [];
+  const suggestionOptions = decisionGuidance?.suggestionOptions ?? [];
   const hasAnalysis = !!(
     currentAction?.observation ||
     currentAction?.challenge ||
     currentAction?.suggestion ||
     currentAction?.question
   );
+  const badgeToneClassName = statusBadge?.tone === "success"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : statusBadge?.tone === "warning"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : statusBadge?.tone === "neutral"
+        ? "border-stone-200 bg-stone-100 text-stone-700"
+        : "border-sky-200 bg-sky-50 text-sky-700";
+  const badgeDotClassName = statusBadge?.tone === "success"
+    ? "bg-emerald-500"
+    : statusBadge?.tone === "warning"
+      ? "bg-amber-500"
+      : statusBadge?.tone === "neutral"
+        ? "bg-stone-500"
+        : "bg-sky-500";
 
   const openHistory = () => {
     setSelectedHistoryVersionId(latestReplyVersion?.assistantVersionId ?? null);
@@ -68,6 +92,9 @@ export function AssistantTurnCard({
             AI Co-founder
           </p>
           <h3 className="mt-1 text-base font-semibold text-stone-950">当前分析</h3>
+          {statusBadge?.hint ? (
+            <p className="mt-1 text-xs text-stone-500">{statusBadge.hint}</p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {replyVersions.length > 1 ? (
@@ -90,82 +117,94 @@ export function AssistantTurnCard({
               {isRegenerating ? "生成中..." : "重新生成"}
             </button>
           ) : null}
-          <div className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            持续引导中
-          </div>
+          {statusBadge ? (
+            <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${badgeToneClassName}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${badgeDotClassName}`} />
+              {statusBadge.label}
+            </div>
+          ) : null}
         </div>
       </div>
 
-        <div className="flex flex-col gap-px p-5">
-          <div className="rounded-xl bg-stone-50 p-4">
-            <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
-              <Layers className="h-3.5 w-3.5 text-stone-400" />
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
-                AI 回复
-              </p>
-            </div>
-            {isWaiting || (!latestAssistantMessage && isRegenerating) ? (
+      <div className="flex flex-col gap-px p-5">
+        <div className="rounded-xl bg-stone-50 p-4">
+          <div className="flex items-center gap-2 border-b border-stone-100 pb-3">
+            <Layers className="h-3.5 w-3.5 text-stone-400" />
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-stone-400">
+              AI 回复
+            </p>
+          </div>
+          {isWaiting || (!latestAssistantMessage && isRegenerating) ? (
             <div className="mt-3 flex items-center gap-2 py-1 text-sm text-stone-500">
               <span className="flex items-center gap-1">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '0ms' }} />
-                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '150ms' }} />
-                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: '300ms' }} />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: "0ms" }} />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: "150ms" }} />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-stone-300" style={{ animationDelay: "300ms" }} />
               </span>
               正在深度思考并组织回复...
             </div>
-            ) : (
-              <p className="mt-3 text-sm leading-7 text-stone-800 whitespace-pre-wrap">
-                {latestAssistantMessage || "正在思考并准备回复..."}
-              </p>
-            )}
-            {showInterruptedMarker ? (
-              <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                本轮已手动中断
-              </div>
-            ) : null}
-          </div>
-          {collaborationModeLabel ? (
-            <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600">
-              <span className="font-medium text-stone-500">当前协作模式</span>
-              <span className="font-semibold text-stone-900">{collaborationModeLabel}</span>
+          ) : (
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-800">
+              {latestAssistantMessage || "正在思考并准备回复..."}
+            </p>
+          )}
+          {showInterruptedMarker ? (
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              本轮已手动中断
             </div>
           ) : null}
+        </div>
+        {collaborationModeLabel ? (
+          <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600">
+            <span className="font-medium text-stone-500">当前协作模式</span>
+            <span className="font-semibold text-stone-900">{collaborationModeLabel}</span>
+          </div>
+        ) : null}
 
-          {decisionGuidance ? (
-            <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
-              <div className="flex items-center gap-2 border-b border-amber-100 pb-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-500">
-                  下一步建议
-                </span>
+        {decisionGuidance ? (
+          <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+            <div className="flex items-center gap-2 border-b border-amber-100 pb-3">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-500">
+                下一步建议
+              </span>
+            </div>
+            <p className="mt-3 text-sm font-semibold text-stone-900">{decisionGuidance.strategyLabel}</p>
+            {decisionGuidance.strategyReason ? (
+              <p
+                aria-label={DECISION_GUIDANCE_REASON_LABEL}
+                className="mt-2 text-sm text-stone-700"
+              >
+                {decisionGuidance.strategyReason}
+              </p>
+            ) : null}
+            {suggestionOptions.length > 0 ? (
+              <div className="mt-3">
+                <p className="mb-2 text-xs font-medium text-stone-500">可直接选择一个方向</p>
+                <ActionOptions
+                  onSelect={onSelectDecisionGuidanceQuestion}
+                  options={suggestionOptions}
+                />
               </div>
-              <p className="mt-3 text-sm font-semibold text-stone-900">{decisionGuidance.strategyLabel}</p>
-              {decisionGuidance.strategyReason ? (
-                <p
-                  aria-label={DECISION_GUIDANCE_REASON_LABEL}
-                  className="mt-2 text-sm text-stone-700"
-                >
-                  {decisionGuidance.strategyReason}
-                </p>
-              ) : null}
-              {confirmationReplies.length > 0 ? (
-                <>
-                  <p className="mt-3 text-xs font-medium text-stone-500">确认后直接回复</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {confirmationReplies.map((reply) => (
-                      <button
-                        key={reply}
-                        onClick={() => onSelectDecisionGuidanceQuestion?.(reply)}
-                        type="button"
-                        className="rounded-full border border-stone-200 bg-white px-3 py-1 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100"
-                      >
-                        {reply}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : null}
+            ) : null}
+            {confirmationReplies.length > 0 ? (
+              <>
+                <p className="mt-3 text-xs font-medium text-stone-500">确认后直接回复</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {confirmationReplies.map((reply) => (
+                    <button
+                      key={reply}
+                      onClick={() => onSelectDecisionGuidanceQuestion?.(reply)}
+                      type="button"
+                      className="rounded-full border border-stone-200 bg-white px-3 py-1 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100"
+                    >
+                      {reply}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            {suggestionOptions.length === 0 ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {decisionGuidance.nextBestQuestions.map((question, index) => (
                   <button
@@ -178,8 +217,9 @@ export function AssistantTurnCard({
                   </button>
                 ))}
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
+        ) : null}
 
         {hasAnalysis && showAnalysis ? (
           <>
