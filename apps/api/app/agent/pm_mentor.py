@@ -120,6 +120,112 @@ def _infer_conversation_strategy(
     return "clarify"
 
 
+def _is_low_information_input(user_input: str) -> bool:
+    """检测用户输入是否信息量很低。"""
+    normalized = user_input.strip().lower()
+    if not normalized:
+        return True
+    if len(normalized) <= 8:
+        return normalized in {"想法", "产品", "项目", "不知道", "没想好", "不清楚", "随便聊聊"}
+    markers = (
+        "不知道怎么说",
+        "没想清楚",
+        "还没想好",
+        "不太清楚",
+        "有个想法",
+        "模糊方向",
+        "想做个产品",
+        "想创业",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _has_concrete_idea_but_incomplete(user_input: str, state: dict[str, Any]) -> bool:
+    """检测用户是否已有具体想法但细节不完整。"""
+    normalized = user_input.strip().lower()
+    concrete_markers = (
+        "我想", "我要", "我打算", "我计划", "我的想法是",
+        "我想做", "我想开发", "我想创建", "我想建立",
+    )
+    has_concrete = any(marker in normalized for marker in concrete_markers)
+    if not has_concrete:
+        return False
+
+    sections = state.get("prd_snapshot", {}).get("sections", {})
+    confirmed_count = sum(
+        1 for v in sections.values()
+        if isinstance(v, dict) and v.get("status") == "confirmed"
+    )
+    missing_count = sum(
+        1 for v in sections.values()
+        if isinstance(v, dict) and v.get("status") == "missing"
+    )
+    return confirmed_count >= 1 and missing_count >= 1
+
+
+def _has_contradictory_info(user_input: str, state: dict[str, Any]) -> bool:
+    """检测用户是否提出了矛盾信息。"""
+    normalized = user_input.strip().lower()
+    contradiction_markers = (
+        "但是", "不过", "其实", "等等", "我改主意了",
+        "我想改", "我觉得不对", "我重新想想", "我改变主意",
+        "矛盾", "冲突", "不一致",
+    )
+    has_contradiction_signal = any(marker in normalized for marker in contradiction_markers)
+    if not has_contradiction_signal:
+        return False
+
+    sections = state.get("prd_snapshot", {}).get("sections", {})
+    draft_count = sum(
+        1 for v in sections.values()
+        if isinstance(v, dict) and v.get("status") == "draft"
+    )
+    return draft_count >= 2
+
+
+def _wants_quick_confirmation(user_input: str) -> bool:
+    """检测用户是否想要快速确认。"""
+    normalized = user_input.strip().lower()
+    confirmation_markers = (
+        "确认", "就这样", "就这个", "没问题", "可以了",
+        "差不多了", "差不多就这样", "就这样吧", "我觉得可以",
+        "我同意", "我赞成", "我认可", "我确认",
+    )
+    return any(marker in normalized for marker in confirmation_markers)
+
+
+def _wants_deep_dive(user_input: str, next_focus: str) -> bool:
+    """检测用户是否想要深度讨论某个维度。"""
+    normalized = user_input.strip().lower()
+    deep_dive_markers = (
+        "详细", "深入", "展开", "具体", "细节",
+        "再说说", "多说点", "讲讲", "说说",
+        "怎么", "如何", "为什么", "什么意思",
+    )
+    has_deep_dive_signal = any(marker in normalized for marker in deep_dive_markers)
+    return has_deep_dive_signal and next_focus in ALLOWED_NEXT_FOCUS
+
+
+def _is_jumping_around(user_input: str, state: dict[str, Any]) -> bool:
+    """检测用户是否在跳跃式思维（跳过当前阶段）。"""
+    normalized = user_input.strip().lower()
+    jump_markers = (
+        "方案", "解决方案", "怎么做", "怎么实现",
+        "技术", "技术栈", "开发", "实现",
+        "价格", "收费", "商业模式", "盈利",
+    )
+    has_jump_signal = any(marker in normalized for marker in jump_markers)
+    if not has_jump_signal:
+        return False
+
+    sections = state.get("prd_snapshot", {}).get("sections", {})
+    missing_count = sum(
+        1 for v in sections.values()
+        if isinstance(v, dict) and v.get("status") == "missing"
+    )
+    return missing_count >= 2
+
+
 def parse_pm_mentor_output(raw: dict[str, Any]) -> PmMentorOutput:
     observation = raw.get("observation") or ""
     challenge = raw.get("challenge") or ""
