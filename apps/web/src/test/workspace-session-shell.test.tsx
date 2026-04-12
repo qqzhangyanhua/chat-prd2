@@ -27,6 +27,32 @@ vi.mock("../lib/api", () => ({
   SCHEMA_OUTDATED_DETAIL: "数据库结构版本过旧，请先执行 alembic upgrade head",
 }));
 
+vi.mock("../hooks/use-auth-guard", () => ({
+  useAuthGuard: vi.fn(() => ({ hydrated: true })),
+}));
+
+vi.mock("../hooks/use-schema-gate", () => ({
+  useSchemaGate: vi.fn(() => ({
+    schemaHealth: null,
+    clearSchemaHealth: vi.fn(),
+    checkSchemaGate: vi.fn(),
+    isCheckingSchema: false,
+    syncSchemaFromError: vi.fn(),
+  })),
+}));
+
+vi.mock("../store/auth-store", () => ({
+  useAuthStore: vi.fn((selector) =>
+    selector({
+      accessToken: null,
+      user: null,
+      isAuthenticated: false,
+      setAuth: vi.fn(),
+      clearAuth: vi.fn(),
+    }),
+  ),
+}));
+
 describe("WorkspaceSessionShell", () => {
   beforeEach(() => {
     getSessionMock.mockReset();

@@ -106,8 +106,17 @@ export function WorkspaceEntry({ autoRedirectToLatest = true }: WorkspaceEntryPr
         { title: title || "未命名会话", initial_idea: trimmedIdea },
         accessToken,
       );
-      storeNewSessionDraft(response.session.id, trimmedIdea);
-      router.push(`/workspace?session=${response.session.id}`);
+      const sessionId = response.session.id;
+
+      // 存储 initial_idea：优先 URL param，超长时用 sessionStorage
+      if (trimmedIdea.length < 500) {
+        router.push(`/workspace?session=${sessionId}&initial_idea=${encodeURIComponent(trimmedIdea)}`);
+      } else {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(`initial_idea_${sessionId}`, trimmedIdea);
+        }
+        router.push(`/workspace?session=${sessionId}`);
+      }
     } catch (error) {
       setErrorCause(error);
       setErrorMessage(error instanceof Error ? error.message : "创建会话失败");

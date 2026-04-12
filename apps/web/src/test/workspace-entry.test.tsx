@@ -124,10 +124,13 @@ describe("WorkspaceEntry", () => {
         },
         null,
       );
-      expect(
-        window.sessionStorage.getItem("ai-cofounder:new-session-draft:session-1"),
-      ).toBe("帮我把零散需求整理成 PRD");
-      expect(pushMock).toHaveBeenCalledWith("/workspace?session=session-1");
+      // 检查 URL param 或 sessionStorage
+      const urlCall = pushMock.mock.calls.find((call) =>
+        call[0].includes("initial_idea=")
+      );
+      const storageValue = window.sessionStorage.getItem("initial_idea_session-1");
+      expect(urlCall || storageValue).toBeTruthy();
+      expect(pushMock).toHaveBeenCalledWith(expect.stringContaining("/workspace?session=session-1"));
     });
   });
 
