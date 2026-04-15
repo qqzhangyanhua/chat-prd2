@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 GUIDANCE_SUGGESTION_COUNT = 4
 
-ActionName = Literal["probe_deeper", "summarize_understanding"]
+ActionName = Literal["probe_deeper", "summarize_understanding", "finalize"]
 ActionTarget = Literal["target_user", "problem", "solution", "mvp_scope"]
 NextMove = Literal[
     "probe_for_specificity",

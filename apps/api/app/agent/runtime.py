@@ -282,11 +282,8 @@ def _build_finalize_action_result(
     state_patch = {
         "workflow_stage": "finalize",
         "finalization_ready": True,
-        "finalize_action": {
-            "type": "finalize",
-            "confirmation_source": "message",
-            "preference": preference,
-        },
+        "finalize_preference": preference,
+        "finalize_confirmation_source": "message",
     }
     turn_decision = TurnDecision(
         phase="finalize",
@@ -338,11 +335,13 @@ def _build_readiness_input_state(state: dict[str, Any], prd_patch: dict[str, Any
 def _apply_readiness_stage(
     state: dict[str, Any],
     agent_result: AgentResult,
+    *,
+    force_refine_loop: bool = False,
 ) -> AgentResult:
     readiness = evaluate_finalize_readiness(
         _build_readiness_input_state(state, agent_result.prd_patch)
     )
-    next_stage = "finalize" if readiness["ready"] else "refine_loop"
+    next_stage = "refine_loop" if force_refine_loop else ("finalize" if readiness["ready"] else "refine_loop")
     stage_patch = {
         "workflow_stage": next_stage,
         "finalization_ready": bool(readiness["ready"]),
@@ -442,16 +441,18 @@ def run_agent(
     4. 其余 → run_pm_mentor
     """
     effective_state = state
+    reopened_from_completed = False
     if state.get("workflow_stage") == "completed":
         if not _should_reopen_completed_workflow(user_input):
             return _build_completed_result(state)
         effective_state = _reopen_completed_state(state)
-
-    if model_config is None:
-        return _build_fallback_result(effective_state, user_input)
+        reopened_from_completed = True
 
     if _should_emit_finalize_action(effective_state, user_input):
         return _build_finalize_action_result(user_input)
+
+    if model_config is None:
+        return _build_fallback_result(effective_state, user_input)
 
     # 问候语识别与拦截
     if _is_greeting_input(effective_state, user_input):
@@ -464,4 +465,8 @@ def run_agent(
         model_config,
         conversation_history=conversation_history,
     )
-    return _apply_readiness_stage(effective_state, mentor_result)
+    return _apply_readiness_stage(
+        effective_state,
+        mentor_result,
+        force_refine_loop=reopened_from_completed,
+    )
