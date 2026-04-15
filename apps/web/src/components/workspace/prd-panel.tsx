@@ -1,7 +1,10 @@
 "use client";
 
 import { FileText } from "lucide-react";
-import { useWorkspaceStore } from "../../store/workspace-store";
+import { finalizeSession } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
+import { useToastStore } from "../../store/toast-store";
+import { useWorkspaceStore, workspaceStore } from "../../store/workspace-store";
 import { PrdSectionCard } from "./prd-section-card";
 
 
@@ -13,11 +16,63 @@ const stageToneClassMap = {
   final: "border-emerald-200 bg-emerald-50 text-emerald-700",
 } as const;
 
+interface PrdPanelProps {
+  sessionId: string;
+}
 
-export function PrdPanel() {
+export function PrdPanel({ sessionId }: PrdPanelProps) {
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const showToast = useToastStore((state) => state.showToast);
   const extraSections = useWorkspaceStore((state) => state.prd.extraSections);
+  const isCompleted = useWorkspaceStore((state) => state.isCompleted);
+  const isFinalizing = useWorkspaceStore((state) => state.isFinalizingSession);
+  const isFinalizeReady = useWorkspaceStore((state) => state.isFinalizeReady);
+  const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const meta = useWorkspaceStore((state) => state.prd.meta);
   const sections = useWorkspaceStore((state) => state.prd.sections);
+  const canFinalize = meta.stageTone === "ready" && isFinalizeReady && !isCompleted;
+  const isFinalizeDisabled = isFinalizing || isStreaming;
+
+  const stageHintMessage =
+    meta.stageTone === "final"
+      ? "已生成最终版 PRD，后续补充会基于终稿继续迭代。"
+      : canFinalize
+        ? "当前已满足终稿整理条件，你可以直接生成最终版 PRD。"
+        : "下方不是终稿，而是目前被确认下来的产品共识。";
+
+  async function handleFinalize() {
+    if (
+      !sessionId ||
+      workspaceStore.getState().isFinalizingSession ||
+      workspaceStore.getState().isStreaming
+    ) {
+      return;
+    }
+
+    workspaceStore.getState().setSessionFinalizing(true);
+    try {
+      const snapshot = await finalizeSession(
+        sessionId,
+        { confirmation_source: "button" },
+        accessToken,
+      );
+      workspaceStore.getState().refreshSessionSnapshot(snapshot);
+      showToast({
+        id: `session-finalize-${sessionId}`,
+        message: "已生成最终版 PRD。",
+        tone: "success",
+      });
+    } catch (error) {
+      console.error("整理最终版 PRD 失败", error);
+      showToast({
+        id: `session-finalize-${sessionId}`,
+        message: "生成最终版 PRD 失败，请稍后重试。",
+        tone: "error",
+      });
+    } finally {
+      workspaceStore.getState().setSessionFinalizing(false);
+    }
+  }
 
   const confirmedCount = sectionOrder
     .map((key) => sections[key])
@@ -59,9 +114,17 @@ export function PrdPanel() {
         </div>
       </div>
 
-      <p className="mt-3 text-xs leading-5 text-stone-400">
-        下方不是终稿，而是目前被确认下来的产品共识。
-      </p>
+      <p className="mt-3 text-xs leading-5 text-stone-400">{stageHintMessage}</p>
+      {canFinalize ? (
+        <button
+          className="mt-3 inline-flex w-full cursor-pointer items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={isFinalizeDisabled}
+          onClick={handleFinalize}
+          type="button"
+        >
+          {isFinalizing ? "整理中..." : "生成最终版 PRD"}
+        </button>
+      ) : null}
       <div className="mt-3 rounded-xl border border-stone-200/80 bg-stone-50 px-3 py-2">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-400">

@@ -489,7 +489,7 @@ git commit -m "feat(api): add explicit workspace finalize action"
 - Test: `apps/web/src/test/workspace-store.test.ts`
 - Test: `apps/web/src/test/workspace-session-shell.test.tsx`
 
-- [ ] **Step 1: 写失败测试，锁定 snapshot 中的 `workflow_stage / finalization_ready / prd_draft / critic_result` 会被 store 正确消费**
+- [x] **Step 1: 写失败测试，锁定 snapshot 中的 `workflow_stage / finalization_ready / prd_draft / critic_result` 会被 store 正确消费**
 
 ```ts
 it("hydrates explicit finalize state from session snapshot", () => {
@@ -507,7 +507,7 @@ it("hydrates explicit finalize state from session snapshot", () => {
 });
 ```
 
-- [ ] **Step 2: 在 `types.ts` 中补充 finalize mutation 与显式状态字段类型**
+- [x] **Step 2: 在 `types.ts` 中补充 finalize mutation 与显式状态字段类型**
 
 ```ts
 export interface FinalizeSessionRequest {
@@ -516,7 +516,7 @@ export interface FinalizeSessionRequest {
 }
 ```
 
-- [ ] **Step 3: 在 `api.ts` 中新增 `finalizeSession()`**
+- [x] **Step 3: 在 `api.ts` 中新增 `finalizeSession()`**
 
 ```ts
 export function finalizeSession(
@@ -528,7 +528,7 @@ export function finalizeSession(
 }
 ```
 
-- [ ] **Step 4: 在 `prd-store-helpers.ts` 中让 PRD meta 优先从显式状态推导**
+- [x] **Step 4: 在 `prd-store-helpers.ts` 中让 PRD meta 优先从显式状态推导**
 
 ```ts
 if (workflowStage === "completed" || draftStatus === "finalized") {
@@ -540,7 +540,7 @@ if (workflowStage === "completed" || draftStatus === "finalized") {
 }
 ```
 
-- [ ] **Step 5: 在 `workspace-store.ts` 中补显式阶段判断辅助字段，并确保 refresh snapshot 后不会丢掉 completed/reopen 状态**
+- [x] **Step 5: 在 `workspace-store.ts` 中补显式阶段判断辅助字段，并确保 refresh snapshot 后不会丢掉 completed/reopen 状态**
 
 ```ts
 const workflowStage =
@@ -552,7 +552,7 @@ const workflowStage =
     : "idea_parser";
 ```
 
-- [ ] **Step 6: 运行前端状态测试**
+- [x] **Step 6: 运行前端状态测试**
 
 Run: `pnpm --filter web test -- workspace-store workspace-session-shell`
 
@@ -579,7 +579,7 @@ git commit -m "feat(web): hydrate explicit workspace closure states"
 - Test: `apps/web/src/test/assistant-turn-card.test.tsx`
 - Test: `apps/web/src/test/workspace-composer.test.tsx`
 
-- [ ] **Step 1: 写失败测试，锁定 `finalize` 阶段显示 `生成最终版 PRD`**
+- [x] **Step 1: 写失败测试，锁定 `finalize` 阶段显示 `生成最终版 PRD`**
 
 ```tsx
 it("shows finalize action when workflow is ready", () => {
@@ -588,7 +588,7 @@ it("shows finalize action when workflow is ready", () => {
 });
 ```
 
-- [ ] **Step 2: 在 `PrdPanel` 中增加 ready/final 文案与 finalize 按钮槽位**
+- [x] **Step 2: 在 `PrdPanel` 中增加 ready/final 文案与 finalize 按钮槽位**
 
 ```tsx
 {meta.stageTone === "ready" ? (
@@ -598,7 +598,7 @@ it("shows finalize action when workflow is ready", () => {
 ) : null}
 ```
 
-- [ ] **Step 3: 在 `AssistantTurnCard` 中增加 finalize action 与 completed 提示**
+- [x] **Step 3: 在 `AssistantTurnCard` 中增加 finalize action 与 completed 提示**
 
 ```tsx
 {isFinalizeReady ? (
@@ -607,7 +607,7 @@ it("shows finalize action when workflow is ready", () => {
 {isCompleted ? <p>当前已生成最终版，继续输入会重新打开编辑流程。</p> : null}
 ```
 
-- [ ] **Step 4: 在 `ConversationPanel` 中把 finalize action 连接到工作台主区域**
+- [x] **Step 4: 在 `ConversationPanel` 中把 finalize action 连接到工作台主区域**
 
 ```tsx
 <AssistantTurnCard
@@ -618,7 +618,7 @@ it("shows finalize action when workflow is ready", () => {
 />
 ```
 
-- [ ] **Step 5: 在 `Composer` 中实现 finalize mutation 调用与 toast，成功后刷新 session snapshot**
+- [x] **Step 5: 以共享 finalize 入口实现 finalize mutation 调用与 toast，成功后刷新 session snapshot**
 
 ```tsx
 const snapshot = await finalizeSession(sessionId, { confirmation_source: "button" }, accessToken);
@@ -626,7 +626,9 @@ workspaceStore.getState().refreshSessionSnapshot(snapshot);
 showToast({ id: `finalize-${sessionId}`, message: "最终版 PRD 已生成", tone: "success" });
 ```
 
-- [ ] **Step 6: 运行 UI 相关测试**
+实际落地：为避免双入口并发与职责分散，finalize mutation 收敛到 `ConversationPanel` / `PrdPanel` 共享的 store 状态控制中，而不是放进 `Composer`。
+
+- [x] **Step 6: 运行 UI 相关测试**
 
 Run: `pnpm --filter web test -- assistant-turn-card workspace-composer`
 
@@ -654,7 +656,7 @@ git commit -m "feat(web): add finalize and reopen workspace interactions"
 - Test: `apps/web/src/test/workspace-store.test.ts`
 - Test: `apps/web/src/test/workspace-composer.test.tsx`
 
-- [ ] **Step 1: 新增后端回归测试，覆盖“达到 finalize_ready -> 按钮或对话确认 finalize -> reopen”主路径**
+- [x] **Step 1: 新增后端回归测试，覆盖“达到 finalize_ready -> 按钮或对话确认 finalize -> reopen”主路径**
 
 ```python
 def test_new_session_can_finalize_and_reopen(...):
@@ -665,14 +667,14 @@ def test_new_session_can_finalize_and_reopen(...):
     assert reopened_state["workflow_stage"] == "refine_loop"
 ```
 
-- [ ] **Step 2: 新增导出回归测试，锁定 `completed` 导出终稿，reopen 后重新导出草稿**
+- [x] **Step 2: 新增导出回归测试，锁定 `completed` 导出终稿，reopen 后重新导出草稿**
 
 ```python
 assert "状态：终稿" in export_completed["content"]
 assert "状态：草稿" in export_reopened["content"]
 ```
 
-- [ ] **Step 3: 新增前端回归测试，锁定 finalize 后 snapshot 刷新与 completed 后继续输入 reopen**
+- [x] **Step 3: 新增前端回归测试，锁定 finalize 后 snapshot 刷新与 completed 后继续输入 reopen**
 
 ```tsx
 expect(await screen.findByText("已生成终稿")).toBeInTheDocument();
@@ -681,13 +683,13 @@ fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
 expect(await screen.findByText("草稿中")).toBeInTheDocument();
 ```
 
-- [ ] **Step 4: 运行后端完整回归**
+- [x] **Step 4: 运行后端完整回归**
 
 Run: `/bin/zsh -lc 'PYTHONPATH=apps/api uv run pytest apps/api/tests/test_messages_stream.py apps/api/tests/test_messages_service.py apps/api/tests/test_sessions.py apps/api/tests/test_agent_runtime.py apps/api/tests/test_finalize_session.py apps/api/tests/test_readiness.py -q'`
 
 Expected: PASS，消息流、状态机、导出与 finalize 全部通过。
 
-- [ ] **Step 5: 运行前端完整回归**
+- [x] **Step 5: 运行前端完整回归**
 
 Run: `pnpm --filter web test -- workspace-store workspace-composer assistant-turn-card workspace-session-shell`
 

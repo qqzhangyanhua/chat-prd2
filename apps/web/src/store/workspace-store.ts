@@ -13,7 +13,9 @@ import type {
   PrdState,
   RecommendedScene,
   SessionSnapshotResponse,
+  StateSnapshotResponse,
   SuggestionOption,
+  WorkflowStage,
   WorkspaceEvent,
   WorkspaceMessage,
 } from "../lib/types";
@@ -54,10 +56,14 @@ interface WorkspaceState {
   activeReplyGroupId: string | null;
   availableModelConfigs: EnabledModelConfigItem[];
   collaborationModeLabel: string | null;
+  workflowStage: WorkflowStage | null;
+  isFinalizeReady: boolean;
+  isCompleted: boolean;
   currentAction: NextAction | null;
   currentModelScene: RecommendedScene | null;
   errorMessage: string | null;
   inputValue: string;
+  isFinalizingSession: boolean;
   isStreaming: boolean;
   lastInterrupted: boolean;
   lastSubmittedInput: string | null;
@@ -81,12 +87,55 @@ interface WorkspaceState {
   resetError: () => void;
   selectModelConfig: (modelConfigId: string) => void;
   setAvailableModelConfigs: (items: EnabledModelConfigItem[]) => void;
+  setSessionFinalizing: (value: boolean) => void;
   isLeftNavCollapsed: boolean;
   setInputValue: (value: string) => void;
   setLeftNavCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   setStreaming: (value: boolean) => void;
   startRegenerate: () => boolean;
   startRequest: (content: string, mode?: RequestMode) => void;
+}
+
+function normalizeWorkflowStage(value: unknown): WorkflowStage | null {
+  return value === "idea_parser" ||
+      value === "refine_loop" ||
+      value === "finalize" ||
+      value === "completed"
+    ? value
+    : null;
+}
+
+function deriveWorkflowFlags(state: StateSnapshotResponse): Pick<
+  WorkspaceState,
+  "workflowStage" | "isFinalizeReady" | "isCompleted"
+> {
+  const workflowStage = normalizeWorkflowStage(state.workflow_stage);
+  const isFinalizeReady = state.finalization_ready === true;
+  const isCompleted = state.is_completed === true || workflowStage === "completed";
+
+  return {
+    workflowStage,
+    isFinalizeReady,
+    isCompleted,
+  };
+}
+
+function isSnapshotOlderByDraftVersion(
+  current: Pick<WorkspaceState, "prd">,
+  nextState: StateSnapshotResponse,
+): boolean {
+  const currentVersion = current.prd.meta.draftVersion;
+  const prdDraft = nextState.prd_draft;
+  const nextVersion =
+    prdDraft && typeof prdDraft === "object" && typeof prdDraft.version === "number"
+      ? prdDraft.version
+      : null;
+
+  return (
+    typeof currentVersion === "number" &&
+    typeof nextVersion === "number" &&
+    currentVersion > nextVersion
+  );
 }
 
 const STRATEGY_LABEL_MAP: Record<DecisionStrategy, string> = {
@@ -314,9 +363,17 @@ function buildHydratedSessionState(
     meta: derivePrdMeta(snapshot.state),
     sections: derivePrimaryPrdSections(snapshot.state, snapshot.prd_snapshot.sections),
   };
-  const prd = preserveFresherPrd && shouldPreserveCurrentPrd(state.prd, nextPrd)
-    ? state.prd
-    : nextPrd;
+  const preserveByPrdVersion = preserveFresherPrd && shouldPreserveCurrentPrd(state.prd, nextPrd);
+  const preserveByWorkflowSemantics = preserveFresherPrd && isSnapshotOlderByDraftVersion(state, snapshot.state);
+  const shouldPreserveSnapshotSemantics = preserveByPrdVersion || preserveByWorkflowSemantics;
+  const workflowFlags = shouldPreserveSnapshotSemantics
+    ? {
+        workflowStage: state.workflowStage,
+        isFinalizeReady: state.isFinalizeReady,
+        isCompleted: state.isCompleted,
+      }
+    : deriveWorkflowFlags(snapshot.state);
+  const prd = preserveByPrdVersion ? state.prd : nextPrd;
 
   return {
     ...state,
@@ -326,6 +383,9 @@ function buildHydratedSessionState(
       typeof snapshot.state.collaboration_mode_label === "string"
         ? snapshot.state.collaboration_mode_label
         : null,
+    workflowStage: workflowFlags.workflowStage,
+    isFinalizeReady: workflowFlags.isFinalizeReady,
+    isCompleted: workflowFlags.isCompleted,
     currentAction: preserveCurrentAction ? state.currentAction : null,
     currentModelScene:
       snapshot.state.current_model_scene === "general" ||
@@ -402,6 +462,7 @@ function createInitialState(): Omit<
   | "resetError"
   | "selectModelConfig"
   | "setAvailableModelConfigs"
+  | "setSessionFinalizing"
   | "setInputValue"
   | "setLeftNavCollapsed"
   | "setStreaming"
@@ -413,6 +474,9 @@ function createInitialState(): Omit<
     activeReplyGroupId: null,
     availableModelConfigs: [],
     collaborationModeLabel: null,
+    workflowStage: null,
+    isFinalizeReady: false,
+    isCompleted: false,
     currentAction: {
       action: "probe_deeper",
       target: "target_user",
@@ -421,6 +485,7 @@ function createInitialState(): Omit<
     currentModelScene: null,
     errorMessage: null,
     isLeftNavCollapsed: false,
+    isFinalizingSession: false,
     inputValue: "",
     isStreaming: false,
     lastInterrupted: false,
@@ -877,6 +942,11 @@ export function createWorkspaceStore() {
           selectedModelConfigId: nextSelectedModelId,
         };
       }),
+    setSessionFinalizing: (value) =>
+      set((state) => ({
+        ...state,
+        isFinalizingSession: value,
+      })),
     setInputValue: (value) =>
       set((state) => ({
         ...state,
@@ -896,8 +966,13 @@ export function createWorkspaceStore() {
         streamPhase: value ? state.streamPhase : "idle",
       })),
     startRegenerate: () => {
-      const { lastSubmittedInput, selectedModelConfigId } = get();
-      if (!lastSubmittedInput || !selectedModelConfigId) {
+      const { isStreaming, lastSubmittedInput, pendingRequestMode, selectedModelConfigId } = get();
+      if (
+        isStreaming ||
+        pendingRequestMode === "regenerate" ||
+        !lastSubmittedInput ||
+        !selectedModelConfigId
+      ) {
         return false;
       }
 

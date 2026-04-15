@@ -54,10 +54,35 @@ export interface SessionListResponse {
   sessions: SessionResponse[];
 }
 
+export interface PrdDraftSectionResponse {
+  content?: string;
+  status?: PrdSectionStatus;
+  title?: string;
+}
+
+export interface PrdDraftResponse {
+  version?: number;
+  status?: string;
+  sections?: Record<string, PrdDraftSectionResponse>;
+}
+
+export interface CriticResultResponse {
+  overall_verdict?: string;
+  major_gaps?: string[];
+  question_queue?: string[];
+}
+
 export interface StateSnapshotResponse {
   [key: string]: unknown;
   idea?: string;
   stage_hint?: string;
+  workflow_stage?: WorkflowStage;
+  finalization_ready?: boolean;
+  finalize_confirmation_source?: string | null;
+  finalize_preference?: FinalizePreference | null;
+  is_completed?: boolean;
+  prd_draft?: PrdDraftResponse | null;
+  critic_result?: CriticResultResponse | null;
   current_model_scene?: RecommendedScene;
   collaboration_mode_label?: string | null;
 }
@@ -194,6 +219,8 @@ export interface EnabledModelConfigItem {
 }
 
 export type RecommendedScene = "general" | "reasoning" | "fallback";
+export type WorkflowStage = "idea_parser" | "refine_loop" | "finalize" | "completed";
+export type FinalizePreference = "balanced" | "business" | "technical";
 
 export interface EnabledModelConfigListResponse {
   items: EnabledModelConfigItem[];
@@ -234,6 +261,11 @@ export interface AdminModelConfigUpdateRequest {
   api_key?: string;
   model?: string;
   enabled?: boolean;
+}
+
+export interface FinalizeSessionRequest {
+  confirmation_source: "button" | "message";
+  preference?: FinalizePreference;
 }
 
 export type PrdSectionStatus = "confirmed" | "inferred" | "missing";

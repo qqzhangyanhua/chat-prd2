@@ -53,6 +53,35 @@ describe("AssistantTurnCard", () => {
     expect(screen.getByRole("button", { name: "生成中..." })).toBeDisabled();
   });
 
+  it("shows finalize button when finalize action is available", () => {
+    const onFinalize = vi.fn();
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        latestAssistantMessage="当前信息已齐备，可生成最终版。"
+        onFinalize={onFinalize}
+        showFinalizeAction
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "生成最终版 PRD" }));
+
+    expect(onFinalize).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows completed reminder inside the assistant card", () => {
+    render(
+      <AssistantTurnCard
+        completedHint="已生成最终版，继续输入会重新打开编辑流程。"
+        currentAction={null}
+        latestAssistantMessage="这是当前最终版摘要。"
+      />,
+    );
+
+    expect(screen.getByText("已生成最终版，继续输入会重新打开编辑流程。")).toBeInTheDocument();
+  });
+
   it("shows version history entry and opens dialog with latest highlighted", () => {
     render(
       <AssistantTurnCard

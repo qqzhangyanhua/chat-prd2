@@ -33,7 +33,6 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [initialIdeaProcessed, setInitialIdeaProcessed] = useState(false);
   const {
     schemaHealth,
     clearSchemaHealth,
@@ -61,6 +60,28 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
 
     let cancelled = false;
 
+    async function resolveInitialIdea() {
+      let initialIdea: string | null = null;
+
+      if (searchParams) {
+        try {
+          const params = await searchParams;
+          initialIdea = params.initial_idea || null;
+        } catch {
+          // searchParams 解析失败，继续检查 sessionStorage
+        }
+      }
+
+      if (!initialIdea && typeof window !== "undefined") {
+        initialIdea = window.sessionStorage.getItem(`initial_idea_${sessionId}`);
+        if (initialIdea) {
+          window.sessionStorage.removeItem(`initial_idea_${sessionId}`);
+        }
+      }
+
+      return initialIdea;
+    }
+
     async function loadSession() {
       try {
         try {
@@ -72,8 +93,6 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
           workspaceStore.getState().hydrateSession(snapshot);
           const pendingDraft = consumeNewSessionDraft(sessionId);
           if (pendingDraft) workspaceStore.getState().setInputValue(pendingDraft);
-          // 重置 initialIdeaProcessed，允许后续处理 initial_idea
-          setInitialIdeaProcessed(false);
         } catch (error) {
           if (!cancelled) {
             const message = error instanceof Error ? error.message : "会话加载失败";
@@ -96,6 +115,18 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
             showToast({ id: `load-model-configs-${sessionId}`, message, tone: "error" });
           }
         }
+
+        const initialIdea = await resolveInitialIdea();
+        if (!cancelled) {
+          const resolvedInitialIdea = initialIdea ?? "";
+          const normalizedInitialIdea = resolvedInitialIdea.trim();
+          if (normalizedInitialIdea) {
+            workspaceStore.getState().setInputValue(resolvedInitialIdea);
+            if (workspaceStore.getState().selectedModelConfigId) {
+              workspaceStore.getState().startRequest(normalizedInitialIdea);
+            }
+          }
+        }
       } finally {
         if (!cancelled) {
           setIsRetrying(false);
@@ -107,45 +138,6 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
     void loadSession();
     return () => { cancelled = true; };
   }, [hydrated, accessToken, retryToken, sessionId, showToast, clearSchemaHealth, syncSchemaFromError]);
-
-  // 处理初始消息的自动发送
-  useEffect(() => {
-    if (!hydrated || isLoading || initialIdeaProcessed) return;
-
-    async function processInitialIdea() {
-      try {
-        // 从 URL param 或 sessionStorage 读取 initial_idea
-        let initialIdea: string | null = null;
-
-        if (searchParams) {
-          try {
-            const params = await searchParams;
-            initialIdea = params.initial_idea || null;
-          } catch {
-            // searchParams 解析失败，继续检查 sessionStorage
-          }
-        }
-
-        if (!initialIdea && typeof window !== "undefined") {
-          initialIdea = window.sessionStorage.getItem(`initial_idea_${sessionId}`);
-          if (initialIdea) {
-            window.sessionStorage.removeItem(`initial_idea_${sessionId}`);
-          }
-        }
-
-        if (initialIdea) {
-          // 设置输入值并自动发送
-          workspaceStore.getState().setInputValue(initialIdea);
-          // 触发消息发送（通过 startRequest）
-          workspaceStore.getState().startRequest(initialIdea);
-        }
-      } finally {
-        setInitialIdeaProcessed(true);
-      }
-    }
-
-    void processInitialIdea();
-  }, [hydrated, isLoading, sessionId, searchParams]);
 
   async function handleSchemaRetry() {
     setIsRetrying(true);
@@ -204,7 +196,7 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
       {isLoading ? (
         <SkeletonCard className="h-full w-[360px] shrink-0" />
       ) : !loadError ? (
-        <PrdPanel />
+        <PrdPanel sessionId={sessionId} />
       ) : (
         <WorkspaceErrorNotice
           className="h-fit w-[360px] shrink-0"

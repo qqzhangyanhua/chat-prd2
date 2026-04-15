@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 
 from fastapi import status
 from sqlalchemy.orm import Session
@@ -13,6 +14,13 @@ from app.services import sessions as session_service
 
 ALLOWED_CONFIRMATION_SOURCES = {"button", "message"}
 ALLOWED_FINALIZE_PREFERENCES = set(FINALIZE_PREFERENCES)
+
+
+@dataclass(frozen=True)
+class FinalizeSessionTransition:
+    state: dict
+    state_version_id: str
+    prd_snapshot_version: int
 
 
 def _resolve_next_state_version(db: Session, session_id: str, current_state: dict) -> int:
@@ -78,14 +86,13 @@ def _resolve_finalize_preference(preference: str | None, current_state: dict) ->
     return normalized
 
 
-def finalize_session(
+def create_finalize_session_transition(
     db: Session,
     session_id: str,
-    user_id: str,
     *,
     confirmation_source: str,
     preference: str | None = None,
-):
+) -> FinalizeSessionTransition:
     current_state = state_repository.get_latest_state(db, session_id) or {}
     _require_finalize_ready(current_state)
     normalized_source = _validate_confirmation_source(confirmation_source)
@@ -108,7 +115,7 @@ def finalize_session(
     }
 
     try:
-        state_repository.create_state_version(
+        state_version = state_repository.create_state_version(
             db=db,
             session_id=session_id,
             version=next_state_version,
@@ -120,9 +127,30 @@ def finalize_session(
             version=next_state_version,
             sections=finalized_sections,
         )
-        db.commit()
     except Exception:
         db.rollback()
         raise
 
+    return FinalizeSessionTransition(
+        state=next_state,
+        state_version_id=state_version.id,
+        prd_snapshot_version=next_state_version,
+    )
+
+
+def finalize_session(
+    db: Session,
+    session_id: str,
+    user_id: str,
+    *,
+    confirmation_source: str,
+    preference: str | None = None,
+):
+    create_finalize_session_transition(
+        db=db,
+        session_id=session_id,
+        confirmation_source=confirmation_source,
+        preference=preference,
+    )
+    db.commit()
     return session_service.get_session_snapshot(db, session_id, user_id)

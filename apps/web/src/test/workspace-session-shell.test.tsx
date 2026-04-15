@@ -31,16 +31,6 @@ vi.mock("../hooks/use-auth-guard", () => ({
   useAuthGuard: vi.fn(() => ({ hydrated: true })),
 }));
 
-vi.mock("../hooks/use-schema-gate", () => ({
-  useSchemaGate: vi.fn(() => ({
-    schemaHealth: null,
-    clearSchemaHealth: vi.fn(),
-    checkSchemaGate: vi.fn(),
-    isCheckingSchema: false,
-    syncSchemaFromError: vi.fn(),
-  })),
-}));
-
 vi.mock("../store/auth-store", () => ({
   useAuthStore: vi.fn((selector) =>
     selector({
@@ -76,6 +66,8 @@ describe("WorkspaceSessionShell", () => {
       state: {
         idea: "idea",
         stage_hint: "明确问题",
+        workflow_stage: "refine_loop",
+        finalization_ready: false,
       },
       prd_snapshot: {
         sections: {},
@@ -100,6 +92,79 @@ describe("WorkspaceSessionShell", () => {
     await waitFor(() => {
       expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
     });
+
+    expect(workspaceStore.getState().workflowStage).toBe("refine_loop");
+    expect(workspaceStore.getState().isFinalizeReady).toBe(false);
+    expect(workspaceStore.getState().isCompleted).toBe(false);
+  });
+
+  it("renders legacy backfilled finalize state without extra client-side guessing", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 3,
+          status: "draft_refined",
+          sections: {
+            target_user: {
+              title: "目标用户",
+              content: "产品团队",
+              status: "confirmed",
+            },
+            problem: {
+              title: "核心问题",
+              content: "需求收敛慢",
+              status: "confirmed",
+            },
+            solution: {
+              title: "解决方案",
+              content: "按需补算闭环字段",
+              status: "confirmed",
+            },
+            mvp_scope: {
+              title: "MVP 范围",
+              content: "单 session 读取补算",
+              status: "confirmed",
+            },
+            constraints: {
+              title: "约束条件",
+              content: "不做批量迁移",
+              status: "confirmed",
+            },
+            success_metrics: {
+              title: "成功指标",
+              content: "旧会话可稳定进入终稿前态",
+              status: "confirmed",
+            },
+          },
+        },
+        critic_result: {
+          overall_verdict: "pass",
+          question_queue: [],
+        },
+        legacy_backfill_version: "closure_v1",
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    expect(await screen.findByText("可整理终稿")).toBeInTheDocument();
+    expect(screen.getByText("Critic 已通过，可以整理最终版 PRD。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成最终版 PRD" })).toBeInTheDocument();
   });
 
   it("loads enabled model configs on mount and writes them into the store", async () => {
@@ -117,6 +182,28 @@ describe("WorkspaceSessionShell", () => {
       },
     ]);
     expect(workspaceStore.getState().selectedModelConfigId).toBe("model-openai");
+  });
+
+  it("does not enter pending streaming when initial idea exists but no model is available", async () => {
+    listEnabledModelConfigsMock.mockResolvedValue({ items: [] });
+
+    render(
+      <WorkspaceSessionShell
+        sessionId="session-1"
+        searchParams={Promise.resolve({ initial_idea: "  我想做一个可评论预览工具  " })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().inputValue).toBe("  我想做一个可评论预览工具  ");
+    });
+
+    expect(workspaceStore.getState().isStreaming).toBe(false);
+    expect(workspaceStore.getState().pendingRequestMode).toBeNull();
   });
 
   it("hydrates a pending new-session draft into the composer input and clears it", async () => {

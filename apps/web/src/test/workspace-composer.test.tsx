@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationPanel } from "../components/workspace/conversation-panel";
 import { Composer } from "../components/workspace/composer";
-import { getSession, regenerateMessage, sendMessage } from "../lib/api";
+import { PrdPanel } from "../components/workspace/prd-panel";
+import { finalizeSession, getSession, regenerateMessage, sendMessage } from "../lib/api";
 import { useToastStore } from "../store/toast-store";
 import { workspaceStore } from "../store/workspace-store";
 import type { DecisionGuidance, SessionSnapshotResponse } from "../lib/types";
@@ -12,6 +13,7 @@ vi.mock("../lib/api", () => ({
   sendMessage: vi.fn(),
   regenerateMessage: vi.fn(),
   getSession: vi.fn(),
+  finalizeSession: vi.fn(),
 }));
 
 function createSessionSnapshot(
@@ -62,6 +64,7 @@ describe("Composer", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();
     vi.mocked(regenerateMessage).mockReset();
+    vi.mocked(finalizeSession).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
     workspaceStore.getState().setAvailableModelConfigs([
@@ -402,6 +405,7 @@ describe("ConversationPanel empty state", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();
     vi.mocked(regenerateMessage).mockReset();
+    vi.mocked(finalizeSession).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
   });
@@ -417,6 +421,7 @@ describe("ConversationPanel status and history", () => {
   beforeEach(() => {
     vi.mocked(sendMessage).mockReset();
     vi.mocked(regenerateMessage).mockReset();
+    vi.mocked(finalizeSession).mockReset();
     useToastStore.getState().clearToast();
     workspaceStore.setState(workspaceStore.getInitialState(), true);
     workspaceStore.getState().setAvailableModelConfigs([
@@ -495,6 +500,254 @@ describe("ConversationPanel status and history", () => {
 
     expect(screen.getByText("已生成终稿")).toBeInTheDocument();
     expect(screen.queryByText("持续引导中")).not.toBeInTheDocument();
+  });
+
+  it("shows completed reminder in the main conversation area", () => {
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      state: {
+        workflow_stage: "completed",
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+        finalization_ready: true,
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "这是最终整理后的 PRD 版本。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    }));
+
+    render(<ConversationPanel sessionId="demo-session" />);
+
+    expect(screen.getByText("已生成最终版，继续输入会重新打开编辑流程。")).toBeInTheDocument();
+  });
+
+  it("finalizes by button and refreshes snapshot from server", async () => {
+    const completedSnapshot = createSessionSnapshot({
+      state: {
+        workflow_stage: "completed",
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+        finalization_ready: true,
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "这是最终整理后的 PRD 版本。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    });
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 3,
+          status: "review_ready",
+        },
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "当前信息已齐备，可以生成最终版。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    }));
+    vi.mocked(finalizeSession).mockResolvedValueOnce(completedSnapshot);
+
+    render(<ConversationPanel sessionId="demo-session" />);
+    fireEvent.click(screen.getByRole("button", { name: "生成最终版 PRD" }));
+
+    await waitFor(() => {
+      expect(finalizeSession).toHaveBeenCalledWith(
+        "demo-session",
+        { confirmation_source: "button" },
+        null,
+      );
+    });
+    expect(useToastStore.getState().toast?.tone).toBe("success");
+    expect(useToastStore.getState().toast?.message).toContain("最终版");
+  });
+
+  it("shares finalize pending state across both finalize entry points", async () => {
+    let resolveFinalize!: (value: SessionSnapshotResponse) => void;
+
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 3,
+          status: "review_ready",
+        },
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "当前信息已齐备，可以生成最终版。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    }));
+    vi.mocked(finalizeSession).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFinalize = resolve;
+        }),
+    );
+
+    render(
+      <>
+        <ConversationPanel sessionId="demo-session" />
+        <PrdPanel sessionId="demo-session" />
+      </>,
+    );
+
+    const finalizeButtons = screen.getAllByRole("button", { name: "生成最终版 PRD" });
+    fireEvent.click(finalizeButtons[0]);
+
+    await waitFor(() => {
+      expect(finalizeSession).toHaveBeenCalledTimes(1);
+    });
+
+    const disabledButtons = screen.getAllByRole("button", { name: "整理中..." });
+    expect(disabledButtons).toHaveLength(2);
+    expect(disabledButtons[0]).toBeDisabled();
+    expect(disabledButtons[1]).toBeDisabled();
+
+    fireEvent.click(disabledButtons[1]);
+    expect(finalizeSession).toHaveBeenCalledTimes(1);
+
+    resolveFinalize(createSessionSnapshot({
+      state: {
+        workflow_stage: "completed",
+        finalization_ready: true,
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+      },
+    }));
+
+    await waitFor(() => {
+      expect(workspaceStore.getState().isFinalizingSession).toBe(false);
+    });
+  });
+
+  it("disables finalize entry points while a reply is streaming", () => {
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 3,
+          status: "review_ready",
+        },
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "当前信息已齐备，可以生成最终版。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    }));
+    workspaceStore.getState().setStreaming(true);
+
+    render(
+      <>
+        <ConversationPanel sessionId="demo-session" />
+        <PrdPanel sessionId="demo-session" />
+      </>,
+    );
+
+    const finalizeButtons = screen.getAllByRole("button", { name: "生成最终版 PRD" });
+    expect(finalizeButtons).toHaveLength(2);
+    expect(finalizeButtons[0]).toBeDisabled();
+    expect(finalizeButtons[1]).toBeDisabled();
   });
 
   it("shows reply version timestamps in the history dialog", () => {
@@ -787,6 +1040,183 @@ describe("ConversationPanel regenerate", () => {
     expect(workspaceStore.getState().messages).toEqual(
       normalizeMessagesForTest(postRegenerateSnapshot.messages),
     );
+  });
+
+  it("keeps single-input send flow after completion and relies on refreshed snapshot to reopen", async () => {
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      state: {
+        workflow_stage: "completed",
+        finalization_ready: true,
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "这是最终整理后的 PRD 版本。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+    }));
+    workspaceStore.getState().setInputValue("我想补充一个约束条件。");
+
+    const encoder = new TextEncoder();
+    vi.mocked(sendMessage).mockResolvedValue(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('event: message.accepted\ndata: {"message_id":"user-2"}\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    );
+    vi.mocked(getSession).mockResolvedValueOnce(createSessionSnapshot({
+      state: {
+        workflow_stage: "refine_loop",
+        finalization_ready: false,
+        prd_draft: {
+          version: 5,
+          status: "draft",
+        },
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请整理最终版本。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "这是最终整理后的 PRD 版本。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+        {
+          id: "user-2",
+          session_id: "demo-session",
+          role: "user",
+          content: "我想补充一个约束条件。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+      ],
+    }));
+
+    render(<Composer sessionId="demo-session" />);
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith(
+        "demo-session",
+        "我想补充一个约束条件。",
+        null,
+        expect.any(AbortSignal),
+        "model-openai",
+      );
+    });
+    await waitFor(() => {
+      expect(workspaceStore.getState().workflowStage).toBe("refine_loop");
+      expect(workspaceStore.getState().isCompleted).toBe(false);
+    });
+  });
+
+  it("guards regenerate against rapid duplicate triggers", async () => {
+    vi.mocked(regenerateMessage).mockImplementation(
+      () =>
+        new Promise<ReadableStream<Uint8Array>>(() => {
+          // keep pending to expose duplicate trigger bugs
+        }),
+    );
+
+    workspaceStore.getState().hydrateSession(createSessionSnapshot({
+      messages: [
+        {
+          id: "user-1",
+          session_id: "demo-session",
+          role: "user",
+          content: "请帮我梳理目标用户。",
+          message_type: "text",
+          reply_group_id: null,
+          version_no: null,
+          is_latest: true,
+        },
+        {
+          id: "assistant-1",
+          session_id: "demo-session",
+          role: "assistant",
+          content: "先把问题范围说清楚。",
+          message_type: "text",
+          reply_group_id: "group-1",
+          version_no: 1,
+          is_latest: true,
+        },
+      ],
+      assistant_reply_groups: [
+        {
+          id: "group-1",
+          session_id: "demo-session",
+          user_message_id: "user-1",
+          latest_version_id: "version-1",
+          created_at: "2026-04-05T00:00:00Z",
+          updated_at: "2026-04-05T00:00:00Z",
+          versions: [
+            {
+              id: "version-1",
+              reply_group_id: "group-1",
+              session_id: "demo-session",
+              user_message_id: "user-1",
+              version_no: 1,
+              content: "先把问题范围说清楚。",
+              action_snapshot: {},
+              model_meta: {},
+              state_version_id: null,
+              prd_snapshot_version: 2,
+              created_at: "2026-04-05T00:00:00Z",
+              is_latest: true,
+            },
+          ],
+        },
+      ],
+    }));
+
+    render(<ConversationPanel sessionId="demo-session" />);
+
+    const regenerateButton = screen.getByRole("button", { name: "重新生成" });
+    fireEvent.click(regenerateButton);
+    fireEvent.click(regenerateButton);
+
+    await waitFor(() => {
+      expect(regenerateMessage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("hides regenerate when no selected model is available", () => {

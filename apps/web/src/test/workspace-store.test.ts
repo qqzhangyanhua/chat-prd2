@@ -512,6 +512,71 @@ describe("workspace store", () => {
     expect(store.getState().collaborationModeLabel).toBe("深度推演模式");
   });
 
+  it("hydrates explicit workflow status flags from snapshot state", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().workflowStage).toBe("finalize");
+    expect(store.getState().isFinalizeReady).toBe(true);
+    expect(store.getState().isCompleted).toBe(false);
+  });
+
+  it("hydrates legacy backfilled snapshot with explicit closure fields", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 3,
+          status: "draft_refined",
+          sections: {},
+        },
+        critic_result: {
+          overall_verdict: "pass",
+          question_queue: [],
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().workflowStage).toBe("finalize");
+    expect(store.getState().isFinalizeReady).toBe(true);
+    expect(store.getState().prd.meta.stageLabel).toBe("可整理终稿");
+  });
+
   it("derives prd meta as drafting when workflow is refine_loop", () => {
     const store = createWorkspaceStore();
 
@@ -620,6 +685,118 @@ describe("workspace store", () => {
     expect(store.getState().prd.meta.criticSummary).toContain("最终版");
     expect(store.getState().prd.meta.criticGaps).toEqual([]);
     expect(store.getState().prd.meta.nextQuestion).toBeNull();
+  });
+
+  it("updates explicit status flags when completed session is reopened to refine_loop", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "completed",
+        finalization_ready: true,
+        prd_draft: {
+          version: 4,
+          status: "finalized",
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    store.getState().refreshSessionSnapshot({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        finalization_ready: false,
+        prd_draft: {
+          version: 5,
+          status: "draft_refined",
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().workflowStage).toBe("refine_loop");
+    expect(store.getState().isFinalizeReady).toBe(false);
+    expect(store.getState().isCompleted).toBe(false);
+  });
+
+  it("keeps completed semantics when refreshed snapshot is older", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "completed",
+        finalization_ready: true,
+        prd_draft: {
+          version: 6,
+          status: "finalized",
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    store.getState().refreshSessionSnapshot({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        finalization_ready: false,
+        prd_draft: {
+          version: 5,
+          status: "draft_refined",
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().workflowStage).toBe("completed");
+    expect(store.getState().isFinalizeReady).toBe(true);
+    expect(store.getState().isCompleted).toBe(true);
   });
 
   it("derives prd meta next question from critic queue", () => {

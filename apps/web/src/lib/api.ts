@@ -8,6 +8,7 @@ import type {
   AuthResponse,
   EnabledModelConfigListResponse,
   ExportResponse,
+  FinalizeSessionRequest,
   HealthStatusResponse,
   SessionCreateRequest,
   SessionListResponse,
@@ -274,6 +275,21 @@ export function updateSession(
 ): Promise<SessionSnapshotResponse> {
   return requestJson<SessionSnapshotResponse>(`/api/sessions/${sessionId}`, {
     method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function finalizeSession(
+  sessionId: string,
+  payload: FinalizeSessionRequest,
+  accessToken?: string | null,
+): Promise<SessionSnapshotResponse> {
+  return requestJson<SessionSnapshotResponse>(`/api/sessions/${sessionId}/finalize`, {
+    method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),

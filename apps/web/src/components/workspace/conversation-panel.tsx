@@ -2,6 +2,9 @@
 
 import { useEffect, useRef } from "react";
 
+import { finalizeSession } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
+import { useToastStore } from "../../store/toast-store";
 import { workspaceStore, useWorkspaceStore } from "../../store/workspace-store";
 import { AssistantTurnCard } from "./assistant-turn-card";
 import { BrandIcon } from "./brand-icon";
@@ -13,7 +16,12 @@ interface ConversationPanelProps {
 
 export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const showToast = useToastStore((state) => state.showToast);
   const currentAction = useWorkspaceStore((state) => state.currentAction);
+  const isCompleted = useWorkspaceStore((state) => state.isCompleted);
+  const isFinalizing = useWorkspaceStore((state) => state.isFinalizingSession);
+  const isFinalizeReady = useWorkspaceStore((state) => state.isFinalizeReady);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const lastInterrupted = useWorkspaceStore((state) => state.lastInterrupted);
   const messages = useWorkspaceStore((state) => state.messages);
@@ -137,6 +145,38 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
 
   const hasNoHistory = historyMessages.length === 0 && !isStreaming;
   const shouldShowGuidance = streamPhase !== "waiting" && !isStreaming;
+  const canFinalize = isFinalizeReady && !isCompleted;
+  const isFinalizeDisabled = isFinalizing || isStreaming;
+
+  async function handleFinalize() {
+    if (workspaceStore.getState().isFinalizingSession || workspaceStore.getState().isStreaming) {
+      return;
+    }
+
+    workspaceStore.getState().setSessionFinalizing(true);
+    try {
+      const snapshot = await finalizeSession(
+        sessionId,
+        { confirmation_source: "button" },
+        accessToken,
+      );
+      workspaceStore.getState().refreshSessionSnapshot(snapshot);
+      showToast({
+        id: `session-finalize-${sessionId}`,
+        message: "已生成最终版 PRD。",
+        tone: "success",
+      });
+    } catch (error) {
+      console.error("整理最终版 PRD 失败", error);
+      showToast({
+        id: `session-finalize-${sessionId}`,
+        message: "生成最终版 PRD 失败，请稍后重试。",
+        tone: "error",
+      });
+    } finally {
+      workspaceStore.getState().setSessionFinalizing(false);
+    }
+  }
 
   return (
     <section className="flex flex-col gap-5">
@@ -182,12 +222,18 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
         <AssistantTurnCard
           canRegenerate={Boolean(selectedModelConfigId && regenerateUserMessageId)}
           collaborationModeLabel={collaborationModeLabel}
+          completedHint={
+            isCompleted ? "已生成最终版，继续输入会重新打开编辑流程。" : null
+          }
           currentAction={currentAction}
+          isFinalizeDisabled={isFinalizeDisabled}
           statusBadge={assistantStatus}
+          isFinalizing={isFinalizing}
           isRegenerating={isStreaming && pendingRequestMode === "regenerate"}
           isWaiting={isWaitingForNew}
           latestAssistantMessage={latestAssistantMessage}
           decisionGuidance={shouldShowGuidance ? decisionGuidance : null}
+          onFinalize={handleFinalize}
           onSelectDecisionGuidanceQuestion={(question) =>
             workspaceStore.getState().setInputValue(question)
           }
@@ -207,6 +253,7 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
             workspaceStore.getState().startRegenerate();
           }}
           replyVersions={latestReplyVersions}
+          showFinalizeAction={canFinalize}
           showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
         />
       )}

@@ -18,12 +18,17 @@ interface AssistantStatusBadge {
 interface AssistantTurnCardProps {
   canRegenerate?: boolean;
   collaborationModeLabel?: string | null;
+  completedHint?: string | null;
   currentAction: NextAction | null;
+  isFinalizeDisabled?: boolean;
+  isFinalizing?: boolean;
   isRegenerating?: boolean;
   isWaiting?: boolean;
   latestAssistantMessage: string;
+  onFinalize?: () => void;
   onRegenerate?: () => void;
   replyVersions?: AssistantReplyVersionItem[];
+  showFinalizeAction?: boolean;
   statusBadge?: AssistantStatusBadge | null;
   showInterruptedMarker?: boolean;
   decisionGuidance?: DecisionGuidance | null;
@@ -34,12 +39,17 @@ interface AssistantTurnCardProps {
 export function AssistantTurnCard({
   canRegenerate = false,
   collaborationModeLabel = null,
+  completedHint = null,
   currentAction,
+  isFinalizeDisabled = false,
+  isFinalizing = false,
   isRegenerating = false,
   isWaiting = false,
   latestAssistantMessage,
+  onFinalize,
   onRegenerate,
   replyVersions = [],
+  showFinalizeAction = false,
   statusBadge = null,
   showInterruptedMarker = false,
   decisionGuidance = null,
@@ -99,6 +109,16 @@ export function AssistantTurnCard({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {showFinalizeAction ? (
+            <button
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-all duration-150 hover:border-emerald-300 hover:bg-emerald-100 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={isFinalizing || isFinalizeDisabled}
+              onClick={onFinalize}
+              type="button"
+            >
+              {isFinalizing ? "整理中..." : "生成最终版 PRD"}
+            </button>
+          ) : null}
           {replyVersions.length > 1 ? (
             <button
               className="flex cursor-pointer items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 transition-all duration-150 hover:border-stone-900 hover:text-stone-950 active:scale-[0.97]"
@@ -161,6 +181,11 @@ export function AssistantTurnCard({
           <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600">
             <span className="font-medium text-stone-500">当前协作模式</span>
             <span className="font-semibold text-stone-900">{collaborationModeLabel}</span>
+          </div>
+        ) : null}
+        {completedHint ? (
+          <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {completedHint}
           </div>
         ) : null}
 

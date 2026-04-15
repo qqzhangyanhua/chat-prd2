@@ -549,6 +549,79 @@ def test_handle_user_message_done_focus_does_not_directly_write_completed(db_ses
     assert latest_state["finalization_ready"] is False
 
 
+def test_handle_user_message_finalize_action_links_reply_version_to_completed_snapshot(db_session):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="终稿整理模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合继续产品收敛。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=True,
+    )
+    db_session.commit()
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        state_json={
+            **sessions_service.build_initial_state(session.initial_idea),
+            "workflow_stage": "finalize",
+            "finalization_ready": True,
+            "prd_draft": {
+                "version": 2,
+                "status": "draft_refined",
+                "sections": {
+                    "summary": {"title": "一句话概述", "content": "智能需求助手", "status": "draft"},
+                    "target_user": {"title": "目标用户", "content": "产品经理", "status": "confirmed"},
+                    "problem": {"title": "核心问题", "content": "需求沟通效率低", "status": "confirmed"},
+                    "solution": {"title": "解决方案", "content": "结构化澄清流程", "status": "confirmed"},
+                    "mvp_scope": {"title": "MVP 范围", "content": "会话、总结、导出", "status": "confirmed"},
+                },
+            },
+        },
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session.id,
+        version=2,
+        sections={},
+    )
+    db_session.commit()
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="确认设计，按技术版输出最终版",
+        model_config_id=model_config.id,
+    )
+
+    reply_group = assistant_reply_groups_repository.get_reply_group_by_user_message(
+        db=db_session,
+        user_message_id=result.user_message_id,
+    )
+    assert reply_group is not None
+    latest_reply_version = assistant_reply_versions_repository.get_latest_version_for_group(
+        db=db_session,
+        reply_group_id=reply_group.id,
+    )
+    latest_state_version = state_repository.get_latest_state_version(db_session, session.id)
+    state_versions = db_session.execute(
+        select(ProjectStateVersion).where(ProjectStateVersion.session_id == session.id)
+    ).scalars().all()
+
+    assert latest_reply_version is not None
+    assert latest_state_version is not None
+    assert latest_state_version.version == 3
+    assert len(state_versions) == 3
+    assert latest_state_version.state_json["workflow_stage"] == "completed"
+    assert latest_reply_version.state_version_id == latest_state_version.id
+    assert latest_reply_version.prd_snapshot_version == latest_state_version.version
+
+
 def test_merge_state_patch_with_decision_reads_workflow_fields_from_turn_decision_top_level():
     turn_decision = SimpleNamespace(
         phase="refine_loop",

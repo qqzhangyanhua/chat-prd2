@@ -47,6 +47,9 @@ class StateSnapshot(BaseModel):
     critic_result: dict[str, Any] | None = None
     refine_history: list[dict[str, Any]] = Field(default_factory=list)
     finalization_ready: bool | None = False
+    finalize_confirmation_source: str | None = None
+    finalize_preference: str | None = None
+    legacy_backfill_version: str | None = None
 
     @field_validator("workflow_stage", mode="before")
     @classmethod

@@ -12,6 +12,8 @@ describe("PrdPanel", () => {
   it("renders prd stage and critic summary from store meta", () => {
     workspaceStore.setState({
       ...workspaceStore.getState(),
+      isFinalizeReady: true,
+      isCompleted: false,
       prd: {
         extraSections: {
           constraints: {
@@ -37,7 +39,7 @@ describe("PrdPanel", () => {
       },
     });
 
-    render(<PrdPanel />);
+    render(<PrdPanel sessionId="demo-session" />);
 
     expect(screen.getByText("可整理终稿")).toBeInTheDocument();
     expect(screen.getByText("Critic 已通过，可以整理最终版 PRD。")).toBeInTheDocument();
@@ -50,6 +52,8 @@ describe("PrdPanel", () => {
     expect(screen.getByText("草稿补充")).toBeInTheDocument();
     expect(screen.getByText("首版优先浏览器端，不做桌面插件。")).toBeInTheDocument();
     expect(screen.getByText("是否需要外链分享与到期控制？")).toBeInTheDocument();
+    expect(screen.getByText("当前已满足终稿整理条件，你可以直接生成最终版 PRD。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成最终版 PRD" })).toBeInTheDocument();
   });
 
   it("orders finalized extra sections before open questions", () => {
@@ -85,17 +89,19 @@ describe("PrdPanel", () => {
       },
     });
 
-    render(<PrdPanel />);
+    render(<PrdPanel sessionId="demo-session" />);
 
     const cards = screen.getAllByRole("article");
     const titles = cards.map((card) => card.querySelector("h3")?.textContent ?? "");
 
     expect(titles.indexOf("约束条件")).toBeLessThan(titles.indexOf("待确认问题"));
     expect(titles.indexOf("成功指标")).toBeLessThan(titles.indexOf("待确认问题"));
+    expect(screen.getByText("已生成最终版 PRD，后续补充会基于终稿继续迭代。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "生成最终版 PRD" })).not.toBeInTheDocument();
   });
 
   it("renders extra draft sections pushed by prd.updated events", () => {
-    render(<PrdPanel />);
+    render(<PrdPanel sessionId="demo-session" />);
 
     act(() => {
       workspaceStore.getState().applyEvent({

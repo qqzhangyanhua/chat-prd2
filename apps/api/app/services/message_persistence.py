@@ -100,6 +100,72 @@ def persist_assistant_reply_and_version(
     )
 
 
+def persist_assistant_reply_and_version_for_existing_state(
+    db: Session,
+    session_id: str,
+    session: ProjectSession,
+    user_message_id: str,
+    reply_group_id: str,
+    assistant_version_id: str,
+    version_no: int,
+    reply: str,
+    model_meta: dict[str, str],
+    action: dict,
+    turn_decision: object,
+    *,
+    state_version_id: str,
+    prd_snapshot_version: int,
+) -> tuple[str, str, int, str, int, str | None]:
+    assistant_message = messages_repository.create_message(
+        db=db,
+        session_id=session_id,
+        role="assistant",
+        content=reply,
+        meta={**model_meta, "action": action},
+    )
+
+    reply_group = AssistantReplyGroup(
+        id=reply_group_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+    )
+    db.add(reply_group)
+    db.flush()
+
+    reply_version = AssistantReplyVersion(
+        id=assistant_version_id,
+        reply_group_id=reply_group_id,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        version_no=version_no,
+        content=reply,
+        action_snapshot=action,
+        model_meta=model_meta,
+        state_version_id=state_version_id,
+        prd_snapshot_version=prd_snapshot_version,
+    )
+    db.add(reply_version)
+    db.flush()
+    reply_group.latest_version_id = assistant_version_id
+    db.add(reply_group)
+    agent_turn_decisions_repository.create_turn_decision(
+        db=db,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        turn_decision=turn_decision,
+    )
+    messages_repository.touch_session_activity(db, session)
+    db.commit()
+    return (
+        assistant_message.id,
+        reply_group_id,
+        reply_version.version_no,
+        assistant_version_id,
+        prd_snapshot_version,
+        reply_version.created_at.isoformat() if reply_version.created_at is not None else None,
+    )
+
+
 def persist_regenerated_reply_version(
     db: Session,
     session_id: str,

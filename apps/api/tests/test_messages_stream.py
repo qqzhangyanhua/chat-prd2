@@ -7,6 +7,7 @@ from app.db.models import AssistantReplyVersion
 from app.db.models import AgentTurnDecision
 from app.db.models import ConversationMessage
 from app.db.models import ProjectSession
+from app.db.models import ProjectStateVersion
 from app.repositories import model_configs as model_configs_repository
 from app.repositories import prd as prd_repository
 from app.repositories import state as state_repository
@@ -225,18 +226,34 @@ def test_message_stream_finalize_action_moves_session_to_completed(
     done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
     prd_payload = next(payload for name, payload in parsed_events if name == "prd.updated")
     assert action_payload["action"] == "finalize"
-    assert prd_payload["meta"]["status"] == "finalized"
 
     db = testing_session_local()
     try:
         latest_state = state_repository.get_latest_state_version(db, seeded_session)
+        reply_group = db.execute(
+            select(AssistantReplyGroup).where(AssistantReplyGroup.session_id == seeded_session)
+        ).scalar_one()
+        latest_reply_version = db.execute(
+            select(AssistantReplyVersion).where(AssistantReplyVersion.id == reply_group.latest_version_id)
+        ).scalar_one()
+        state_versions = db.execute(
+            select(ProjectStateVersion).where(ProjectStateVersion.session_id == seeded_session)
+        ).scalars().all()
         assert latest_state is not None
         assert latest_state.state_json["workflow_stage"] == "completed"
         assert latest_state.state_json["finalize_confirmation_source"] == "message"
         assert latest_state.state_json["prd_draft"]["status"] == "finalized"
+        assert latest_reply_version.state_version_id == latest_state.id
+        assert latest_reply_version.prd_snapshot_version == latest_state.version
+        assert len(state_versions) == 3
         assert done_payload["prd_snapshot_version"] == latest_state.version
     finally:
         db.close()
+
+    assert prd_payload["meta"]["stageLabel"] == "已生成终稿"
+    assert prd_payload["meta"]["stageTone"] == "final"
+    assert "最终版" in prd_payload["meta"]["criticSummary"]
+    assert prd_payload["meta"]["draftVersion"] == done_payload["prd_snapshot_version"]
 
 
 def test_message_stream_returns_404_for_other_users_session(client, auth_client, seeded_session):
