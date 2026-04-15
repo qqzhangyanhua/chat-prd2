@@ -336,12 +336,18 @@ def test_run_pm_mentor_uses_programmatic_fallback_after_two_broken_llm_responses
 def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
     from app.agent.pm_mentor import run_pm_mentor
 
+    incomplete_phrases = {
+        "围绕目标用户展开",
+        "继续聊核心问题",
+        "先收敛功能",
+        "自由补充想法",
+    }
     fake_llm_output = _make_pm_output(
         suggestions=[
-            _make_suggestion("目标用户", "目标用户", priority=1),
-            _make_suggestion("核心问题", "核心问题", priority=2),
-            _make_suggestion("核心功能", "核心功能", priority=3),
-            _make_suggestion("自由补充", "自由补充", priority=4),
+            _make_suggestion("目标用户方向", "围绕目标用户展开", priority=1),
+            _make_suggestion("核心问题方向", "继续聊核心问题", priority=2),
+            _make_suggestion("功能收敛方向", "先收敛功能", priority=3),
+            _make_suggestion("自由补充方向", "自由补充想法", priority=4),
         ]
     )
 
@@ -350,12 +356,10 @@ def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
 
     assert result.turn_decision is not None
     assert len(result.turn_decision.suggestions) == 4
-    bare_labels = {"目标用户", "核心问题", "核心功能", "自由补充"}
     for item in result.turn_decision.suggestions:
-        assert item.content != item.label
-        assert item.content not in bare_labels
+        assert item.content not in incomplete_phrases
     assert result.turn_decision.recommendation is not None
-    assert result.turn_decision.recommendation["content"] not in bare_labels
+    assert result.turn_decision.recommendation["content"] not in incomplete_phrases
 
 
 def test_run_pm_mentor_llm_failure_returns_fallback():
