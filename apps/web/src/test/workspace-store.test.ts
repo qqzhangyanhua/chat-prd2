@@ -1763,6 +1763,87 @@ describe("decision guidance", () => {
       ],
     });
   });
+
+  it("preserves all four structured suggestion options for mandatory abcd guidance", () => {
+    const store = createWorkspaceStore();
+    const snapshot = buildSnapshotWithDecisions([
+      {
+        id: "decision-options-abcd",
+        session_id: "session-1",
+        created_at: "2026-04-15T10:00:00Z",
+        decision_sections: [
+          {
+            key: "next_step",
+            meta: {
+              suggestion_options: [
+                {
+                  label: "先聊验证方式",
+                  content: "我想先聊第一轮要怎么验证这个想法值不值得做。",
+                  rationale: "优先明确验证动作，降低空想风险。",
+                  priority: 4,
+                  type: "direction",
+                },
+                {
+                  label: "先聊目标用户",
+                  content: "我想先把目标用户讲清楚，再继续往下拆。",
+                  rationale: "先定用户，后续问题和方案更容易收敛。",
+                  priority: 1,
+                  type: "direction",
+                },
+                {
+                  label: "先聊核心痛点",
+                  content: "我想先确认用户最痛的那个问题到底是什么。",
+                  rationale: "先抓痛点，再看功能是否成立。",
+                  priority: 3,
+                  type: "direction",
+                },
+                {
+                  label: "先聊使用场景",
+                  content: "我想先把用户会在哪个场景下使用这款产品讲清楚。",
+                  rationale: "先锁定场景，便于判断需求强度。",
+                  priority: 2,
+                  type: "direction",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    store.getState().hydrateSession(snapshot);
+
+    expect(store.getState().decisionGuidance?.suggestionOptions).toEqual([
+      {
+        label: "先聊目标用户",
+        content: "我想先把目标用户讲清楚，再继续往下拆。",
+        rationale: "先定用户，后续问题和方案更容易收敛。",
+        priority: 1,
+        type: "direction",
+      },
+      {
+        label: "先聊使用场景",
+        content: "我想先把用户会在哪个场景下使用这款产品讲清楚。",
+        rationale: "先锁定场景，便于判断需求强度。",
+        priority: 2,
+        type: "direction",
+      },
+      {
+        label: "先聊核心痛点",
+        content: "我想先确认用户最痛的那个问题到底是什么。",
+        rationale: "先抓痛点，再看功能是否成立。",
+        priority: 3,
+        type: "direction",
+      },
+      {
+        label: "先聊验证方式",
+        content: "我想先聊第一轮要怎么验证这个想法值不值得做。",
+        rationale: "优先明确验证动作，降低空想风险。",
+        priority: 4,
+        type: "direction",
+      },
+    ]);
+  });
 });
 
 describe("parseEventStream", () => {

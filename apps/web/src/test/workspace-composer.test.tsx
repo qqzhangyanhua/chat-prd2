@@ -1217,5 +1217,66 @@ describe("ConversationPanel decision guidance", () => {
       expect(workspaceStore.getState().inputValue).toBe("我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。");
       expect(screen.getByRole("textbox")).toHaveValue("我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。");
     });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("focuses the composer for free supplement without overwriting the current draft or sending", async () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户几个容易选择的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "先聊目标用户",
+          content: "我想先把目标用户讲清楚，再继续往下拆。",
+          rationale: "先定用户，后续问题和方案更容易收敛。",
+          priority: 1,
+          type: "direction",
+        },
+        {
+          label: "先聊使用场景",
+          content: "我想先把用户会在哪个场景下使用这款产品讲清楚。",
+          rationale: "先锁定场景，便于判断需求强度。",
+          priority: 2,
+          type: "direction",
+        },
+        {
+          label: "先聊核心痛点",
+          content: "我想先确认用户最痛的那个问题到底是什么。",
+          rationale: "先抓痛点，再看功能是否成立。",
+          priority: 3,
+          type: "direction",
+        },
+        {
+          label: "先聊验证方式",
+          content: "我想先聊第一轮要怎么验证这个想法值不值得做。",
+          rationale: "优先明确验证动作，降低空想风险。",
+          priority: 4,
+          type: "direction",
+        },
+      ],
+    };
+
+    workspaceStore.setState({
+      messages: [
+        { id: "user-1", role: "user", content: "你好" },
+        { id: "assistant-1", role: "assistant", content: "先选一个最接近你的方向。" },
+      ],
+      decisionGuidance: guidance,
+    });
+    workspaceStore.getState().setInputValue("已有草稿");
+
+    render(<ConversationPanel sessionId="session-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /自由补充/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox")).toHaveFocus();
+    });
+    expect(workspaceStore.getState().inputValue).toBe("已有草稿");
+    expect(screen.getByRole("textbox")).toHaveValue("已有草稿");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });

@@ -147,6 +147,60 @@ describe("AssistantTurnCard", () => {
     expect(screen.getByText("我有一个产品想法，想和你一起梳理成清晰的 PRD。")).toBeInTheDocument();
   });
 
+  it("renders fixed A/B/C/D guidance options together with a free supplement entry", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户四个最接近当前上下文的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "先聊目标用户",
+          content: "我想先把目标用户讲清楚，再继续往下拆。",
+          rationale: "先定用户，后续问题和方案更容易收敛。",
+          priority: 1,
+          type: "direction",
+        },
+        {
+          label: "先聊使用场景",
+          content: "我想先把用户会在哪个场景下使用这款产品讲清楚。",
+          rationale: "先锁定场景，便于判断需求强度。",
+          priority: 2,
+          type: "direction",
+        },
+        {
+          label: "先聊核心痛点",
+          content: "我想先确认用户最痛的那个问题到底是什么。",
+          rationale: "先抓痛点，再看功能是否成立。",
+          priority: 3,
+          type: "direction",
+        },
+        {
+          label: "先聊验证方式",
+          content: "我想先聊第一轮要怎么验证这个想法值不值得做。",
+          rationale: "优先明确验证动作，降低空想风险。",
+          priority: 4,
+          type: "direction",
+        },
+      ],
+    };
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        decisionGuidance={guidance}
+        latestAssistantMessage="先选一个最接近你的方向。"
+      />,
+    );
+
+    expect(screen.getByText("方案 A")).toBeInTheDocument();
+    expect(screen.getByText("方案 B")).toBeInTheDocument();
+    expect(screen.getByText("方案 C")).toBeInTheDocument();
+    expect(screen.getByText("方案 D")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /自由补充/i })).toBeInTheDocument();
+  });
+
   it("uses suggestion option content for the selection callback", () => {
     const guidance: DecisionGuidance = {
       conversationStrategy: "greet",
@@ -178,6 +232,65 @@ describe("AssistantTurnCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /从模糊方向开始/i }));
 
     expect(onSelect).toHaveBeenCalledWith("我现在只有一个模糊方向，还不知道怎么描述，想让你带着我一步步梳理。");
+  });
+
+  it("uses a dedicated callback for free supplement instead of the suggestion selection callback", () => {
+    const guidance: DecisionGuidance = {
+      conversationStrategy: "greet",
+      strategyLabel: "欢迎引导",
+      strategyReason: "先给用户几个容易选择的方向。",
+      nextBestQuestions: [],
+      confirmQuickReplies: [],
+      suggestionOptions: [
+        {
+          label: "先聊目标用户",
+          content: "我想先把目标用户讲清楚，再继续往下拆。",
+          rationale: "先定用户，后续问题和方案更容易收敛。",
+          priority: 1,
+          type: "direction",
+        },
+        {
+          label: "先聊使用场景",
+          content: "我想先把用户会在哪个场景下使用这款产品讲清楚。",
+          rationale: "先锁定场景，便于判断需求强度。",
+          priority: 2,
+          type: "direction",
+        },
+        {
+          label: "先聊核心痛点",
+          content: "我想先确认用户最痛的那个问题到底是什么。",
+          rationale: "先抓痛点，再看功能是否成立。",
+          priority: 3,
+          type: "direction",
+        },
+        {
+          label: "先聊验证方式",
+          content: "我想先聊第一轮要怎么验证这个想法值不值得做。",
+          rationale: "优先明确验证动作，降低空想风险。",
+          priority: 4,
+          type: "direction",
+        },
+      ],
+    };
+    const onSelect = vi.fn();
+    const onRequestFreeSupplement = vi.fn();
+
+    render(
+      <AssistantTurnCard
+        {...({
+          currentAction: null,
+          decisionGuidance: guidance,
+          latestAssistantMessage: "先选一个最接近你的方向。",
+          onRequestFreeSupplement,
+          onSelectDecisionGuidanceQuestion: onSelect,
+        } as any)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /自由补充/i }));
+
+    expect(onRequestFreeSupplement).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("shows collaboration mode label when provided", () => {
