@@ -25,6 +25,8 @@ TECHNICAL_PREFERENCE_PHRASES = (
     "技术实现",
 )
 
+FINALIZE_PREFERENCES = ("balanced", "business", "technical")
+
 
 def normalize_section(title: str, content: str | None, status: str = "confirmed") -> dict[str, str]:
     normalized_content = normalize_text(content or "")
@@ -76,6 +78,13 @@ def resolve_finalize_preference(user_input: str) -> str:
     if any(phrase in normalized for phrase in BUSINESS_PREFERENCE_PHRASES):
         return "business"
     return "balanced"
+
+
+def normalize_finalize_preference(preference: str | None) -> str | None:
+    if preference is None:
+        return None
+    normalized = normalize_text(preference)
+    return normalized if normalized in FINALIZE_PREFERENCES else None
 
 
 def build_finalized_sections(prd_draft: dict, preference: str) -> dict[str, dict[str, str]]:

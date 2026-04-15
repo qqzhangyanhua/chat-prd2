@@ -27,6 +27,7 @@ from app.schemas.message import AssistantErrorEventData
 from app.schemas.message import AssistantVersionStartedEventData
 from app.schemas.message import MessageAcceptedEventData
 from app.schemas.message import ReplyGroupCreatedEventData
+from app.services import finalize_session as finalize_session_service
 from app.services.message_models import (
     LocalReplyStream,
     MessageResult,
@@ -68,6 +69,35 @@ from app.services.prd_runtime import preview_prd_sections as _preview_prd_sectio
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = "你是用户的 AI 产品协作助手，请基于上下文给出简洁、直接的中文回复。"
+
+
+def _is_finalize_action(action: dict) -> bool:
+    return action.get("action") == "finalize"
+
+
+def _extract_prd_snapshot_version(snapshot: object, default: int) -> int:
+    if isinstance(snapshot, dict):
+        prd_snapshot = snapshot.get("prd_snapshot")
+        if isinstance(prd_snapshot, dict) and isinstance(prd_snapshot.get("version"), int):
+            return prd_snapshot["version"]
+        return default
+    prd_snapshot = getattr(snapshot, "prd_snapshot", None)
+    version = getattr(prd_snapshot, "version", None)
+    if isinstance(version, int):
+        return version
+    return default
+
+
+def _build_finalized_prd_updated_payload(snapshot: object) -> dict:
+    if isinstance(snapshot, dict):
+        prd_snapshot = snapshot.get("prd_snapshot")
+        sections = prd_snapshot.get("sections") if isinstance(prd_snapshot, dict) else {}
+        return {"sections": sections if isinstance(sections, dict) else {}, "meta": {"status": "finalized"}}
+    prd_snapshot = getattr(snapshot, "prd_snapshot", None)
+    sections = getattr(prd_snapshot, "sections", None)
+    if not isinstance(sections, dict):
+        sections = {}
+    return {"sections": sections, "meta": {"status": "finalized"}}
 
 
 def _build_assistant_error_event(
@@ -270,6 +300,7 @@ def handle_user_message(
                 messages=_build_gateway_messages(db, session_id),
             )
 
+        action_payload = asdict(agent_result.action)
         assistant_message_id, _, _, _, _, _ = _persist_assistant_reply_and_version(
             db=db,
             session_id=session_id,
@@ -280,13 +311,21 @@ def handle_user_message(
             version_no=1,
             reply=reply,
             model_meta=model_meta,
-            action=asdict(agent_result.action),
+            action=action_payload,
             turn_decision=turn_decision,
             state=state,
             state_patch=agent_result.state_patch,
             prd_patch=agent_result.prd_patch,
             model_config=model_config,
         )
+        if _is_finalize_action(action_payload):
+            finalize_session_service.finalize_session(
+                db=db,
+                session_id=session_id,
+                user_id=session.user_id,
+                confirmation_source="message",
+                preference=agent_result.state_patch.get("finalize_preference"),
+            )
     except ModelGatewayError as exc:
         logger.warning(
             "消息发送调用模型失败: session_id=%s model_config_id=%s model=%s base_url=%s detail=%s",
@@ -308,7 +347,7 @@ def handle_user_message(
     return MessageResult(
         user_message_id=user_message.id,
         assistant_message_id=assistant_message_id,
-        action=asdict(agent_result.action),
+        action=action_payload,
         reply=reply,
     )
 
@@ -437,13 +476,31 @@ def stream_user_message_events(
             db.rollback()
             raise
 
-        yield MessageStreamEvent(
-            type="prd.updated",
-            data=_build_prd_updated_event_data(
+        finalized_snapshot = None
+        if _is_finalize_action(prepared.action):
+            finalized_snapshot = finalize_session_service.finalize_session(
+                db=db,
+                session_id=session_id,
+                user_id=session.user_id,
+                confirmation_source="message",
+                preference=prepared.state_patch.get("finalize_preference"),
+            )
+            prd_snapshot_version = _extract_prd_snapshot_version(
+                finalized_snapshot,
+                prd_snapshot_version,
+            )
+
+        if finalized_snapshot is None:
+            prd_updated_payload = _build_prd_updated_event_data(
                 prepared.state,
                 prepared.state_patch,
                 prepared.prd_patch,
-            ),
+            )
+        else:
+            prd_updated_payload = _build_finalized_prd_updated_payload(finalized_snapshot)
+        yield MessageStreamEvent(
+            type="prd.updated",
+            data=prd_updated_payload,
         )
         yield MessageStreamEvent(
             type="assistant.done",

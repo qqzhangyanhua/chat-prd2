@@ -842,6 +842,103 @@ def test_export_returns_draft_status_when_not_finalized(
     assert "草稿用户" in data["content"]
 
 
+def test_finalize_route_moves_ready_session_to_completed(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "finalize",
+                "finalization_ready": True,
+                "prd_draft": {
+                    "version": 2,
+                    "status": "draft_refined",
+                    "sections": {
+                        "summary": {"title": "一句话概述", "content": "最终版概述", "status": "draft"},
+                        "target_user": {"title": "目标用户", "content": "产品经理", "status": "confirmed"},
+                        "problem": {"title": "核心问题", "content": "需求沟通低效", "status": "confirmed"},
+                        "solution": {"title": "解决方案", "content": "结构化协作", "status": "confirmed"},
+                        "mvp_scope": {"title": "MVP 范围", "content": "会话 + 导出", "status": "confirmed"},
+                    },
+                },
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/finalize",
+        json={"confirmation_source": "button", "preference": "business"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["state"]["workflow_stage"] == "completed"
+    assert data["state"]["prd_draft"]["status"] == "finalized"
+
+    db = testing_session_local()
+    try:
+        latest_state = state_repository.get_latest_state_version(db, seeded_session)
+        assert latest_state is not None
+        assert latest_state.state_json["finalize_confirmation_source"] == "button"
+    finally:
+        db.close()
+
+
+def test_finalize_route_rejects_invalid_confirmation_source(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "finalize",
+                "finalization_ready": True,
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/finalize",
+        json={"confirmation_source": "invalid"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "FINALIZE_CONFIRMATION_REQUIRED"
+
+
 def test_delete_session_removes_owned_session(auth_client, seeded_session):
     response = auth_client.delete(f"/api/sessions/{seeded_session}")
 

@@ -1,144 +1,143 @@
-import importlib
-from types import SimpleNamespace
-
 import pytest
-from fastapi import HTTPException
+from sqlalchemy import select
+
+from app.db.models import PrdSnapshot, ProjectStateVersion, User
+from app.repositories import prd as prd_repository
+from app.repositories import state as state_repository
+from app.schemas.session import SessionCreateRequest
+from app.services import finalize_session as finalize_service
+from app.services import sessions as session_service
 
 
-def _load_finalize_module():
-    try:
-        return importlib.import_module("app.services.finalize_session")
-    except ModuleNotFoundError as exc:
-        pytest.fail(f"finalize service module missing: {exc}")
-
-
-def _fake_db():
-    return object()
-
-
-def _patch_optional_finalize_dependencies(module, monkeypatch, *, latest_state: dict):
-    calls = {"create_state_version": 0, "create_prd_snapshot": 0}
-
-    def _get_latest_state(db, session_id):
-        return latest_state
-
-    def _create_state_version(db, session_id, version, state_json):
-        calls["create_state_version"] += 1
-        return SimpleNamespace(version=version, state_json=state_json)
-
-    def _create_prd_snapshot(db, session_id, version, sections):
-        calls["create_prd_snapshot"] += 1
-        return SimpleNamespace(version=version, sections=sections)
-
-    monkeypatch.setattr(
-        module,
-        "state_repository",
-        SimpleNamespace(
-            get_latest_state=_get_latest_state,
-            create_state_version=_create_state_version,
-        ),
-        raising=False,
+def _create_user_and_session(db_session):
+    user = User(
+        id="user-finalize-1",
+        email="finalize@example.com",
+        password_hash="hash",
     )
-    monkeypatch.setattr(
-        module,
-        "session_service",
-        SimpleNamespace(
-            get_session_snapshot=lambda db, session_id, user_id: {
-                "session": {"id": session_id, "user_id": user_id},
-                "state": latest_state,
+    db_session.add(user)
+    db_session.commit()
+    snapshot = session_service.create_session(
+        db_session,
+        user.id,
+        SessionCreateRequest(
+            title="Finalize Test",
+            initial_idea="一个帮助团队快速整理需求的系统",
+        ),
+    )
+    return user.id, snapshot.session.id
+
+
+def _seed_finalize_ready_state(db_session, session_id: str, *, ready: bool):
+    latest = state_repository.get_latest_state_version(db_session, session_id)
+    assert latest is not None
+    base_state = latest.state_json
+    state_json = {
+        **base_state,
+        "workflow_stage": "finalize",
+        "finalization_ready": ready,
+        "prd_draft": {
+            "version": latest.version + 1,
+            "status": "draft_refined",
+            "sections": {
+                "summary": {"title": "一句话概述", "content": "智能需求助手", "status": "draft"},
+                "target_user": {"title": "目标用户", "content": "产品团队", "status": "confirmed"},
+                "problem": {"title": "核心问题", "content": "需求讨论低效", "status": "confirmed"},
+                "solution": {"title": "解决方案", "content": "结构化澄清 + 输出 PRD", "status": "confirmed"},
+                "mvp_scope": {"title": "MVP 范围", "content": "会话、总结、导出", "status": "confirmed"},
             },
-        ),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        module,
-        "prd_repository",
-        SimpleNamespace(create_prd_snapshot=_create_prd_snapshot),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        module,
-        "build_finalized_sections",
-        lambda prd_draft, preference: {
-            "summary": {"title": "一句话概述", "content": "可发布", "status": "confirmed"},
         },
-        raising=False,
+    }
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        state_json=state_json,
     )
-
-    return calls
-
-
-def test_finalize_session_raises_when_state_not_ready(monkeypatch):
-    module = _load_finalize_module()
-    _patch_optional_finalize_dependencies(
-        module,
-        monkeypatch,
-        latest_state={"workflow_stage": "finalize", "finalization_ready": False},
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        sections=state_json["prd_draft"]["sections"],
     )
+    db_session.commit()
 
-    with pytest.raises((HTTPException, ValueError)) as exc_info:
-        module.finalize_session(
-            _fake_db(),
-            "session-1",
-            "user-1",
+
+def test_finalize_session_raises_when_state_not_ready(db_session):
+    user_id, session_id = _create_user_and_session(db_session)
+    _seed_finalize_ready_state(db_session, session_id, ready=False)
+
+    with pytest.raises(Exception) as exc_info:
+        finalize_service.finalize_session(
+            db_session,
+            session_id,
+            user_id,
             confirmation_source="button",
         )
 
     error = exc_info.value
-    status_code = getattr(error, "status_code", None)
-    code = getattr(error, "code", None) or getattr(error, "error_code", None)
-    assert status_code == 409 or code in {"FINALIZE_NOT_READY", "WORKFLOW_NOT_READY"}
+    assert getattr(error, "status_code", None) == 409
+    assert getattr(error, "code", None) == "FINALIZE_NOT_READY"
 
 
 @pytest.mark.parametrize("invalid_confirmation_source", ["", "invalid"])
 def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_invalid(
-    monkeypatch,
+    db_session,
     invalid_confirmation_source: str,
 ):
-    module = _load_finalize_module()
-    _patch_optional_finalize_dependencies(
-        module,
-        monkeypatch,
-        latest_state={"workflow_stage": "finalize", "finalization_ready": True},
-    )
+    user_id, session_id = _create_user_and_session(db_session)
+    _seed_finalize_ready_state(db_session, session_id, ready=True)
 
-    with pytest.raises((HTTPException, ValueError)) as exc_info:
-        module.finalize_session(
-            _fake_db(),
-            "session-1",
-            "user-1",
+    with pytest.raises(Exception) as exc_info:
+        finalize_service.finalize_session(
+            db_session,
+            session_id,
+            user_id,
             confirmation_source=invalid_confirmation_source,
         )
 
     error = exc_info.value
-    status_code = getattr(error, "status_code", None)
-    code = getattr(error, "code", None) or getattr(error, "error_code", None)
-    assert status_code == 409 or code in {"FINALIZE_CONFIRMATION_REQUIRED", "CONFIRMATION_REQUIRED"}
+    assert getattr(error, "status_code", None) == 409
+    assert getattr(error, "code", None) == "FINALIZE_CONFIRMATION_REQUIRED"
 
 
-def test_finalize_session_allows_completed_when_ready_and_confirmation_source_provided(monkeypatch):
-    module = _load_finalize_module()
-    calls = _patch_optional_finalize_dependencies(
-        module,
-        monkeypatch,
-        latest_state={"workflow_stage": "finalize", "finalization_ready": True},
+def test_finalize_session_allows_completed_when_ready_and_confirmation_source_provided(db_session):
+    user_id, session_id = _create_user_and_session(db_session)
+    _seed_finalize_ready_state(db_session, session_id, ready=True)
+
+    before_state_count = len(
+        db_session.execute(
+            select(ProjectStateVersion).where(ProjectStateVersion.session_id == session_id)
+        ).scalars().all()
+    )
+    before_prd_count = len(
+        db_session.execute(
+            select(PrdSnapshot).where(PrdSnapshot.session_id == session_id)
+        ).scalars().all()
     )
 
-    result = module.finalize_session(
-        _fake_db(),
-        "session-1",
-        "user-1",
+    result = finalize_service.finalize_session(
+        db_session,
+        session_id,
+        user_id,
         confirmation_source="button",
-        preference=None,
+        preference="technical",
     )
 
-    nested_state = None
-    if isinstance(result, dict):
-        nested_state = result.get("state")
-    else:
-        nested_state = getattr(result, "state", None)
+    assert result.state.workflow_stage == "completed"
+    assert result.state.finalization_ready is True
+    assert result.state.prd_draft["status"] == "finalized"
+    assert result.state.prd_draft["sections"]["summary"]["content"] == "智能需求助手"
 
-    assert isinstance(nested_state, dict)
-    assert nested_state.get("workflow_stage") == "completed"
-    assert calls["create_state_version"] == 1
-    assert calls["create_prd_snapshot"] == 1
+    after_state_count = len(
+        db_session.execute(
+            select(ProjectStateVersion).where(ProjectStateVersion.session_id == session_id)
+        ).scalars().all()
+    )
+    after_prd_count = len(
+        db_session.execute(
+            select(PrdSnapshot).where(PrdSnapshot.session_id == session_id)
+        ).scalars().all()
+    )
+    assert after_state_count == before_state_count + 1
+    assert after_prd_count == before_prd_count + 1

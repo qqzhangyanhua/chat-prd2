@@ -159,6 +159,86 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert decision is not None
 
 
+def test_message_stream_finalize_action_moves_session_to_completed(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="终稿确认模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "finalize",
+                "finalization_ready": True,
+                "prd_draft": {
+                    "version": 2,
+                    "status": "draft_refined",
+                    "sections": {
+                        "summary": {"title": "一句话概述", "content": "智能需求助手", "status": "draft"},
+                        "target_user": {"title": "目标用户", "content": "产品经理", "status": "confirmed"},
+                        "problem": {"title": "核心问题", "content": "需求沟通效率低", "status": "confirmed"},
+                        "solution": {"title": "解决方案", "content": "结构化澄清流程", "status": "confirmed"},
+                        "mvp_scope": {"title": "MVP 范围", "content": "会话、总结、导出", "status": "confirmed"},
+                        "constraints": {"title": "约束条件", "content": "两周内上线", "status": "draft"},
+                    },
+                },
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "确认设计，按技术版输出最终版",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        chunks = list(response.iter_text())
+
+    parsed_events = _parse_sse_events("".join(chunks))
+    action_payload = next(payload for name, payload in parsed_events if name == "action.decided")
+    done_payload = next(payload for name, payload in parsed_events if name == "assistant.done")
+    prd_payload = next(payload for name, payload in parsed_events if name == "prd.updated")
+    assert action_payload["action"] == "finalize"
+    assert prd_payload["meta"]["status"] == "finalized"
+
+    db = testing_session_local()
+    try:
+        latest_state = state_repository.get_latest_state_version(db, seeded_session)
+        assert latest_state is not None
+        assert latest_state.state_json["workflow_stage"] == "completed"
+        assert latest_state.state_json["finalize_confirmation_source"] == "message"
+        assert latest_state.state_json["prd_draft"]["status"] == "finalized"
+        assert done_payload["prd_snapshot_version"] == latest_state.version
+    finally:
+        db.close()
+
+
 def test_message_stream_returns_404_for_other_users_session(client, auth_client, seeded_session):
     intruder_response = client.post(
         "/api/auth/register",

@@ -6,6 +6,7 @@ from sqlalchemy import inspect
 from .api.routes.admin_model_configs import router as admin_model_configs_router
 from .api.routes.auth import router as auth_router
 from .api.routes.exports import router as exports_router
+from .api.routes.finalize import router as finalize_router
 from .api.routes.messages import router as messages_router
 from .api.routes.model_configs import router as model_configs_router
 from .api.routes.sessions import router as sessions_router
@@ -27,6 +28,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(sessions_router)
 app.include_router(messages_router)
+app.include_router(finalize_router)
 app.include_router(exports_router)
 app.include_router(admin_model_configs_router)
 app.include_router(model_configs_router)
