@@ -196,6 +196,58 @@ def test_build_user_prompt_missing_prd_snapshot():
     assert data["turn_count"] == 0
 
 
+def test_build_repair_prompt_uses_raw_suggestion_count():
+    from app.agent.pm_mentor import _build_repair_prompt
+    from app.agent.types import PmMentorOutput, Suggestion
+
+    mentor_output = PmMentorOutput(
+        observation="obs",
+        challenge="challenge",
+        suggestion="suggestion",
+        question="question",
+        reply="reply",
+        confidence="medium",
+        next_focus="problem",
+        raw_suggestion_count=5,
+        suggestions=[
+            Suggestion(
+                type="direction",
+                label="先聊目标用户",
+                content="我想先明确，这个产品第一版最想服务谁。",
+                rationale="先锁定目标用户。",
+                priority=1,
+            ),
+            Suggestion(
+                type="direction",
+                label="先聊核心问题",
+                content="我想先讲清楚，这个产品到底想解决什么具体麻烦。",
+                rationale="先把问题说透。",
+                priority=2,
+            ),
+            Suggestion(
+                type="direction",
+                label="先聊核心功能",
+                content="我想先列一下，我脑子里已经想到的核心功能。",
+                rationale="先明确能力主线。",
+                priority=3,
+            ),
+            Suggestion(
+                type="direction",
+                label="我直接补充",
+                content="我不想选项，我直接补充我现在对这个产品的想法。",
+                rationale="保留自由补充入口。",
+                priority=4,
+            ),
+        ],
+        recommendation={"label": "先聊目标用户", "content": "我想先明确，这个产品第一版最想服务谁。"},
+    )
+
+    prompt = _build_repair_prompt({}, "我想做一个任务管理工具", mentor_output)
+    data = json.loads(prompt)
+
+    assert data["invalid_output"]["suggestion_count"] == 5
+
+
 def test_run_pm_mentor_uses_default_suggestions_for_low_information_input():
     from app.agent.pm_mentor import run_pm_mentor
     from app.agent.types import AgentResult

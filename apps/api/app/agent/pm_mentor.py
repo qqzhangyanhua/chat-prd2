@@ -161,7 +161,7 @@ def _build_repair_prompt(
                 "next_move": mentor_output.next_move,
             },
             "invalid_output": {
-                "suggestion_count": len(mentor_output.suggestions),
+                "suggestion_count": mentor_output.raw_suggestion_count or len(mentor_output.suggestions),
                 "suggestions": [
                     {
                         "type": item.type,
