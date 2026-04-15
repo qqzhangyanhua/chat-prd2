@@ -73,21 +73,8 @@ def test_run_agent_greeting_returns_structured_suggestions():
     assert result.reply_mode == "local"
     assert result.turn_decision is not None
     assert result.turn_decision.phase == "greeting"
-    assert len(result.turn_decision.suggestions) == 3
-    assert result.turn_decision.conversation_strategy == "greet"
-    assert result.turn_decision.recommendation is not None
-    assert result.turn_decision.next_best_questions == [
-        item.content for item in result.turn_decision.suggestions
-    ]
-
-
-def test_run_agent_greeting_always_returns_four_suggestions():
-    state = {"iteration": 0}
-    result = run_agent(state, "你好", model_config=MagicMock())
-
-    assert result.turn_decision is not None
-    assert result.turn_decision.phase == "greeting"
     assert len(result.turn_decision.suggestions) == 4
+    assert result.turn_decision.conversation_strategy == "greet"
     assert result.turn_decision.recommendation is not None
     assert result.turn_decision.next_best_questions == [
         item.content for item in result.turn_decision.suggestions

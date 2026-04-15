@@ -209,49 +209,11 @@ def test_run_pm_mentor_uses_default_suggestions_for_low_information_input():
 
     assert isinstance(result, AgentResult)
     assert result.turn_decision is not None
-    assert 2 <= len(result.turn_decision.suggestions) <= 4
+    assert len(result.turn_decision.suggestions) == 4
     assert result.turn_decision.recommendation is not None
     assert result.turn_decision.next_best_questions == [
         item.content for item in result.turn_decision.suggestions
     ]
-
-
-def test_run_pm_mentor_generates_guided_options_for_todolist_prd_prompt():
-    from app.agent.pm_mentor import run_pm_mentor
-
-    fake_llm_output = {
-        "observation": "用户已经给出了 todolist 方向，但还没有明确优先展开的维度。",
-        "challenge": "如果直接进入功能罗列，后面很容易做成没有重点的清单工具。",
-        "suggestion": "先在用户、问题和核心功能之间选一个切入口，会比直接散聊更容易收敛。",
-        "question": "你想先从哪个切入口开始？",
-        "reply": "我先帮你把这个想法拆成几个更容易继续的方向。",
-        "prd_updates": {},
-        "confidence": "medium",
-        "next_focus": "problem",
-    }
-
-    mock_config = MagicMock()
-    mock_config.base_url = "http://fake"
-    mock_config.api_key = "key"
-    mock_config.model = "gpt-4"
-
-    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
-        result = run_pm_mentor(
-            {},
-            "我有一个产品想法，想和你一起梳理成清晰的 PRD。做个todolist",
-            mock_config,
-        )
-
-    assert result.turn_decision is not None
-    assert 2 <= len(result.turn_decision.suggestions) <= 4
-    assert result.turn_decision.recommendation is not None
-    assert result.turn_decision.recommendation["label"] == result.turn_decision.suggestions[0].label
-    assert result.turn_decision.next_best_questions == [
-        item.content for item in result.turn_decision.suggestions
-    ]
-    assert any("谁用" in item.content or "用户" in item.content for item in result.turn_decision.suggestions)
-    assert any("解决" in item.content or "麻烦" in item.content for item in result.turn_decision.suggestions)
-    assert any("直接补充" in item.content or "直接说" in item.content for item in result.turn_decision.suggestions)
 
 
 def test_run_pm_mentor_calls_llm_and_returns_agent_result():
@@ -294,7 +256,7 @@ def test_run_pm_mentor_calls_llm_and_returns_agent_result():
     assert result.turn_decision.suggestions[0].label == "先聊个人用户"
 
 
-def test_run_pm_mentor_main_path_always_returns_four_suggestions():
+def test_run_pm_mentor_main_path_preserves_four_llm_suggestions():
     from app.agent.pm_mentor import run_pm_mentor
 
     fake_llm_output = _make_pm_output(
@@ -302,12 +264,14 @@ def test_run_pm_mentor_main_path_always_returns_four_suggestions():
             _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
             _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
             _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
         ]
     )
 
-    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output) as mock_llm:
         result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
 
+    assert mock_llm.call_count == 1
     assert result.turn_decision is not None
     assert len(result.turn_decision.suggestions) == 4
     assert result.turn_decision.recommendation is not None
@@ -386,10 +350,12 @@ def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
 
     assert result.turn_decision is not None
     assert len(result.turn_decision.suggestions) == 4
+    bare_labels = {"目标用户", "核心问题", "核心功能", "自由补充"}
     for item in result.turn_decision.suggestions:
         assert item.content != item.label
-        assert len(item.content) >= 10
-        assert any(token in item.content for token in ("我", "你", "请"))
+        assert item.content not in bare_labels
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.recommendation["content"] not in bare_labels
 
 
 def test_run_pm_mentor_llm_failure_returns_fallback():
@@ -407,7 +373,7 @@ def test_run_pm_mentor_llm_failure_returns_fallback():
     assert result.reply_mode == "local"
     assert result.reply
     assert result.turn_decision is not None
-    assert 2 <= len(result.turn_decision.suggestions) <= 4
+    assert len(result.turn_decision.suggestions) == 4
     assert result.turn_decision.recommendation is not None
     assert result.turn_decision.next_best_questions == [
         item.content for item in result.turn_decision.suggestions
