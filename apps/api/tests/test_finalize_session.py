@@ -4,8 +4,11 @@ from types import SimpleNamespace
 import pytest
 
 
-def _finalize_module():
-    return importlib.import_module("app.services.finalize_session")
+def _load_finalize_module():
+    try:
+        return importlib.import_module("app.services.finalize_session")
+    except ModuleNotFoundError as exc:
+        pytest.fail(f"finalize service module missing: {exc}")
 
 
 def _fake_db():
@@ -62,7 +65,7 @@ def _patch_optional_finalize_dependencies(module, monkeypatch, *, latest_state: 
 
 
 def test_finalize_session_raises_when_state_not_ready(monkeypatch):
-    module = _finalize_module()
+    module = _load_finalize_module()
     _patch_optional_finalize_dependencies(
         module,
         monkeypatch,
@@ -83,8 +86,12 @@ def test_finalize_session_raises_when_state_not_ready(monkeypatch):
     assert status_code == 409 or code in {"FINALIZE_NOT_READY", "WORKFLOW_NOT_READY"}
 
 
-def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_invalid(monkeypatch):
-    module = _finalize_module()
+@pytest.mark.parametrize("invalid_confirmation_source", ["", "invalid"])
+def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_invalid(
+    monkeypatch,
+    invalid_confirmation_source: str,
+):
+    module = _load_finalize_module()
     _patch_optional_finalize_dependencies(
         module,
         monkeypatch,
@@ -96,7 +103,7 @@ def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_i
             _fake_db(),
             "session-1",
             "user-1",
-            confirmation_source="",
+            confirmation_source=invalid_confirmation_source,
         )
 
     error = exc_info.value
@@ -106,7 +113,7 @@ def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_i
 
 
 def test_finalize_session_allows_completed_when_ready_and_confirmation_source_provided(monkeypatch):
-    module = _finalize_module()
+    module = _load_finalize_module()
     _patch_optional_finalize_dependencies(
         module,
         monkeypatch,
