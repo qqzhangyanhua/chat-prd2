@@ -1,0 +1,26 @@
+apps/api/tests/test_pm_mentor.py
+  5999037d39a1508d 199-250
+apps/api/app/agent/pm_mentor.py
+  5999037d39a1508d 164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "2a398a2b58bd78427e320aba49d5a9e98a362095",
+  "prompts": {
+    "5999037d39a1508d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f83-f3dd-7482-ac11-350da1153474",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 3548,
+      "total_deletions": 4,
+      "accepted_lines": 3548,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/e4995f1f432d73f4afa2208bbb17bca918d172bdf8a1796ba8fcfab82d9ee63a"
+    }
+  }
+}
