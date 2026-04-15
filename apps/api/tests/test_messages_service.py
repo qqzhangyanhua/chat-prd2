@@ -502,7 +502,8 @@ def test_handle_user_message_persists_local_pm_mentor_reply_metadata_and_state(d
     assert latest_state["conversation_strategy"] == "clarify"
     assert latest_state["strategy_reason"] == "先聚焦一个更具体的用户角色。"
     assert latest_state["phase_goal"] == "你的目标用户是谁？"
-    assert latest_state["next_best_questions"] == ["你的目标用户是谁？"]
+    assert len(latest_state["next_best_questions"]) == 4
+    assert "我想先明确，这个产品主要给谁用。" in latest_state["next_best_questions"]
     assert latest_state["current_model_scene"] == "reasoning"
     assert latest_state["collaboration_mode_label"] == "深度推演模式"
     assert latest_prd_snapshot is not None
@@ -516,6 +517,40 @@ def test_handle_user_message_persists_local_pm_mentor_reply_metadata_and_state(d
 
 
 def test_merge_state_patch_with_decision_reads_workflow_fields_from_turn_decision_top_level():
+    turn_decision = SimpleNamespace(
+        phase="refine_loop",
+        conversation_strategy="clarify",
+        strategy_reason=None,
+        phase_goal="补齐关键缺口",
+        assumptions=[],
+        pm_risk_flags=[],
+        suggestions=[],
+        recommendation=None,
+        needs_confirmation=[],
+        next_best_questions=["下一问"],
+        workflow_stage="finalize",
+        idea_parse_result={"idea_summary": "在线 3D 图纸预览平台"},
+        prd_draft={"version": 2, "status": "draft_refined"},
+        critic_result={"overall_verdict": "pass", "question_queue": []},
+        refine_history=[{"question": "Q1", "answer": "A1"}],
+        finalization_ready=True,
+        state_patch={},
+    )
+
+    merged = messages_service._merge_state_patch_with_decision(
+        state_patch={},
+        turn_decision=turn_decision,
+        current_state={"prd_snapshot": {"sections": {}}},
+    )
+
+    assert merged["workflow_stage"] == "finalize"
+    assert merged["idea_parse_result"]["idea_summary"] == "在线 3D 图纸预览平台"
+    assert merged["prd_draft"]["version"] == 2
+    assert merged["critic_result"]["overall_verdict"] == "pass"
+    assert merged["refine_history"] == [{"question": "Q1", "answer": "A1"}]
+    assert merged["finalization_ready"] is True
+    assert merged["current_phase"] == "refine_loop"
+    assert merged["next_best_questions"] == ["下一问"]
 
 def test_handle_user_message_persists_structured_suggestions_and_next_best_questions(db_session, monkeypatch):
     session = _create_session_with_state(db_session)

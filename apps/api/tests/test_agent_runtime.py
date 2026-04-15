@@ -58,6 +58,58 @@ def test_run_agent_reopens_completed_workflow_for_followup_edit():
     assert result.reply == "收到，我们继续修改目标用户。"
 
 
+def test_run_agent_reopens_completed_workflow_before_delegating_to_pm_mentor():
+    state = {
+        "workflow_stage": "completed",
+        "finalization_ready": True,
+        "pending_confirmations": ["请确认是否进入终稿"],
+        "prd_snapshot": {
+            "sections": {
+                "problem": {"title": "核心问题", "content": "旧问题", "status": "confirmed"},
+                "solution": {"title": "解决方案", "content": "旧方案", "status": "confirmed"},
+            }
+        },
+    }
+    mock_config = MagicMock()
+    captured = {}
+    mock_result = AgentResult(
+        reply="收到，进入修改模式。",
+        action=NextAction(action="probe_deeper", target=None, reason="继续修改"),
+        reply_mode="local",
+        turn_decision=TurnDecision(
+            phase="problem",
+            phase_goal="重开澄清",
+            understanding={"summary": "用户继续编辑", "candidate_updates": {}, "ambiguous_points": []},
+            assumptions=[],
+            gaps=[],
+            challenges=[],
+            pm_risk_flags=[],
+            next_move="probe_for_specificity",
+            suggestions=[],
+            recommendation=None,
+            reply_brief={},
+            state_patch={"workflow_stage": "refine_loop"},
+            prd_patch={},
+            needs_confirmation=[],
+            confidence="medium",
+            conversation_strategy="clarify",
+        ),
+    )
+
+    def _fake_run_pm_mentor(state_arg, user_input, model_config, *, conversation_history=None):
+        captured["state"] = state_arg
+        captured["user_input"] = user_input
+        return mock_result
+
+    with patch("app.agent.pm_mentor.run_pm_mentor", side_effect=_fake_run_pm_mentor):
+        result = run_agent(state, "我想把核心问题改成自动化效率问题", model_config=mock_config)
+
+    assert captured["state"]["workflow_stage"] == "refine_loop"
+    assert captured["state"]["finalization_ready"] is False
+    assert captured["state"]["pending_confirmations"] == []
+    assert result.reply == "收到，进入修改模式。"
+
+
 def test_run_agent_no_model_config_returns_fallback():
     state = {}
     result = run_agent(state, "我想做一个应用", model_config=None)
