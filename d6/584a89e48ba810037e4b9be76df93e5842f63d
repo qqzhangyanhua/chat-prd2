@@ -1,0 +1,41 @@
+apps/api/app/agent/runtime.py
+  eeeb4490fd308c40 5-6,265-356,444,448,451-454,457-458,461-462,467
+apps/api/tests/test_messages_service.py
+  eeeb4490fd308c40 518-551
+apps/api/tests/test_agent_runtime.py
+  eeeb4490fd308c40 66,111,115-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "d6584a89e48ba810037e4b9be76df93e5842f63d",
+  "prompts": {
+    "e2a6760241d0221f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f46-2c97-70d1-92dc-3452421ac932",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "eeeb4490fd308c40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d9149-82de-7b40-9722-16cd1bc2b371",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 211,
+      "total_deletions": 7,
+      "accepted_lines": 211,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/22fd58d55987132563569ba441a041f6dbb8dc57b4ce538ae6836dceedb8401d"
+    }
+  }
+}
