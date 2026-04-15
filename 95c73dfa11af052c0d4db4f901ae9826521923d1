@@ -1,0 +1,42 @@
+apps/web/src/test/workspace-composer.test.tsx
+  e2a6760241d0221f 1220-1280
+apps/web/src/test/workspace-store.test.ts
+  e2a6760241d0221f 1766-1846
+apps/web/src/test/assistant-turn-card.test.tsx
+  e2a6760241d0221f 150-203,237-293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "95c73dfa11af052c0d4db4f901ae9826521923d1",
+  "prompts": {
+    "c6824aedcafff027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f98-fc32-7073-a357-646dd64c6963",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 3497,
+      "total_deletions": 5,
+      "accepted_lines": 3497,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/1cc7bd7a10f774959ef875bf3d6639fc1e14bc05f6bbca1e2ffe65165a57247c"
+    },
+    "e2a6760241d0221f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f46-2c97-70d1-92dc-3452421ac932",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 255,
+      "total_deletions": 0,
+      "accepted_lines": 255,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/e12f7c28321abbd06f84fef3828242d6ae060980511aedc1d2cf5ef43134cfbe"
+    }
+  }
+}
