@@ -2,6 +2,46 @@ import json
 from unittest.mock import MagicMock, patch
 
 
+def _make_suggestion(
+    label: str,
+    content: str,
+    *,
+    priority: int,
+    suggestion_type: str = "direction",
+) -> dict[str, object]:
+    return {
+        "type": suggestion_type,
+        "label": label,
+        "content": content,
+        "rationale": f"{label} 更适合作为当前回合的推进方向。",
+        "priority": priority,
+    }
+
+
+def _make_pm_output(*, suggestions: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "observation": "用户已经给出一个初步产品想法，但还没有选定最适合继续展开的切入口。",
+        "challenge": "如果不把下一步切入口收敛下来，对话很容易继续发散。",
+        "suggestion": "这一轮应该给用户完整可发送的四个引导项，帮助快速继续。",
+        "question": "你想先从哪个方向继续？",
+        "reply": "我先给你四个可以直接继续的方向，你选一个最接近你的即可。",
+        "prd_updates": {},
+        "confidence": "medium",
+        "next_focus": "problem",
+        "next_move": "force_rank_or_choose",
+        "recommendation": {"label": suggestions[0]["label"]},
+        "suggestions": suggestions,
+    }
+
+
+def _build_mock_model_config() -> MagicMock:
+    mock_config = MagicMock()
+    mock_config.base_url = "http://fake"
+    mock_config.api_key = "key"
+    mock_config.model = "gpt-4"
+    return mock_config
+
+
 def test_parse_pm_mentor_output_full():
     from app.agent.pm_mentor import parse_pm_mentor_output
 
@@ -169,10 +209,49 @@ def test_run_pm_mentor_uses_default_suggestions_for_low_information_input():
 
     assert isinstance(result, AgentResult)
     assert result.turn_decision is not None
-    assert len(result.turn_decision.suggestions) == 3
+    assert 2 <= len(result.turn_decision.suggestions) <= 4
+    assert result.turn_decision.recommendation is not None
     assert result.turn_decision.next_best_questions == [
         item.content for item in result.turn_decision.suggestions
     ]
+
+
+def test_run_pm_mentor_generates_guided_options_for_todolist_prd_prompt():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    fake_llm_output = {
+        "observation": "用户已经给出了 todolist 方向，但还没有明确优先展开的维度。",
+        "challenge": "如果直接进入功能罗列，后面很容易做成没有重点的清单工具。",
+        "suggestion": "先在用户、问题和核心功能之间选一个切入口，会比直接散聊更容易收敛。",
+        "question": "你想先从哪个切入口开始？",
+        "reply": "我先帮你把这个想法拆成几个更容易继续的方向。",
+        "prd_updates": {},
+        "confidence": "medium",
+        "next_focus": "problem",
+    }
+
+    mock_config = MagicMock()
+    mock_config.base_url = "http://fake"
+    mock_config.api_key = "key"
+    mock_config.model = "gpt-4"
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
+        result = run_pm_mentor(
+            {},
+            "我有一个产品想法，想和你一起梳理成清晰的 PRD。做个todolist",
+            mock_config,
+        )
+
+    assert result.turn_decision is not None
+    assert 2 <= len(result.turn_decision.suggestions) <= 4
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.recommendation["label"] == result.turn_decision.suggestions[0].label
+    assert result.turn_decision.next_best_questions == [
+        item.content for item in result.turn_decision.suggestions
+    ]
+    assert any("谁用" in item.content or "用户" in item.content for item in result.turn_decision.suggestions)
+    assert any("解决" in item.content or "麻烦" in item.content for item in result.turn_decision.suggestions)
+    assert any("直接补充" in item.content or "直接说" in item.content for item in result.turn_decision.suggestions)
 
 
 def test_run_pm_mentor_calls_llm_and_returns_agent_result():
@@ -215,6 +294,104 @@ def test_run_pm_mentor_calls_llm_and_returns_agent_result():
     assert result.turn_decision.suggestions[0].label == "先聊个人用户"
 
 
+def test_run_pm_mentor_main_path_always_returns_four_suggestions():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    fake_llm_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
+        result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    assert len(result.turn_decision.suggestions) == 4
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.next_best_questions == [
+        item.content for item in result.turn_decision.suggestions
+    ]
+
+
+def test_run_pm_mentor_retries_once_when_first_llm_response_has_fewer_than_four_suggestions():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    first_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+        ]
+    )
+    second_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", side_effect=[first_output, second_output]) as mock_llm:
+        result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
+
+    assert mock_llm.call_count == 2
+    assert result.turn_decision is not None
+    assert len(result.turn_decision.suggestions) == 4
+
+
+def test_run_pm_mentor_uses_programmatic_fallback_after_two_broken_llm_responses():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    first_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+        ]
+    )
+    second_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", side_effect=[first_output, second_output]) as mock_llm:
+        result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
+
+    assert mock_llm.call_count == 2
+    assert result.turn_decision is not None
+    assert len(result.turn_decision.suggestions) == 4
+    assert any(item.label == "我直接补充" for item in result.turn_decision.suggestions)
+
+
+def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    fake_llm_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("目标用户", "目标用户", priority=1),
+            _make_suggestion("核心问题", "核心问题", priority=2),
+            _make_suggestion("核心功能", "核心功能", priority=3),
+            _make_suggestion("自由补充", "自由补充", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
+        result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    assert len(result.turn_decision.suggestions) == 4
+    for item in result.turn_decision.suggestions:
+        assert item.content != item.label
+        assert len(item.content) >= 10
+        assert any(token in item.content for token in ("我", "你", "请"))
+
+
 def test_run_pm_mentor_llm_failure_returns_fallback():
     from app.agent.pm_mentor import run_pm_mentor
     from app.services.model_gateway import ModelGatewayError
@@ -230,5 +407,8 @@ def test_run_pm_mentor_llm_failure_returns_fallback():
     assert result.reply_mode == "local"
     assert result.reply
     assert result.turn_decision is not None
-    assert result.turn_decision.suggestions == []
-    assert result.turn_decision.next_best_questions == []
+    assert 2 <= len(result.turn_decision.suggestions) <= 4
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.next_best_questions == [
+        item.content for item in result.turn_decision.suggestions
+    ]

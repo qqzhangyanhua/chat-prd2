@@ -81,6 +81,52 @@ def test_run_agent_greeting_returns_structured_suggestions():
     ]
 
 
+def test_run_agent_greeting_always_returns_four_suggestions():
+    state = {"iteration": 0}
+    result = run_agent(state, "你好", model_config=MagicMock())
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.phase == "greeting"
+    assert len(result.turn_decision.suggestions) == 4
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.next_best_questions == [
+        item.content for item in result.turn_decision.suggestions
+    ]
+
+
+def test_run_agent_completed_stage_returns_four_suggestions():
+    state = {
+        "workflow_stage": "completed",
+        "prd_snapshot": {
+            "sections": {
+                "problem": {"title": "核心问题", "status": "confirmed"},
+                "solution": {"title": "解决方案", "status": "confirmed"},
+            }
+        },
+    }
+
+    result = run_agent(state, "继续", model_config=MagicMock())
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.phase == "completed"
+    assert len(result.turn_decision.suggestions) == 4
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.next_best_questions == [
+        item.content for item in result.turn_decision.suggestions
+    ]
+
+
+def test_run_agent_fallback_returns_four_suggestions():
+    result = run_agent({}, "我想做一个应用", model_config=None)
+
+    assert result.turn_decision is not None
+    assert len(result.turn_decision.suggestions) == 4
+    assert result.turn_decision.recommendation is not None
+    assert result.turn_decision.next_best_questions == [
+        item.content for item in result.turn_decision.suggestions
+    ]
+
+
 def test_run_agent_delegates_to_pm_mentor_when_model_config_given():
     mock_config = MagicMock()
     mock_td = TurnDecision(
