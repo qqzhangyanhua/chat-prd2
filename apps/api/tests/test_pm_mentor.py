@@ -1,4 +1,5 @@
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 
@@ -40,6 +41,17 @@ def _build_mock_model_config() -> MagicMock:
     mock_config.api_key = "key"
     mock_config.model = "gpt-4"
     return mock_config
+
+
+def _is_sendable_user_draft(content: str) -> bool:
+    normalized = content.strip()
+    if not normalized:
+        return False
+    if not normalized.endswith(("。", "！", "？")):
+        return False
+    if not re.match(r"^(我|先|请|麻烦|可以|直接|你先)", normalized):
+        return False
+    return bool(re.search(r"(想|要|请|帮|补充|明确|比较|说明|列|确认|继续|直接)", normalized))
 
 
 def test_parse_pm_mentor_output_full():
@@ -330,18 +342,29 @@ def test_run_pm_mentor_uses_programmatic_fallback_after_two_broken_llm_responses
     assert mock_llm.call_count == 2
     assert result.turn_decision is not None
     assert len(result.turn_decision.suggestions) == 4
-    assert any(item.label == "我直接补充" for item in result.turn_decision.suggestions)
+    original_pairs = {
+        (item["label"], item["content"])
+        for item in second_output["suggestions"]
+    }
+    final_pairs = {
+        (item.label, item.content)
+        for item in result.turn_decision.suggestions
+    }
+    assert original_pairs <= final_pairs
+
+    added_items = [
+        item for item in result.turn_decision.suggestions
+        if (item.label, item.content) not in original_pairs
+    ]
+    assert len(added_items) == 2
+    for item in added_items:
+        assert item.label.strip()
+        assert _is_sendable_user_draft(item.content)
 
 
 def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
     from app.agent.pm_mentor import run_pm_mentor
 
-    incomplete_phrases = {
-        "围绕目标用户展开",
-        "继续聊核心问题",
-        "先收敛功能",
-        "自由补充想法",
-    }
     fake_llm_output = _make_pm_output(
         suggestions=[
             _make_suggestion("目标用户方向", "围绕目标用户展开", priority=1),
@@ -357,9 +380,9 @@ def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
     assert result.turn_decision is not None
     assert len(result.turn_decision.suggestions) == 4
     for item in result.turn_decision.suggestions:
-        assert item.content not in incomplete_phrases
+        assert _is_sendable_user_draft(item.content)
     assert result.turn_decision.recommendation is not None
-    assert result.turn_decision.recommendation["content"] not in incomplete_phrases
+    assert _is_sendable_user_draft(result.turn_decision.recommendation["content"])
 
 
 def test_run_pm_mentor_llm_failure_returns_fallback():
