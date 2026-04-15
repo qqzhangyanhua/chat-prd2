@@ -305,6 +305,10 @@ function buildHydratedSessionState(
   const preserveInputValue = options?.preserveInputValue ?? false;
   const preserveLastSubmittedInput = options?.preserveLastSubmittedInput ?? false;
   const preserveFresherPrd = options?.preserveFresherPrd ?? false;
+  const fallbackLastSubmittedInput = [...snapshot.messages]
+    .reverse()
+    .find((message) => message.role === "user")
+    ?.content ?? null;
   const nextPrd: PrdState = {
     extraSections: deriveExtraPrdSections(snapshot.state),
     meta: derivePrdMeta(snapshot.state),
@@ -333,7 +337,9 @@ function buildHydratedSessionState(
     inputValue: preserveInputValue ? state.inputValue : "",
     isStreaming: false,
     lastInterrupted: false,
-    lastSubmittedInput: preserveLastSubmittedInput ? state.lastSubmittedInput : null,
+    lastSubmittedInput: preserveLastSubmittedInput
+      ? state.lastSubmittedInput ?? fallbackLastSubmittedInput
+      : null,
     messages: normalizeMessages(snapshot.messages),
     pendingRequestMode: null,
     pendingUserInput: null,

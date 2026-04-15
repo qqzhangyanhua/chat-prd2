@@ -121,6 +121,7 @@ export function Composer({
   inputRef,
 }: ComposerProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
+  const manualDispatchRef = useRef(false);
   const lastHandledRegenerateIdRef = useRef(0);
   const modelSelectorRef = useRef<HTMLSelectElement | null>(null);
   const [errorRecoveryAction, setErrorRecoveryAction] = useState<ResolvedRecoveryAction | null>(null);
@@ -155,6 +156,9 @@ export function Composer({
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    if (!skipStartRequest) {
+      manualDispatchRef.current = true;
+    }
 
     if (!skipStartRequest) {
       workspaceStore.getState().startRequest(normalizedContent);
@@ -226,6 +230,9 @@ export function Composer({
           : resolvedAction,
       );
     } finally {
+      if (!skipStartRequest) {
+        manualDispatchRef.current = false;
+      }
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
       }
@@ -357,7 +364,12 @@ export function Composer({
 
   // 处理从 workspace/new 页面跳转过来时的自动发送
   useEffect(() => {
-    if (pendingRequestMode !== "new" || !pendingUserInput || !selectedModelConfigId) {
+    if (
+      manualDispatchRef.current ||
+      pendingRequestMode !== "new" ||
+      !pendingUserInput ||
+      !selectedModelConfigId
+    ) {
       return;
     }
     void dispatchMessage(pendingUserInput, true);
@@ -411,7 +423,6 @@ export function Composer({
               onSelectModel={() => {
                 resetError();
                 setErrorRecoveryAction(null);
-                setPostModelSwitchPrompt(null);
               }}
               selectRef={modelSelectorRef}
             />
