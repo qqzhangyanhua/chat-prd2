@@ -1,53 +1,54 @@
-from app.services import prd_runtime
+import importlib
 
 
-def _section(title: str, content: str, status: str = "confirmed") -> dict[str, str]:
+def _readiness_module():
+    return importlib.import_module("app.agent.readiness")
+
+
+def _section(content: str, status: str = "confirmed") -> dict[str, str]:
     return {
-        "title": title,
         "content": content,
         "status": status,
     }
 
 
-def test_preview_prd_meta_requires_all_core_sections_plus_constraints_and_success_metrics():
+def test_evaluate_finalize_readiness_returns_not_ready_when_success_metrics_missing():
+    module = _readiness_module()
     state = {
-        "workflow_stage": "refine_loop",
-        "prd_snapshot": {
+        "prd_draft": {
             "sections": {
-                "target_user": _section("目标用户", "独立开发者"),
-                "problem": _section("核心问题", "需求确认成本高"),
-                "solution": _section("解决方案", "AI 协作问答流"),
-                "mvp_scope": _section("MVP 范围", "只做 Web 端"),
-                "constraints": _section("约束条件", "", "missing"),
-                "success_metrics": _section("成功指标", "", "missing"),
+                "target_user": _section("独立开发者"),
+                "problem": _section("需求确认成本高"),
+                "solution": _section("AI 协作问答流"),
+                "mvp_scope": _section("只做 Web 端"),
+                "constraints": _section("首版不做私有化"),
+                "success_metrics": _section("", status="missing"),
             }
-        },
+        }
     }
 
-    meta = prd_runtime.preview_prd_meta(state, {"finalization_ready": True})
+    result = module.evaluate_finalize_readiness(state)
 
-    assert meta["stageTone"] == "draft"
-    assert meta["stageLabel"] != "可整理终稿"
+    assert result["ready"] is False
+    assert "success_metrics" in result["missing"]
 
 
-def test_preview_prd_meta_marks_ready_when_core_and_guardrail_sections_are_confirmed():
+def test_evaluate_finalize_readiness_returns_ready_when_required_sections_complete():
+    module = _readiness_module()
     state = {
-        "workflow_stage": "refine_loop",
-        "prd_snapshot": {
+        "prd_draft": {
             "sections": {
-                "target_user": _section("目标用户", "独立开发者"),
-                "problem": _section("核心问题", "需求确认成本高"),
-                "solution": _section("解决方案", "AI 协作问答流"),
-                "mvp_scope": _section("MVP 范围", "只做 Web 端"),
-                "constraints": _section("约束条件", "首版不接企业私有化部署"),
-                "success_metrics": _section("成功指标", "7 天留存 >= 20%"),
+                "target_user": _section("独立开发者"),
+                "problem": _section("需求确认成本高"),
+                "solution": _section("AI 协作问答流"),
+                "mvp_scope": _section("只做 Web 端"),
+                "constraints": _section("首版不做私有化"),
+                "success_metrics": _section("7 天留存 >= 20%"),
             }
-        },
-        "finalization_ready": False,
-        "critic_result": {"overall_verdict": "block", "question_queue": []},
+        }
     }
 
-    meta = prd_runtime.preview_prd_meta(state, {})
+    result = module.evaluate_finalize_readiness(state)
 
-    assert meta["stageTone"] == "ready"
-    assert meta["stageLabel"] == "可整理终稿"
+    assert result["ready"] is True
+    assert result["missing"] == []
