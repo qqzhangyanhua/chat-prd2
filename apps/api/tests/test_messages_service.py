@@ -515,6 +515,40 @@ def test_handle_user_message_persists_local_pm_mentor_reply_metadata_and_state(d
     assert decision.state_patch_json["stage_hint"] == "problem"
 
 
+def test_handle_user_message_done_focus_does_not_directly_write_completed(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="阶段收敛模型",
+        recommended_scene="reasoning",
+        recommended_usage="适合继续产品收敛。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="claude-3-7-sonnet",
+        enabled=True,
+    )
+    db_session.commit()
+    _patch_pm_mentor(
+        monkeypatch,
+        next_focus="done",
+        question="是否进入终稿整理？",
+        prd_updates={},
+    )
+
+    handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="我觉得差不多了",
+        model_config_id=model_config.id,
+    )
+
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+    assert latest_state["workflow_stage"] == "refine_loop"
+    assert latest_state["workflow_stage"] != "completed"
+    assert latest_state["finalization_ready"] is False
+
+
 def test_merge_state_patch_with_decision_reads_workflow_fields_from_turn_decision_top_level():
     turn_decision = SimpleNamespace(
         phase="refine_loop",

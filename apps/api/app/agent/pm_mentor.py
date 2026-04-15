@@ -650,8 +650,6 @@ def run_pm_mentor(
         "conversation_strategy": conversation_strategy,
         "next_best_questions": next_best_questions,
     }
-    if mentor_output.next_focus == "done":
-        state_patch["workflow_stage"] = "completed"
 
     turn_decision = TurnDecision(
         phase=mentor_output.next_focus,

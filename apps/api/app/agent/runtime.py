@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.agent.finalize_flow import is_finalize_confirm_input, resolve_finalize_preference
+from app.agent.readiness import evaluate_finalize_readiness
 from app.agent.types import AgentResult, NextAction, Suggestion, TurnDecision
 
 
@@ -260,6 +262,98 @@ def _should_reopen_completed_workflow(user_input: str) -> bool:
     return len(normalized) >= 12
 
 
+def _reopen_completed_state(state: dict[str, Any]) -> dict[str, Any]:
+    reopened = dict(state)
+    reopened["workflow_stage"] = "refine_loop"
+    reopened["finalization_ready"] = False
+    reopened["pending_confirmations"] = []
+    reopened["critic_result"] = None
+    return reopened
+
+
+def _should_emit_finalize_action(state: dict[str, Any], user_input: str) -> bool:
+    return state.get("workflow_stage") == "finalize" and is_finalize_confirm_input(user_input)
+
+
+def _build_finalize_action_result(
+    user_input: str,
+) -> AgentResult:
+    preference = resolve_finalize_preference(user_input)
+    state_patch = {
+        "workflow_stage": "finalize",
+        "finalization_ready": True,
+        "finalize_action": {
+            "type": "finalize",
+            "confirmation_source": "message",
+            "preference": preference,
+        },
+    }
+    turn_decision = TurnDecision(
+        phase="finalize",
+        phase_goal="进入终稿整理",
+        understanding={
+            "summary": "用户明确确认进入终稿整理。",
+            "candidate_updates": {},
+            "ambiguous_points": [],
+        },
+        assumptions=[],
+        gaps=[],
+        challenges=[],
+        pm_risk_flags=[],
+        next_move="summarize_and_confirm",
+        suggestions=[],
+        recommendation=None,
+        reply_brief={"focus": "finalize", "must_include": []},
+        state_patch=state_patch,
+        prd_patch={},
+        needs_confirmation=[],
+        confidence="high",
+        strategy_reason="用户已明确确认终稿输出偏好。",
+        next_best_questions=[],
+        conversation_strategy="confirm",
+    )
+    return AgentResult(
+        reply="收到，我会按你的确认进入终稿整理流程。",
+        action=NextAction(
+            action="finalize",
+            target=None,
+            reason="用户确认进入终稿",
+        ),
+        reply_mode="local",
+        state_patch=state_patch,
+        prd_patch={},
+        decision_log=[],
+        understanding=None,
+        turn_decision=turn_decision,
+    )
+
+
+def _build_readiness_input_state(state: dict[str, Any], prd_patch: dict[str, Any]) -> dict[str, Any]:
+    snapshot = state.get("prd_snapshot") if isinstance(state.get("prd_snapshot"), dict) else {}
+    sections = snapshot.get("sections") if isinstance(snapshot.get("sections"), dict) else {}
+    merged_sections = {**sections, **(prd_patch or {})}
+    return {"prd_snapshot": {"sections": merged_sections}}
+
+
+def _apply_readiness_stage(
+    state: dict[str, Any],
+    agent_result: AgentResult,
+) -> AgentResult:
+    readiness = evaluate_finalize_readiness(
+        _build_readiness_input_state(state, agent_result.prd_patch)
+    )
+    next_stage = "finalize" if readiness["ready"] else "refine_loop"
+    stage_patch = {
+        "workflow_stage": next_stage,
+        "finalization_ready": bool(readiness["ready"]),
+        "critic_result": readiness["critic_result"],
+    }
+    agent_result.state_patch = {**agent_result.state_patch, **stage_patch}
+    if agent_result.turn_decision is not None:
+        agent_result.turn_decision.state_patch = {**agent_result.turn_decision.state_patch, **stage_patch}
+    return agent_result
+
+
 def _build_fallback_result(state: dict[str, Any], user_input: str) -> AgentResult:
     suggestions = [
         Suggestion(
@@ -347,21 +441,27 @@ def run_agent(
     3. 问候类输入（会话初期） → 返回友好引导
     4. 其余 → run_pm_mentor
     """
+    effective_state = state
     if state.get("workflow_stage") == "completed":
         if not _should_reopen_completed_workflow(user_input):
             return _build_completed_result(state)
+        effective_state = _reopen_completed_state(state)
 
     if model_config is None:
-        return _build_fallback_result(state, user_input)
+        return _build_fallback_result(effective_state, user_input)
+
+    if _should_emit_finalize_action(effective_state, user_input):
+        return _build_finalize_action_result(user_input)
 
     # 问候语识别与拦截
-    if _is_greeting_input(state, user_input):
-        return _build_greeting_result(state)
+    if _is_greeting_input(effective_state, user_input):
+        return _build_greeting_result(effective_state)
 
     from app.agent.pm_mentor import run_pm_mentor
-    return run_pm_mentor(
-        state,
+    mentor_result = run_pm_mentor(
+        effective_state,
         user_input,
         model_config,
         conversation_history=conversation_history,
     )
+    return _apply_readiness_stage(effective_state, mentor_result)
