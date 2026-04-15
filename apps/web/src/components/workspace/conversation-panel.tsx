@@ -12,6 +12,7 @@ interface ConversationPanelProps {
 }
 
 export function ConversationPanel({ sessionId }: ConversationPanelProps) {
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const currentAction = useWorkspaceStore((state) => state.currentAction);
   const isStreaming = useWorkspaceStore((state) => state.isStreaming);
   const lastInterrupted = useWorkspaceStore((state) => state.lastInterrupted);
@@ -190,6 +191,9 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
           onSelectDecisionGuidanceQuestion={(question) =>
             workspaceStore.getState().setInputValue(question)
           }
+          onRequestFreeSupplement={() => {
+            composerInputRef.current?.focus();
+          }}
           onRegenerate={() => {
             if (isStreaming) {
               return;
@@ -206,7 +210,11 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
           showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
         />
       )}
-      <Composer sessionId={sessionId} regenerateUserMessageId={regenerateUserMessageId} />
+      <Composer
+        inputRef={composerInputRef}
+        sessionId={sessionId}
+        regenerateUserMessageId={regenerateUserMessageId}
+      />
     </section>
   );
 }

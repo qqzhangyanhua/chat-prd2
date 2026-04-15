@@ -28,6 +28,7 @@ interface AssistantTurnCardProps {
   showInterruptedMarker?: boolean;
   decisionGuidance?: DecisionGuidance | null;
   onSelectDecisionGuidanceQuestion?: (question: string) => void;
+  onRequestFreeSupplement?: () => void;
 }
 
 export function AssistantTurnCard({
@@ -43,6 +44,7 @@ export function AssistantTurnCard({
   showInterruptedMarker = false,
   decisionGuidance = null,
   onSelectDecisionGuidanceQuestion,
+  onRequestFreeSupplement,
 }: AssistantTurnCardProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
@@ -182,6 +184,7 @@ export function AssistantTurnCard({
               <div className="mt-3">
                 <p className="mb-2 text-xs font-medium text-stone-500">可直接选择一个方向</p>
                 <ActionOptions
+                  onRequestFreeSupplement={onRequestFreeSupplement}
                   onSelect={onSelectDecisionGuidanceQuestion}
                   options={suggestionOptions}
                 />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Send, Square, Loader } from "lucide-react";
 
 import { getSession, regenerateMessage, sendMessage } from "../../lib/api";
@@ -18,6 +18,7 @@ import { ModelSelector } from "./model-selector";
 import { WorkspaceErrorNotice } from "./workspace-error-notice";
 
 interface ComposerProps {
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
   regenerateUserMessageId?: string | null;
   sessionId: string;
 }
@@ -114,7 +115,11 @@ function buildPostSwitchMessage(
   return parts.join("");
 }
 
-export function Composer({ sessionId, regenerateUserMessageId = null }: ComposerProps) {
+export function Composer({
+  sessionId,
+  regenerateUserMessageId = null,
+  inputRef,
+}: ComposerProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastHandledRegenerateIdRef = useRef(0);
   const modelSelectorRef = useRef<HTMLSelectElement | null>(null);
@@ -350,6 +355,14 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
     selectedModelConfigId,
   ]);
 
+  // 处理从 workspace/new 页面跳转过来时的自动发送
+  useEffect(() => {
+    if (pendingRequestMode !== "new" || !pendingUserInput || !selectedModelConfigId) {
+      return;
+    }
+    void dispatchMessage(pendingUserInput, true);
+  }, [pendingRequestMode, pendingUserInput, selectedModelConfigId]);
+
   const statusMessage =
     streamPhase === "waiting"
       ? "等待回应..."
@@ -372,6 +385,7 @@ export function Composer({ sessionId, regenerateUserMessageId = null }: Composer
             <textarea
               className="mt-2.5 min-h-28 w-full resize-none rounded-xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-sm leading-7 text-stone-800 placeholder:text-stone-400 outline-none transition-all duration-150 hover:border-stone-300 focus:border-stone-900 focus:bg-white focus:ring-2 focus:ring-stone-900/8 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isStreaming}
+              ref={inputRef}
               onChange={(event) => {
                 resetError();
                 setPostModelSwitchPrompt(null);
