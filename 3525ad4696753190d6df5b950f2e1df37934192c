@@ -1,0 +1,38 @@
+docs/superpowers/specs/2026-04-15-workspace-complete-conversation-closure-design.md
+  0fe891df3a44ee75 1-518
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "3525ad4696753190d6df5b950f2e1df37934192c",
+  "prompts": {
+    "0fe891df3a44ee75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d9084-991c-71d0-b64f-f54216922f79",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 518,
+      "total_deletions": 0,
+      "accepted_lines": 518,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/6da8e8879317533629d85a108e7eb1db076acd62c4fb3bc24e52c267464546c0"
+    },
+    "e2a6760241d0221f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f46-2c97-70d1-92dc-3452421ac932",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 3494,
+      "total_deletions": 21,
+      "accepted_lines": 5,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/2d71a8952017c11c729543bf3812f1bd375994d246136421f17bb508925d37b3"
+    }
+  }
+}
