@@ -102,6 +102,13 @@ def _build_greeting_result(state: dict[str, Any]) -> AgentResult:
             rationale="适合想法很早期、不知道该从哪里开始的情况。",
             priority=3,
         ),
+        Suggestion(
+            type="direction",
+            label="我直接补充现状",
+            content="我直接补充我现在脑子里已有的产品想法，你帮我一起收敛。",
+            rationale="适合不想套模板、想直接把当前想法倒出来的情况。",
+            priority=4,
+        ),
     ]
     reply = (
         "你好！我是 AI 产品联合创始人，专注于帮助你把模糊想法一步步整理成清晰的 PRD。\n\n"
@@ -172,6 +179,36 @@ def _build_completed_result(state: dict[str, Any]) -> AgentResult:
         "- 继续告诉我需要调整的地方，我会帮你修改\n"
         "- 或者基于这份 PRD，我们可以进一步拆解技术方案"
     )
+    suggestions = [
+        Suggestion(
+            type="direction",
+            label="导出 PRD",
+            content="我想先导出这份 PRD，看看完整文档版本。",
+            rationale="适合先沉淀当前成果，再决定是否继续修改。",
+            priority=1,
+        ),
+        Suggestion(
+            type="direction",
+            label="继续修改内容",
+            content="我想继续修改这份 PRD，有几个地方还需要调整。",
+            rationale="适合已经发现问题，准备继续 refinement 的情况。",
+            priority=2,
+        ),
+        Suggestion(
+            type="direction",
+            label="补齐遗漏",
+            content="我想先检查一下，这份 PRD 里还有没有遗漏或说得不够清楚的地方。",
+            rationale="适合在导出前做一次补漏，减少返工。",
+            priority=3,
+        ),
+        Suggestion(
+            type="direction",
+            label="进入下一步",
+            content="我想基于这份 PRD，继续拆解 MVP 或技术方案。",
+            rationale="适合主线已经清楚，准备进入后续规划的情况。",
+            priority=4,
+        ),
+    ]
     turn_decision = TurnDecision(
         phase="completed",
         phase_goal=None,
@@ -185,15 +222,15 @@ def _build_completed_result(state: dict[str, Any]) -> AgentResult:
         challenges=[],
         pm_risk_flags=[],
         next_move="summarize_and_confirm",
-        suggestions=[],
-        recommendation=None,
+        suggestions=suggestions,
+        recommendation={"label": suggestions[0].label, "content": suggestions[0].content},
         reply_brief={"focus": "completed", "must_include": []},
         state_patch={},
         prd_patch={},
         needs_confirmation=[],
         confidence="high",
         strategy_reason=None,
-        next_best_questions=[],
+        next_best_questions=[item.content for item in suggestions],
         conversation_strategy="confirm",
     )
     return AgentResult(
@@ -224,6 +261,36 @@ def _should_reopen_completed_workflow(user_input: str) -> bool:
 
 
 def _build_fallback_result(state: dict[str, Any], user_input: str) -> AgentResult:
+    suggestions = [
+        Suggestion(
+            type="direction",
+            label="重试刚才的话题",
+            content="我想继续刚才的话题，你先按现有信息帮我往下推进。",
+            rationale="适合模型暂时不可用后，先保留对话连续性。",
+            priority=1,
+        ),
+        Suggestion(
+            type="direction",
+            label="先讲目标用户",
+            content="我想先明确，这个产品第一版最想服务谁。",
+            rationale="先锁定目标用户，后续讨论更容易收敛。",
+            priority=2,
+        ),
+        Suggestion(
+            type="direction",
+            label="先讲核心问题",
+            content="我想先讲清楚，这个产品到底想解决什么具体麻烦。",
+            rationale="先把问题说透，再谈方案会更稳。",
+            priority=3,
+        ),
+        Suggestion(
+            type="direction",
+            label="我直接补充",
+            content="我直接补充我现在对这个产品的想法，你帮我整理。",
+            rationale="保留自由输入，避免固定选项挡住真实想法。",
+            priority=4,
+        ),
+    ]
     turn_decision = TurnDecision(
         phase="error",
         phase_goal=None,
@@ -237,15 +304,15 @@ def _build_fallback_result(state: dict[str, Any], user_input: str) -> AgentResul
         challenges=[],
         pm_risk_flags=[],
         next_move="probe_for_specificity",
-        suggestions=[],
-        recommendation=None,
+        suggestions=suggestions,
+        recommendation={"label": suggestions[0].label, "content": suggestions[0].content},
         reply_brief={"focus": "fallback", "must_include": []},
         state_patch={},
         prd_patch={},
         needs_confirmation=[],
         confidence="low",
         strategy_reason=None,
-        next_best_questions=[],
+        next_best_questions=[item.content for item in suggestions],
         conversation_strategy="clarify",
     )
     return AgentResult(
