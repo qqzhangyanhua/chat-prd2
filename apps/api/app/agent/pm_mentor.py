@@ -288,6 +288,12 @@ def _has_mandatory_suggestions(suggestions: list[Suggestion]) -> bool:
     return all(_is_sendable_sentence(item.content) for item in suggestions)
 
 
+def _has_valid_raw_suggestion_contract(mentor_output: PmMentorOutput) -> bool:
+    return mentor_output.raw_suggestion_count == GUIDANCE_SUGGESTION_COUNT and _has_mandatory_suggestions(
+        mentor_output.suggestions
+    )
+
+
 def _merge_with_programmatic_fallback(
     existing: list[Suggestion],
     *,
@@ -336,19 +342,22 @@ def _merge_with_programmatic_fallback(
 def _normalize_recommendation(raw_recommendation: Any, suggestions: list[Suggestion]) -> dict[str, Any] | None:
     if isinstance(raw_recommendation, dict):
         label = raw_recommendation.get("label")
-        content = raw_recommendation.get("content")
         if isinstance(label, str) and label.strip():
             normalized_label = label.strip()
             matched = next((item for item in suggestions if item.label == normalized_label), None)
             if matched is not None:
                 return {"label": matched.label, "content": matched.content}
-            if isinstance(content, str) and content.strip():
-                return {"label": normalized_label, "content": content.strip()}
 
     if suggestions:
         first = suggestions[0]
         return {"label": first.label, "content": first.content}
     return None
+
+
+def _get_raw_suggestion_count(raw_suggestions: Any) -> int:
+    if not isinstance(raw_suggestions, list):
+        return 0
+    return len(raw_suggestions)
 
 
 def _infer_subject_hint(user_input: str) -> str:
@@ -547,7 +556,9 @@ def parse_pm_mentor_output(raw: dict[str, Any]) -> PmMentorOutput:
     next_move = next_move_raw if next_move_raw in ALLOWED_NEXT_MOVES else None
 
     prd_updates = _validate_prd_updates(raw.get("prd_updates"))
-    suggestions = _normalize_suggestions(raw.get("suggestions"))
+    raw_suggestions = raw.get("suggestions")
+    raw_suggestion_count = _get_raw_suggestion_count(raw_suggestions)
+    suggestions = _normalize_suggestions(raw_suggestions)
     recommendation = _normalize_recommendation(raw.get("recommendation"), suggestions)
 
     reply = raw.get("reply") or ""
@@ -564,6 +575,7 @@ def parse_pm_mentor_output(raw: dict[str, Any]) -> PmMentorOutput:
         prd_updates=prd_updates,
         confidence=confidence,
         next_focus=next_focus,
+        raw_suggestion_count=raw_suggestion_count,
         suggestions=suggestions,
         recommendation=recommendation,
         next_move=next_move,
@@ -591,7 +603,7 @@ def run_pm_mentor(
         logger.warning("PM Mentor LLM 调用失败，使用降级回复")
 
     mentor_output = parse_pm_mentor_output(raw)
-    if not _has_mandatory_suggestions(mentor_output.suggestions):
+    if not _has_valid_raw_suggestion_contract(mentor_output):
         repair_prompt = _build_repair_prompt(state, user_input, mentor_output, conversation_history)
         repair_raw: dict[str, Any] = {}
         try:
@@ -604,16 +616,18 @@ def run_pm_mentor(
             logger.warning("PM Mentor suggestions 补救生成失败，转入程序化兜底")
 
         repaired_suggestions = _normalize_suggestions(repair_raw.get("suggestions"))
-        if _has_mandatory_suggestions(repaired_suggestions):
+        repaired_count = _get_raw_suggestion_count(repair_raw.get("suggestions"))
+        if repaired_count == GUIDANCE_SUGGESTION_COUNT and _has_mandatory_suggestions(repaired_suggestions):
             mentor_output.suggestions = repaired_suggestions
             mentor_output.recommendation = _normalize_recommendation(
                 repair_raw.get("recommendation"),
                 repaired_suggestions,
             )
+            mentor_output.raw_suggestion_count = repaired_count
 
     prd_patch = mentor_output.prd_updates
     suggestions = mentor_output.suggestions
-    if not _has_mandatory_suggestions(suggestions):
+    if not _has_valid_raw_suggestion_contract(mentor_output):
         suggestions = _merge_with_programmatic_fallback(
             suggestions,
             user_input=user_input,

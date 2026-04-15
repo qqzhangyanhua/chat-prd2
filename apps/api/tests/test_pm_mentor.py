@@ -292,6 +292,66 @@ def test_run_pm_mentor_main_path_preserves_four_llm_suggestions():
     ]
 
 
+def test_run_pm_mentor_recommendation_must_belong_to_final_suggestions():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    fake_llm_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+    fake_llm_output["recommendation"] = {
+        "label": "游离推荐",
+        "content": "我想先聊一个不在四个选项里的方向。",
+    }
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
+        result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.recommendation is not None
+    final_pairs = {
+        (item.label, item.content)
+        for item in result.turn_decision.suggestions
+    }
+    assert (
+        result.turn_decision.recommendation["label"],
+        result.turn_decision.recommendation["content"],
+    ) in final_pairs
+
+
+def test_run_pm_mentor_treats_raw_more_than_four_suggestions_as_contract_failure():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    first_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+            _make_suggestion("先聊竞品", "我想先比较一下，现有竞品和这个产品的差异。", priority=5),
+        ]
+    )
+    second_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品第一版最想服务谁。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", side_effect=[first_output, second_output]) as mock_llm:
+        result = run_pm_mentor({}, "我想做一个面向团队协作的任务工具", _build_mock_model_config())
+
+    assert mock_llm.call_count == 2
+    assert result.turn_decision is not None
+    assert len(result.turn_decision.suggestions) == 4
+
+
 def test_run_pm_mentor_retries_once_when_first_llm_response_has_fewer_than_four_suggestions():
     from app.agent.pm_mentor import run_pm_mentor
 
