@@ -126,6 +126,58 @@ def _sample_turn_decision_with_four_suggestions() -> TurnDecision:
     )
 
 
+def _create_user_and_legacy_session(db_session):
+    user = User(
+        id="user-legacy-session-1",
+        email="legacy-session@example.com",
+        password_hash="hash",
+    )
+    db_session.add(user)
+    db_session.commit()
+    snapshot = session_service.create_session(
+        db_session,
+        user.id,
+        SessionCreateRequest(
+            title="Legacy Workspace Session",
+            initial_idea="一个帮助团队补算旧会话状态的系统",
+        ),
+    )
+    return user.id, snapshot.session.id
+
+
+def _seed_legacy_state(
+    db_session,
+    session_id: str,
+    *,
+    sections: dict[str, dict[str, str]],
+) -> None:
+    latest = state_repository.get_latest_state_version(db_session, session_id)
+    assert latest is not None
+    legacy_state = {
+        **latest.state_json,
+        "prd_snapshot": {
+            "sections": sections,
+        },
+    }
+    legacy_state.pop("workflow_stage", None)
+    legacy_state.pop("prd_draft", None)
+    legacy_state.pop("critic_result", None)
+    legacy_state.pop("finalization_ready", None)
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        state_json=legacy_state,
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        sections=sections,
+    )
+    db_session.commit()
+
+
 def test_create_session_returns_initial_state(auth_client):
     response = auth_client.post(
         "/api/sessions",
@@ -218,6 +270,92 @@ def test_export_returns_markdown(auth_client, seeded_session):
     data = response.json()
     assert data["file_name"] == "ai-cofounder-prd.md"
     assert data["content"].startswith("# PRD")
+
+
+def test_get_session_snapshot_backfills_legacy_state_when_explicit_closure_fields_missing(db_session):
+    user_id, session_id = _create_user_and_legacy_session(db_session)
+    _seed_legacy_state(
+        db_session,
+        session_id,
+        sections={
+            "target_user": {"title": "目标用户", "content": "产品团队", "status": "confirmed"},
+            "problem": {"title": "核心问题", "content": "需求收敛慢", "status": "confirmed"},
+            "solution": {"title": "解决方案", "content": "按需补算闭环字段", "status": "confirmed"},
+            "mvp_scope": {"title": "MVP 范围", "content": "单 session 读取补算", "status": "confirmed"},
+        },
+    )
+
+    result = session_service.get_session_snapshot(db_session, session_id, user_id)
+
+    assert result.state.workflow_stage == "refine_loop"
+    assert result.state.prd_draft is not None
+    assert result.state.critic_result is not None
+    assert result.state.finalization_ready is False
+
+
+def test_get_session_snapshot_backfills_ready_legacy_state_to_finalize_only(db_session):
+    user_id, session_id = _create_user_and_legacy_session(db_session)
+    _seed_legacy_state(
+        db_session,
+        session_id,
+        sections={
+            "target_user": {"title": "目标用户", "content": "产品团队", "status": "confirmed"},
+            "problem": {"title": "核心问题", "content": "需求收敛慢", "status": "confirmed"},
+            "solution": {"title": "解决方案", "content": "按需补算闭环字段", "status": "confirmed"},
+            "mvp_scope": {"title": "MVP 范围", "content": "单 session 读取补算", "status": "confirmed"},
+            "constraints": {"title": "约束条件", "content": "不做批量迁移", "status": "confirmed"},
+            "success_metrics": {"title": "成功指标", "content": "旧会话可稳定进入终稿前态", "status": "confirmed"},
+        },
+    )
+
+    result = session_service.get_session_snapshot(db_session, session_id, user_id)
+
+    assert result.state.workflow_stage == "finalize"
+    assert result.state.finalization_ready is True
+    assert result.state.prd_draft is not None
+    assert result.state.prd_draft["status"] != "finalized"
+
+
+def test_get_session_snapshot_rolls_back_legacy_backfill_failure(db_session, monkeypatch):
+    user_id, session_id = _create_user_and_legacy_session(db_session)
+    _seed_legacy_state(
+        db_session,
+        session_id,
+        sections={
+            "target_user": {"title": "目标用户", "content": "产品团队", "status": "confirmed"},
+            "problem": {"title": "核心问题", "content": "需求收敛慢", "status": "confirmed"},
+            "solution": {"title": "解决方案", "content": "按需补算闭环字段", "status": "confirmed"},
+            "mvp_scope": {"title": "MVP 范围", "content": "单 session 读取补算", "status": "confirmed"},
+            "constraints": {"title": "约束条件", "content": "不做批量迁移", "status": "confirmed"},
+            "success_metrics": {"title": "成功指标", "content": "旧会话可稳定进入终稿前态", "status": "confirmed"},
+        },
+    )
+    before_count = len(
+        db_session.execute(
+            select(ProjectStateVersion).where(ProjectStateVersion.session_id == session_id)
+        ).scalars().all()
+    )
+
+    def fail_create_state_version(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "app.services.legacy_session_backfill.state_repository.create_state_version",
+        fail_create_state_version,
+    )
+
+    result = session_service.get_session_snapshot(db_session, session_id, user_id)
+
+    after_count = len(
+        db_session.execute(
+            select(ProjectStateVersion).where(ProjectStateVersion.session_id == session_id)
+        ).scalars().all()
+    )
+    assert result.state.workflow_stage == "idea_parser"
+    assert result.state.prd_draft is None
+    assert result.state.critic_result is None
+    assert result.state.finalization_ready is False
+    assert after_count == before_count
 
 
 def test_export_returns_real_prd_content_after_message_updates_snapshot(
@@ -891,6 +1029,8 @@ def test_finalize_route_moves_ready_session_to_completed(
     data = response.json()
     assert data["state"]["workflow_stage"] == "completed"
     assert data["state"]["prd_draft"]["status"] == "finalized"
+    assert data["state"]["finalize_confirmation_source"] == "button"
+    assert data["state"]["finalize_preference"] == "business"
 
     db = testing_session_local()
     try:

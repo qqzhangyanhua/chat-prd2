@@ -141,3 +141,54 @@ def test_finalize_session_allows_completed_when_ready_and_confirmation_source_pr
     )
     assert after_state_count == before_state_count + 1
     assert after_prd_count == before_prd_count + 1
+
+
+def test_backfilled_legacy_session_still_requires_finalize_confirmation(db_session):
+    user_id, session_id = _create_user_and_session(db_session)
+    latest = state_repository.get_latest_state_version(db_session, session_id)
+    assert latest is not None
+    legacy_sections = {
+        "target_user": {"title": "目标用户", "content": "产品团队", "status": "confirmed"},
+        "problem": {"title": "核心问题", "content": "需求沟通低效", "status": "confirmed"},
+        "solution": {"title": "解决方案", "content": "结构化协作", "status": "confirmed"},
+        "mvp_scope": {"title": "MVP 范围", "content": "会话 + 导出", "status": "confirmed"},
+        "constraints": {"title": "约束条件", "content": "暂不做批量迁移", "status": "confirmed"},
+        "success_metrics": {"title": "成功指标", "content": "旧会话可以稳定进入终稿前态", "status": "confirmed"},
+    }
+    legacy_state = {
+        **latest.state_json,
+        "prd_snapshot": {"sections": legacy_sections},
+    }
+    legacy_state.pop("workflow_stage", None)
+    legacy_state.pop("prd_draft", None)
+    legacy_state.pop("critic_result", None)
+    legacy_state.pop("finalization_ready", None)
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        state_json=legacy_state,
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        sections=legacy_sections,
+    )
+    db_session.commit()
+
+    snapshot = session_service.get_session_snapshot(db_session, session_id, user_id)
+    assert snapshot.state.workflow_stage == "finalize"
+    assert snapshot.state.finalization_ready is True
+
+    with pytest.raises(Exception) as exc_info:
+        finalize_service.finalize_session(
+            db_session,
+            session_id,
+            user_id,
+            confirmation_source="",
+        )
+
+    error = exc_info.value
+    assert getattr(error, "status_code", None) == 409
+    assert getattr(error, "code", None) == "FINALIZE_CONFIRMATION_REQUIRED"

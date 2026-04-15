@@ -82,6 +82,7 @@ from app.schemas.session import (
     SessionUpdateRequest,
 )
 from app.schemas.state import StateSnapshot
+from app.services import legacy_session_backfill as legacy_backfill_service
 
 
 SCHEMA_OUTDATED_DETAIL = "数据库结构版本过旧，请先执行 alembic upgrade head"
@@ -485,6 +486,18 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
 
     if state_version is None or prd_snapshot is None:
         _raise_session_snapshot_missing()
+
+    backfilled = legacy_backfill_service.backfill_legacy_session_state(
+        db,
+        session_id,
+        state_version.state_json,
+        prd_snapshot,
+    ) if legacy_backfill_service.needs_legacy_backfill(state_version.state_json) else False
+    if backfilled:
+        state_version = state_repository.get_latest_state_version(db, session_id)
+        prd_snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
+        if state_version is None or prd_snapshot is None:
+            _raise_session_snapshot_missing()
 
     session = sessions_repository.touch_session(db, session)
     db.commit()
