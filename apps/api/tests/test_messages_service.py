@@ -87,6 +87,67 @@ def _sample_turn_decision() -> TurnDecision:
     )
 
 
+def _sample_turn_decision_with_four_suggestions() -> TurnDecision:
+    return TurnDecision(
+        phase="problem",
+        phase_goal="先锁定一个最具体的真实用户场景",
+        understanding={
+            "summary": "当前方向仍然偏宽，需要先选一个落地切口。",
+            "candidate_updates": {},
+            "ambiguous_points": [],
+        },
+        assumptions=[],
+        gaps=["尚未锁定首个高价值用户场景"],
+        challenges=["如果不先收敛场景，后续 PRD 会持续发散"],
+        pm_risk_flags=["user_too_broad"],
+        next_move="force_rank_or_choose",
+        suggestions=[
+            Suggestion(
+                type="direction",
+                label="A. 先聊独立开发者",
+                content="我先从独立开发者的真实使用场景开始补充。",
+                rationale="更容易快速拿到高频反馈。",
+                priority=1,
+            ),
+            Suggestion(
+                type="tradeoff",
+                label="B. 先聊小团队负责人",
+                content="我更想先看 3-10 人团队的协作问题。",
+                rationale="协作链路更完整，但场景更复杂。",
+                priority=2,
+            ),
+            Suggestion(
+                type="recommendation",
+                label="C. 先锁定高频痛点",
+                content="先别分人群，先确定一个最高频的问题。",
+                rationale="可以直接筛掉低价值需求。",
+                priority=3,
+            ),
+            Suggestion(
+                type="warning",
+                label="D. 我直接补充真实案例",
+                content="我直接讲一个最近遇到的具体案例。",
+                rationale="真实案例能最快暴露需求真假。",
+                priority=4,
+            ),
+        ],
+        recommendation={"label": "A. 先聊独立开发者"},
+        reply_brief={"focus": "problem", "must_include": []},
+        state_patch={"stage_hint": "problem"},
+        prd_patch={},
+        needs_confirmation=[],
+        confidence="medium",
+        next_best_questions=[
+            "如果只能先选一个，你更想先讲独立开发者还是小团队负责人？",
+            "这个问题最近一次发生在什么场景？",
+            "你现在最想优先验证用户、问题还是方案？",
+            "如果你愿意，也可以直接讲一个真实案例。",
+        ],
+        strategy_reason="先锁定首个具体场景，再决定后续推进主线。",
+        conversation_strategy="choose",
+    )
+
+
 def _fake_pm_mentor_llm_response(**overrides) -> dict:
     payload = {
         "observation": "你已经开始缩小问题空间了。",
@@ -455,6 +516,57 @@ def test_handle_user_message_persists_local_pm_mentor_reply_metadata_and_state(d
 
 
 def test_merge_state_patch_with_decision_reads_workflow_fields_from_turn_decision_top_level():
+
+def test_handle_user_message_persists_structured_suggestions_and_next_best_questions(db_session, monkeypatch):
+    session = _create_session_with_state(db_session)
+    model_config = model_configs_repository.create_model_config(
+        db_session,
+        name="结构化建议模型",
+        recommended_scene="general",
+        recommended_usage="适合验证结构化透传。",
+        base_url="https://gateway.example.com/v1",
+        api_key="secret",
+        model="gpt-4o-mini",
+        enabled=True,
+    )
+    db_session.commit()
+    turn_decision = _sample_turn_decision_with_four_suggestions()
+    monkeypatch.setattr(
+        "app.services.messages.run_agent",
+        lambda state, user_input, **_: SimpleNamespace(
+            reply="请先从四个方向里选一个最接近你的真实情况。",
+            action=NextAction(action="probe_deeper", target="target_user", reason="test"),
+            reply_mode="local",
+            turn_decision=turn_decision,
+            state_patch={},
+            prd_patch={},
+        ),
+    )
+
+    result = handle_user_message(
+        db=db_session,
+        session_id=session.id,
+        session=session,
+        content="我想先明确该跟谁聊",
+        model_config_id=model_config.id,
+    )
+
+    decision = db_session.execute(
+        select(AgentTurnDecision).where(AgentTurnDecision.user_message_id == result.user_message_id)
+    ).scalar_one()
+    latest_state = state_repository.get_latest_state(db_session, session.id)
+
+    assert [item["label"] for item in decision.suggestions_json] == [
+        "A. 先聊独立开发者",
+        "B. 先聊小团队负责人",
+        "C. 先锁定高频痛点",
+        "D. 我直接补充真实案例",
+    ]
+    assert decision.suggestions_json[0]["content"] == "我先从独立开发者的真实使用场景开始补充。"
+    assert len(decision.suggestions_json) == 4
+    assert latest_state["next_best_questions"] == turn_decision.next_best_questions
+    assert len(latest_state["next_best_questions"]) == 4
+
     turn_decision = SimpleNamespace(
         phase="refine_loop",
         conversation_strategy="clarify",

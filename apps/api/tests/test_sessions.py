@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.agent.types import NextAction, Suggestion, TurnDecision
 from app.db.models import (
     AssistantReplyGroup,
     AssistantReplyVersion,
@@ -61,6 +62,67 @@ def _mock_gateway_reply(monkeypatch, reply: str = "这是测试回复", **overri
     monkeypatch.setattr(
         "app.agent.pm_mentor.call_pm_mentor_llm",
         lambda **_: payload,
+    )
+
+
+def _sample_turn_decision_with_four_suggestions() -> TurnDecision:
+    return TurnDecision(
+        phase="problem",
+        phase_goal="先锁定一个最具体的真实用户场景",
+        understanding={
+            "summary": "当前方向仍然偏宽，需要先选一个落地切口。",
+            "candidate_updates": {},
+            "ambiguous_points": [],
+        },
+        assumptions=[],
+        gaps=["尚未锁定首个高价值用户场景"],
+        challenges=["如果不先收敛场景，后续 PRD 会持续发散"],
+        pm_risk_flags=["user_too_broad"],
+        next_move="force_rank_or_choose",
+        suggestions=[
+            Suggestion(
+                type="direction",
+                label="A. 先聊独立开发者",
+                content="我先从独立开发者的真实使用场景开始补充。",
+                rationale="更容易快速拿到高频反馈。",
+                priority=1,
+            ),
+            Suggestion(
+                type="tradeoff",
+                label="B. 先聊小团队负责人",
+                content="我更想先看 3-10 人团队的协作问题。",
+                rationale="协作链路更完整，但场景更复杂。",
+                priority=2,
+            ),
+            Suggestion(
+                type="recommendation",
+                label="C. 先锁定高频痛点",
+                content="先别分人群，先确定一个最高频的问题。",
+                rationale="可以直接筛掉低价值需求。",
+                priority=3,
+            ),
+            Suggestion(
+                type="warning",
+                label="D. 我直接补充真实案例",
+                content="我直接讲一个最近遇到的具体案例。",
+                rationale="真实案例能最快暴露需求真假。",
+                priority=4,
+            ),
+        ],
+        recommendation={"label": "A. 先聊独立开发者"},
+        reply_brief={"focus": "problem", "must_include": []},
+        state_patch={"stage_hint": "problem"},
+        prd_patch={},
+        needs_confirmation=[],
+        confidence="medium",
+        next_best_questions=[
+            "如果只能先选一个，你更想先讲独立开发者还是小团队负责人？",
+            "这个问题最近一次发生在什么场景？",
+            "你现在最想优先验证用户、问题还是方案？",
+            "如果你愿意，也可以直接讲一个真实案例。",
+        ],
+        strategy_reason="先锁定首个具体场景，再决定后续推进主线。",
+        conversation_strategy="choose",
     )
 
 
@@ -252,15 +314,72 @@ def test_get_session_exposes_suggestion_options_in_turn_decision_meta(
     next_step = next(
         section for section in latest_decision["decision_sections"] if section["key"] == "next_step"
     )
-    assert next_step["meta"]["suggestion_options"] == [
-        {
-            "label": "先聊独立开发者",
-            "content": "我想先从独立开发者的场景开始聊。",
-            "rationale": "更容易快速举出真实例子。",
-            "priority": 1,
-            "type": "direction",
-        }
+    suggestion_options = next_step["meta"]["suggestion_options"]
+
+    assert len(suggestion_options) == 4
+    assert suggestion_options[0] == {
+        "label": "先聊独立开发者",
+        "content": "我想先从独立开发者的场景开始聊。",
+        "rationale": "更容易快速举出真实例子。",
+        "priority": 1,
+        "type": "direction",
+    }
+
+
+def test_get_session_snapshot_preserves_all_four_suggestion_options(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    turn_decision = _sample_turn_decision_with_four_suggestions()
+    monkeypatch.setattr(
+        "app.services.messages.run_agent",
+        lambda state, user_input, **_: type(
+            "FakeAgentResult",
+            (),
+            {
+                "reply": "先从这四个结构化选项里选一个最接近你的情况。",
+                "action": NextAction(action="probe_deeper", target="target_user", reason="test"),
+                "reply_mode": "local",
+                "turn_decision": turn_decision,
+                "state_patch": {},
+                "prd_patch": {},
+            },
+        )(),
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "我现在还不确定先从哪条主线开始",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        list(response.iter_text())
+
+    response = auth_client.get(f"/api/sessions/{seeded_session}")
+
+    assert response.status_code == 200
+    data = response.json()
+    latest_decision = data["turn_decisions"][-1]
+    next_step = next(
+        section for section in latest_decision["decision_sections"] if section["key"] == "next_step"
+    )
+    suggestion_options = next_step["meta"]["suggestion_options"]
+
+    assert len(suggestion_options) == 4
+    assert [item["label"] for item in suggestion_options] == [
+        "A. 先聊独立开发者",
+        "B. 先聊小团队负责人",
+        "C. 先锁定高频痛点",
+        "D. 我直接补充真实案例",
     ]
+    assert [item["priority"] for item in suggestion_options] == [1, 2, 3, 4]
+    assert next_step["meta"]["next_best_questions"]
 
 
 def test_get_session_returns_explicit_503_when_turn_decision_table_is_missing():
