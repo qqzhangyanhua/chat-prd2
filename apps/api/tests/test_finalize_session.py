@@ -29,37 +29,40 @@ def _patch_optional_finalize_dependencies(module, monkeypatch, *, latest_state: 
         calls["create_prd_snapshot"] += 1
         return SimpleNamespace(version=version, sections=sections)
 
-    if hasattr(module, "state_repository"):
-        monkeypatch.setattr(
-            module,
-            "state_repository",
-            SimpleNamespace(
-                get_latest_state=_get_latest_state,
-                create_state_version=_create_state_version,
-            ),
-        )
-    if hasattr(module, "session_service"):
-        monkeypatch.setattr(
-            module,
-            "session_service",
-            SimpleNamespace(
-                get_session_snapshot=lambda db, session_id, user_id: {"session": {"id": session_id, "user_id": user_id}},
-            ),
-        )
-    if hasattr(module, "prd_repository"):
-        monkeypatch.setattr(
-            module,
-            "prd_repository",
-            SimpleNamespace(create_prd_snapshot=_create_prd_snapshot),
-        )
-    if hasattr(module, "build_finalized_sections"):
-        monkeypatch.setattr(
-            module,
-            "build_finalized_sections",
-            lambda prd_draft, preference: {
-                "summary": {"title": "一句话概述", "content": "可发布", "status": "confirmed"},
+    monkeypatch.setattr(
+        module,
+        "state_repository",
+        SimpleNamespace(
+            get_latest_state=_get_latest_state,
+            create_state_version=_create_state_version,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "session_service",
+        SimpleNamespace(
+            get_session_snapshot=lambda db, session_id, user_id: {
+                "session": {"id": session_id, "user_id": user_id},
+                "state": latest_state,
             },
-        )
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "prd_repository",
+        SimpleNamespace(create_prd_snapshot=_create_prd_snapshot),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "build_finalized_sections",
+        lambda prd_draft, preference: {
+            "summary": {"title": "一句话概述", "content": "可发布", "status": "confirmed"},
+        },
+        raising=False,
+    )
 
     return calls
 
@@ -114,7 +117,7 @@ def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_i
 
 def test_finalize_session_allows_completed_when_ready_and_confirmation_source_provided(monkeypatch):
     module = _load_finalize_module()
-    _patch_optional_finalize_dependencies(
+    calls = _patch_optional_finalize_dependencies(
         module,
         monkeypatch,
         latest_state={"workflow_stage": "finalize", "finalization_ready": True},
@@ -128,14 +131,13 @@ def test_finalize_session_allows_completed_when_ready_and_confirmation_source_pr
         preference=None,
     )
 
-    workflow_stage = None
+    nested_state = None
     if isinstance(result, dict):
-        workflow_stage = result.get("workflow_stage")
-        if workflow_stage is None and isinstance(result.get("state"), dict):
-            workflow_stage = result["state"].get("workflow_stage")
+        nested_state = result.get("state")
     else:
-        workflow_stage = getattr(result, "workflow_stage", None)
-        if workflow_stage is None and isinstance(getattr(result, "state", None), dict):
-            workflow_stage = result.state.get("workflow_stage")
+        nested_state = getattr(result, "state", None)
 
-    assert workflow_stage == "completed"
+    assert isinstance(nested_state, dict)
+    assert nested_state.get("workflow_stage") == "completed"
+    assert calls["create_state_version"] >= 1
+    assert calls["create_prd_snapshot"] >= 1
