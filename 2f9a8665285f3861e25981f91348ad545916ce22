@@ -1,0 +1,24 @@
+docs/superpowers/plans/2026-04-15-workspace-mandatory-abcd-guidance-implementation.md
+  e2a6760241d0221f 1-431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "2f9a8665285f3861e25981f91348ad545916ce22",
+  "prompts": {
+    "e2a6760241d0221f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f46-2c97-70d1-92dc-3452421ac932",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 431,
+      "total_deletions": 0,
+      "accepted_lines": 4340,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/a2acaa072f69041a894748572eadf90dd596e978b451b68c45e49cfbbbf8e229"
+    }
+  }
+}
