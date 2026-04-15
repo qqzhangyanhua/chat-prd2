@@ -1,0 +1,44 @@
+apps/web/src/components/workspace/assistant-turn-card.tsx
+  e2a6760241d0221f 31,47,187
+apps/web/src/components/workspace/action-options.tsx
+  e2a6760241d0221f 5,9-13,15-39
+apps/web/src/components/workspace/conversation-panel.tsx
+  e2a6760241d0221f 15,194-196,213-217
+apps/web/src/components/workspace/composer.tsx
+  e2a6760241d0221f 3,21,118-122,358-365,388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "61ddee1c46f01eee262eb3a000cc9b569d8c561d",
+  "prompts": {
+    "c6824aedcafff027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f98-fc32-7073-a357-646dd64c6963",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/1cc7bd7a10f774959ef875bf3d6639fc1e14bc05f6bbca1e2ffe65165a57247c"
+    },
+    "e2a6760241d0221f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f46-2c97-70d1-92dc-3452421ac932",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 3548,
+      "total_deletions": 24,
+      "accepted_lines": 3548,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/109e101eabe3efb3fe53a5765d76bf1e9d22607d6d94b6299316c0269bedefce"
+    }
+  }
+}
