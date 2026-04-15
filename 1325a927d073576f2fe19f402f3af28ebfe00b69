@@ -1,0 +1,26 @@
+apps/web/src/store/workspace-store.ts
+  e2a6760241d0221f 308-311,340-342
+apps/web/src/components/workspace/composer.tsx
+  e2a6760241d0221f 124,159-161,233-235,367-372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "1325a927d073576f2fe19f402f3af28ebfe00b69",
+  "prompts": {
+    "e2a6760241d0221f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f46-2c97-70d1-92dc-3452421ac932",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 3509,
+      "total_deletions": 8,
+      "accepted_lines": 3509,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/92f8077dc7da56fab79076eaf3fadf233d23739b0d0254be8bae76406aada7a9"
+    }
+  }
+}
