@@ -291,7 +291,28 @@ def test_get_session_exposes_suggestion_options_in_turn_decision_meta(
                 "content": "我想先从独立开发者的场景开始聊。",
                 "rationale": "更容易快速举出真实例子。",
                 "priority": 1,
-            }
+            },
+            {
+                "type": "tradeoff",
+                "label": "先聊目标用户",
+                "content": "我想先明确，这个产品主要给谁用。",
+                "rationale": "先锁定用户，后面的需求判断才不会发散。",
+                "priority": 2,
+            },
+            {
+                "type": "recommendation",
+                "label": "先聊核心痛点",
+                "content": "我想先判断用户最痛的那个问题是什么。",
+                "rationale": "先确认痛点，才能快速判断主线。",
+                "priority": 3,
+            },
+            {
+                "type": "warning",
+                "label": "直接补充真实案例",
+                "content": "我可以直接讲一个最近发生的真实案例。",
+                "rationale": "真实案例最容易暴露信息缺口。",
+                "priority": 4,
+            },
         ],
     )
 
@@ -317,13 +338,36 @@ def test_get_session_exposes_suggestion_options_in_turn_decision_meta(
     suggestion_options = next_step["meta"]["suggestion_options"]
 
     assert len(suggestion_options) == 4
-    assert suggestion_options[0] == {
-        "label": "先聊独立开发者",
-        "content": "我想先从独立开发者的场景开始聊。",
-        "rationale": "更容易快速举出真实例子。",
-        "priority": 1,
-        "type": "direction",
-    }
+    assert suggestion_options == [
+        {
+            "label": "先聊独立开发者",
+            "content": "我想先从独立开发者的场景开始聊。",
+            "rationale": "更容易快速举出真实例子。",
+            "priority": 1,
+            "type": "direction",
+        },
+        {
+            "label": "先聊目标用户",
+            "content": "我想先明确，这个产品主要给谁用。",
+            "rationale": "先锁定用户，后面的需求判断才不会发散。",
+            "priority": 2,
+            "type": "tradeoff",
+        },
+        {
+            "label": "先聊核心痛点",
+            "content": "我想先判断用户最痛的那个问题是什么。",
+            "rationale": "先确认痛点，才能快速判断主线。",
+            "priority": 3,
+            "type": "recommendation",
+        },
+        {
+            "label": "直接补充真实案例",
+            "content": "我可以直接讲一个最近发生的真实案例。",
+            "rationale": "真实案例最容易暴露信息缺口。",
+            "priority": 4,
+            "type": "warning",
+        },
+    ]
 
 
 def test_get_session_snapshot_preserves_all_four_suggestion_options(
