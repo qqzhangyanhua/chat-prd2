@@ -1,0 +1,24 @@
+apps/api/tests/test_pm_mentor.py
+  002f00c10ef1a850 2,46-56,345-362,383,385
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "c6bc2b0a9cea2b712df0636cdda6ca3a9d5151a5",
+  "prompts": {
+    "002f00c10ef1a850": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d8f6e-0015-7dd0-b7f7-1d28254818c1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "张艳华",
+      "messages": [],
+      "total_additions": 3698,
+      "total_deletions": 18,
+      "accepted_lines": 3698,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.tongbaninfo.com/cas/271e7e9ef100ada01c729bb76e93fd054b9edc701766f193e4d5e2a6216d54f4"
+    }
+  }
+}
