@@ -2,6 +2,7 @@ import importlib
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 
 def _load_finalize_module():
@@ -75,7 +76,7 @@ def test_finalize_session_raises_when_state_not_ready(monkeypatch):
         latest_state={"workflow_stage": "finalize", "finalization_ready": False},
     )
 
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises((HTTPException, ValueError)) as exc_info:
         module.finalize_session(
             _fake_db(),
             "session-1",
@@ -101,7 +102,7 @@ def test_finalize_session_raises_when_ready_but_confirmation_source_missing_or_i
         latest_state={"workflow_stage": "finalize", "finalization_ready": True},
     )
 
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises((HTTPException, ValueError)) as exc_info:
         module.finalize_session(
             _fake_db(),
             "session-1",
@@ -139,5 +140,5 @@ def test_finalize_session_allows_completed_when_ready_and_confirmation_source_pr
 
     assert isinstance(nested_state, dict)
     assert nested_state.get("workflow_stage") == "completed"
-    assert calls["create_state_version"] >= 1
-    assert calls["create_prd_snapshot"] >= 1
+    assert calls["create_state_version"] == 1
+    assert calls["create_prd_snapshot"] == 1
