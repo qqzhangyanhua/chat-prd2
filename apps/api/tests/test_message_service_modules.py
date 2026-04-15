@@ -10,6 +10,7 @@ from app.services.message_models import (
 from app.services.message_state import (
     apply_prd_patch,
     apply_state_patch,
+    merge_readiness_state_patch,
     merge_state_patch_with_decision,
 )
 
@@ -156,3 +157,49 @@ def test_merge_state_patch_with_decision_prefers_workflow_fields_from_turn_decis
     assert merged["critic_result"]["overall_verdict"] == "pass"
     assert merged["refine_history"] == [{"source": "turn_decision"}]
     assert merged["finalization_ready"] is True
+
+
+def test_merge_readiness_state_patch_auto_sets_readiness_fields_from_prd_draft():
+    patch = {
+        "prd_draft": {
+            "sections": {
+                "target_user": {"content": "独立开发者", "status": "confirmed"},
+                "problem": {"content": "需求确认成本高", "status": "confirmed"},
+                "solution": {"content": "AI 协作问答流", "status": "confirmed"},
+                "mvp_scope": {"content": "只做 Web 端", "status": "confirmed"},
+                "constraints": {"content": "首版不做私有化", "status": "confirmed"},
+                "success_metrics": {"content": "7 天留存 >= 20%", "status": "confirmed"},
+            }
+        }
+    }
+
+    merged = merge_readiness_state_patch(patch, current_state=_phase1_state())
+
+    assert merged["finalization_ready"] is True
+    assert merged["workflow_stage"] == "finalize"
+    assert merged["critic_result"]["overall_verdict"] == "pass"
+    assert merged["critic_result"]["major_gaps"] == []
+
+
+def test_merge_readiness_state_patch_keeps_explicit_workflow_and_critic_fields():
+    patch = {
+        "prd_draft": {
+            "sections": {
+                "target_user": {"content": "", "status": "missing"},
+                "problem": {"content": "需求确认成本高", "status": "confirmed"},
+                "solution": {"content": "AI 协作问答流", "status": "confirmed"},
+                "mvp_scope": {"content": "只做 Web 端", "status": "confirmed"},
+                "constraints": {"content": "首版不做私有化", "status": "confirmed"},
+                "success_metrics": {"content": "7 天留存 >= 20%", "status": "confirmed"},
+            }
+        },
+        "workflow_stage": "finalize",
+        "finalization_ready": True,
+        "critic_result": {"overall_verdict": "pass", "major_gaps": [], "question_queue": []},
+    }
+
+    merged = merge_readiness_state_patch(patch, current_state=_phase1_state())
+
+    assert merged["workflow_stage"] == "finalize"
+    assert merged["finalization_ready"] is True
+    assert merged["critic_result"]["overall_verdict"] == "pass"

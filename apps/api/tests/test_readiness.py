@@ -53,12 +53,40 @@ def test_evaluate_finalize_readiness_returns_not_ready_when_any_required_field_m
 
     assert result["ready"] is False
     assert missing_field in result["missing"]
+    assert result["critic_result"]["overall_verdict"] == "revise"
+    assert missing_field in result["critic_result"]["major_gaps"]
+    assert result["critic_result"]["ready"] is False
 
 
 def test_evaluate_finalize_readiness_returns_ready_when_required_sections_complete():
     module = _load_readiness_module()
     state = {
         "prd_draft": {
+            "sections": _complete_sections()
+        }
+    }
+
+    result = module.evaluate_finalize_readiness(state)
+
+    assert result["ready"] is True
+    assert result["missing"] == []
+    assert result["critic_result"]["overall_verdict"] == "pass"
+    assert result["critic_result"]["major_gaps"] == []
+    assert result["critic_result"]["question_queue"] == []
+    assert result["critic_result"]["required_sections"] == [
+        "target_user",
+        "problem",
+        "solution",
+        "mvp_scope",
+        "constraints",
+        "success_metrics",
+    ]
+
+
+def test_evaluate_finalize_readiness_falls_back_to_prd_snapshot_sections():
+    module = _load_readiness_module()
+    state = {
+        "prd_snapshot": {
             "sections": _complete_sections()
         }
     }

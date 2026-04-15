@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from app.agent.readiness import evaluate_finalize_readiness
 from app.db.models import LLMModelConfig
 
 
@@ -62,6 +63,37 @@ def extract_workflow_state_from_turn_decision(turn_decision: object) -> dict:
         if key in decision_state_patch:
             extracted[key] = decision_state_patch[key]
     return extracted
+
+
+def merge_readiness_state_patch(
+    state_patch: dict,
+    *,
+    current_state: dict | None = None,
+) -> dict:
+    patch = dict(state_patch or {})
+
+    prd_draft = patch.get("prd_draft")
+    if not isinstance(prd_draft, dict) and current_state is not None:
+        current_draft = current_state.get("prd_draft")
+        if isinstance(current_draft, dict):
+            prd_draft = current_draft
+    if not isinstance(prd_draft, dict):
+        return patch
+
+    readiness_state: dict = {"prd_draft": prd_draft}
+    if current_state is not None and isinstance(current_state.get("prd_snapshot"), dict):
+        readiness_state["prd_snapshot"] = current_state.get("prd_snapshot")
+    readiness = evaluate_finalize_readiness(readiness_state)
+
+    patch.setdefault("finalization_ready", bool(readiness["ready"]))
+    patch.setdefault("critic_result", readiness["critic_result"])
+
+    if "workflow_stage" not in patch:
+        current_stage = current_state.get("workflow_stage") if current_state is not None else None
+        if current_stage != "completed":
+            patch["workflow_stage"] = "finalize" if patch["finalization_ready"] else "refine_loop"
+
+    return patch
 
 
 def build_decision_state_patch(turn_decision: object) -> dict:
@@ -140,6 +172,7 @@ def merge_state_patch_with_decision(
     decision_patch["collaboration_mode_label"] = build_collaboration_mode_label(scene)
     merged = {**decision_patch, **(state_patch or {})}
     final_patch = {**merged, **workflow_patch}
+    final_patch = merge_readiness_state_patch(final_patch, current_state=current_state)
     if current_state is not None:
         for key in _PERSISTED_WORKFLOW_STATE_FIELDS:
             if key in final_patch:

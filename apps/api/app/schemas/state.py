@@ -41,12 +41,12 @@ class StateSnapshot(BaseModel):
     pending_confirmations: list[str] = Field(default_factory=list)
     rejected_options: list[str] = Field(default_factory=list)
     next_best_questions: list[str] = Field(default_factory=list)
-    workflow_stage: WorkflowStage = Field(default="idea_parser")
+    workflow_stage: WorkflowStage | None = Field(default="idea_parser")
     idea_parse_result: dict[str, Any] | None = None
     prd_draft: dict[str, Any] | None = None
     critic_result: dict[str, Any] | None = None
     refine_history: list[dict[str, Any]] = Field(default_factory=list)
-    finalization_ready: bool = False
+    finalization_ready: bool | None = False
 
     @field_validator("workflow_stage", mode="before")
     @classmethod
