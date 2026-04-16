@@ -75,10 +75,12 @@ Plans:
   2. 用户在每轮推进后只会看到受影响章节被增量更新，能够直观看出哪些部分发生了变化。
   3. 当某些关键章节信息不足时，PRD 视图会明确提示缺口，并引导继续澄清。
   4. 当系统判断信息已经足够时，用户能收到可确认的结构化 PRD 初稿，而不是被无限追问。
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
+- [x] 04-01-PLAN.md — 后端 panel contract、章节投影与 readiness/gap projector
+- [x] 04-02-PLAN.md — SSE / snapshot / finalize / export 接入统一 PRD projection
+- [x] 04-03-PLAN.md — 前端 store 与 PrdPanel 升级，完成增量高亮、缺口提示和确认 CTA
 
 ### Phase 5: 质量复核与交付回放
 **Goal**: 用户在确认 PRD 前后都能获得基础质量反馈、结构化导出结果，以及完整的引导与变更留痕。
@@ -88,10 +90,12 @@ Plans:
   1. 用户查看当前 PRD 时，系统会从目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度等维度给出基础质量检查结果。
   2. 用户确认后，可以导出保留章节结构和待验证项的结构化 PRD 文本，用于复制或下载。
   3. 用户或系统后续回放时，能够看到引导决策、问题诊断和 PRD 变更记录，而不是只剩最终文档。
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: TBD
+- [ ] 05-01-PLAN.md — 后端 review contract 与 snapshot expose，保持 review/panel contract 分离
+- [ ] 05-02-PLAN.md — 导出与交付链路复用后端 projection，保留章节与待验证项
+- [ ] 05-03-PLAN.md — 单会话 replay timeline 聚合与前端 review/replay 消费
 
 ## Progress
 
@@ -103,5 +107,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. 引导节奏与选项澄清 | 3/3 | Completed | 2026-04-16 |
 | 2. 诊断深挖与问题台账 | 3/3 | Completed | 2026-04-16 |
 | 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
-| 4. PRD 增量编排与收敛确认 | 0/TBD | Not started | - |
+| 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
 | 5. 质量复核与交付回放 | 0/TBD | Not started | - |
