@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agent.finalize_flow import is_finalize_confirm_input, resolve_finalize_preference
+from app.agent.pm_mentor import _resolve_guidance_contract
 from app.agent.readiness import evaluate_finalize_readiness
 from app.agent.types import AgentResult, NextAction, Suggestion, TurnDecision
 
@@ -117,6 +118,15 @@ def _build_greeting_result(state: dict[str, Any]) -> AgentResult:
         "如果你现在还说不清，也没关系。你可以直接点下面一个最接近你的选项，"
         "或者自己补充一句你现在在想什么。"
     )
+    guidance_contract = _resolve_guidance_contract(
+        focus="target_user",
+        conversation_strategy="greet",
+        strategy_reason="先用可选方向承接用户，再进入正式问题澄清。",
+        suggestions=suggestions,
+        force_options_first=True,
+        force_trigger="greeting",
+        force_reason="先让用户选一个更接近的入口，再逐步收紧问题。",
+    )
 
     turn_decision = TurnDecision(
         phase="greeting",
@@ -144,6 +154,16 @@ def _build_greeting_result(state: dict[str, Any]) -> AgentResult:
         strategy_reason="先用可选方向承接用户，再进入正式问题澄清。",
         next_best_questions=[item.content for item in suggestions],
         conversation_strategy="greet",
+        response_mode=guidance_contract["response_mode"],
+        guidance_mode=guidance_contract["guidance_mode"],
+        guidance_step=guidance_contract["guidance_step"],
+        focus_dimension=guidance_contract["focus_dimension"],
+        transition_reason=guidance_contract["transition_reason"],
+        transition_trigger=guidance_contract["transition_trigger"],
+        option_cards=guidance_contract["option_cards"],
+        freeform_affordance=guidance_contract["freeform_affordance"],
+        can_switch_mode=guidance_contract["can_switch_mode"],
+        available_mode_switches=guidance_contract["available_mode_switches"],
     )
 
     current_iteration = state.get("iteration", 0)
@@ -152,6 +172,7 @@ def _build_greeting_result(state: dict[str, Any]) -> AgentResult:
         "conversation_strategy": "greet",
         "strategy_reason": "先用可选方向承接用户，再进入正式问题澄清。",
         "next_best_questions": [item.content for item in suggestions],
+        **guidance_contract,
     }
 
     return AgentResult(
@@ -234,6 +255,13 @@ def _build_completed_result(state: dict[str, Any]) -> AgentResult:
         strategy_reason=None,
         next_best_questions=[item.content for item in suggestions],
         conversation_strategy="confirm",
+        response_mode="confirm_reply",
+        guidance_mode="confirm",
+        guidance_step="confirm",
+        focus_dimension="validation",
+        transition_reason="当前已经形成可交付结果，优先确认导出或继续修改。",
+        transition_trigger="completed_state",
+        available_mode_switches=[{"mode": "options_first", "label": "改成先给选项"}],
     )
     return AgentResult(
         reply=reply,
@@ -308,6 +336,13 @@ def _build_finalize_action_result(
         strategy_reason="用户已明确确认终稿输出偏好。",
         next_best_questions=[],
         conversation_strategy="confirm",
+        response_mode="confirm_reply",
+        guidance_mode="confirm",
+        guidance_step="confirm",
+        focus_dimension="validation",
+        transition_reason="用户已经确认进入终稿整理，下一步是执行输出。",
+        transition_trigger="finalize_confirmation",
+        available_mode_switches=[{"mode": "options_first", "label": "改成先给选项"}],
     )
     return AgentResult(
         reply="收到，我会按你的确认进入终稿整理流程。",
@@ -407,6 +442,27 @@ def _build_fallback_result(state: dict[str, Any], user_input: str) -> AgentResul
         strategy_reason=None,
         next_best_questions=[item.content for item in suggestions],
         conversation_strategy="clarify",
+        response_mode="options_first",
+        guidance_mode="explore",
+        guidance_step="choose",
+        focus_dimension="constraint",
+        transition_reason="模型暂时不可用，先给你几个恢复对话的方向。",
+        transition_trigger="fallback",
+        option_cards=[
+            {
+                "id": f"constraint-{index + 1}",
+                "label": item.label,
+                "title": item.label,
+                "content": item.content,
+                "description": item.rationale,
+                "type": item.type,
+                "priority": item.priority,
+            }
+            for index, item in enumerate(suggestions)
+        ],
+        freeform_affordance={"label": "都不对，我补充", "value": "freeform", "kind": "freeform"},
+        can_switch_mode=True,
+        available_mode_switches=[{"mode": "confirm", "label": "直接进入确认"}, {"mode": "freeform", "label": "直接自由补充"}],
     )
     return AgentResult(
         reply="我现在暂时无法访问模型，请稍后重试或检查模型配置。",

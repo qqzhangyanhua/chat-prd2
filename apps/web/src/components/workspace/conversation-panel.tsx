@@ -5,10 +5,16 @@ import { useEffect, useRef } from "react";
 import { finalizeSession } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useToastStore } from "../../store/toast-store";
-import { workspaceStore, useWorkspaceStore } from "../../store/workspace-store";
+import {
+  buildDiagnosticLedgerGroups,
+  workspaceStore,
+  useWorkspaceStore,
+} from "../../store/workspace-store";
 import { AssistantTurnCard } from "./assistant-turn-card";
 import { BrandIcon } from "./brand-icon";
 import { Composer } from "./composer";
+import { DiagnosticsLedgerCard } from "./diagnostics-ledger-card";
+import { FirstDraftCard } from "./first-draft-card";
 
 interface ConversationPanelProps {
   sessionId: string;
@@ -31,6 +37,11 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
   const selectedModelConfigId = useWorkspaceStore((state) => state.selectedModelConfigId);
   const decisionGuidance = useWorkspaceStore((state) => state.decisionGuidance);
   const collaborationModeLabel = useWorkspaceStore((state) => state.collaborationModeLabel);
+  const latestDiagnostics = useWorkspaceStore((state) => state.latestDiagnostics);
+  const latestDiagnosticSummary = useWorkspaceStore((state) => state.latestDiagnosticSummary);
+  const diagnosticLedger = useWorkspaceStore((state) => state.diagnosticLedger);
+  const diagnosticLedgerSummary = useWorkspaceStore((state) => state.diagnosticLedgerSummary);
+  const firstDraft = useWorkspaceStore((state) => state.firstDraft);
   const prdMeta = useWorkspaceStore((state) => state.prd.meta);
   const streamPhase = useWorkspaceStore((state) => state.streamPhase);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -233,6 +244,8 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
           isWaiting={isWaitingForNew}
           latestAssistantMessage={latestAssistantMessage}
           decisionGuidance={shouldShowGuidance ? decisionGuidance : null}
+          latestDiagnostics={shouldShowGuidance ? latestDiagnostics : []}
+          latestDiagnosticSummary={shouldShowGuidance ? latestDiagnosticSummary : null}
           onFinalize={handleFinalize}
           onSelectDecisionGuidanceQuestion={(question) =>
             workspaceStore.getState().setInputValue(question)
@@ -257,6 +270,11 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
           showInterruptedMarker={lastInterrupted && latestAssistantMessage.length > 0}
         />
       )}
+      <FirstDraftCard firstDraft={firstDraft} />
+      <DiagnosticsLedgerCard
+        groups={buildDiagnosticLedgerGroups(diagnosticLedger)}
+        summary={diagnosticLedgerSummary}
+      />
       <Composer
         inputRef={composerInputRef}
         sessionId={sessionId}

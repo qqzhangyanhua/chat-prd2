@@ -25,6 +25,8 @@ from app.schemas.message import AssistantDeltaEventData
 from app.schemas.message import AssistantDoneEventData
 from app.schemas.message import AssistantErrorEventData
 from app.schemas.message import AssistantVersionStartedEventData
+from app.schemas.message import DecisionReadyEventData
+from app.schemas.message import DraftUpdatedEventData
 from app.schemas.message import MessageAcceptedEventData
 from app.schemas.message import ReplyGroupCreatedEventData
 from app.services import finalize_session as finalize_session_service
@@ -107,6 +109,32 @@ def _build_assistant_error_event(
             is_latest=False,
         ).model_dump(),
     )
+
+
+def _build_decision_ready_event(guidance: dict[str, object]) -> MessageStreamEvent:
+    return MessageStreamEvent(
+        type="decision.ready",
+        data=DecisionReadyEventData(**guidance).model_dump(),
+    )
+
+
+def _build_draft_updated_event_data(state_patch: dict[str, object]) -> dict[str, object] | None:
+    prd_draft = state_patch.get("prd_draft")
+    if not isinstance(prd_draft, dict):
+        return None
+    sections = prd_draft.get("sections")
+    if not isinstance(sections, dict) or not sections:
+        return None
+    evidence_registry = state_patch.get("evidence")
+    draft_summary = prd_draft.get("summary") if isinstance(prd_draft.get("summary"), dict) else {}
+    return DraftUpdatedEventData(
+        sections=sections,
+        evidence_registry=evidence_registry if isinstance(evidence_registry, list) else [],
+        draft_summary=draft_summary,
+        sections_changed=list(draft_summary.get("section_keys", [])) if isinstance(draft_summary.get("section_keys"), list) else [],
+        entry_ids=list(draft_summary.get("entry_ids", [])) if isinstance(draft_summary.get("entry_ids"), list) else [],
+    ).model_dump()
+
 
 def _require_turn_decision(agent_result: object) -> object:
     return _require_turn_decision_impl(agent_result)
@@ -413,6 +441,13 @@ def stream_user_message_events(
             type="action.decided",
             data=prepared.action,
         )
+        yield _build_decision_ready_event(prepared.guidance)
+        draft_updated_payload = _build_draft_updated_event_data(prepared.state_patch)
+        if draft_updated_payload is not None:
+            yield MessageStreamEvent(
+                type="draft.updated",
+                data=draft_updated_payload,
+            )
         yield MessageStreamEvent(
             type="assistant.version.started",
             data=AssistantVersionStartedEventData(
@@ -614,6 +649,13 @@ def stream_regenerate_message_events(
             type="action.decided",
             data=prepared.action,
         )
+        yield _build_decision_ready_event(prepared.guidance)
+        draft_updated_payload = _build_draft_updated_event_data(prepared.state_patch)
+        if draft_updated_payload is not None:
+            yield MessageStreamEvent(
+                type="draft.updated",
+                data=draft_updated_payload,
+            )
         yield MessageStreamEvent(
             type="assistant.version.started",
             data=AssistantVersionStartedEventData(

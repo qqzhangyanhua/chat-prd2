@@ -58,6 +58,13 @@ export interface PrdDraftSectionResponse {
   content?: string;
   status?: PrdSectionStatus;
   title?: string;
+  completeness?: "complete" | "partial" | "missing";
+  entries?: Array<{
+    id: string;
+    text: string;
+    assertion_state: "confirmed" | "inferred" | "to_validate";
+    evidence_ref_ids: string[];
+  }>;
 }
 
 export interface PrdDraftResponse {
@@ -82,9 +89,20 @@ export interface StateSnapshotResponse {
   finalize_preference?: FinalizePreference | null;
   is_completed?: boolean;
   prd_draft?: PrdDraftResponse | null;
+  evidence?: FirstDraftEvidenceItem[] | null;
   critic_result?: CriticResultResponse | null;
   current_model_scene?: RecommendedScene;
   collaboration_mode_label?: string | null;
+  response_mode?: GuidanceResponseMode;
+  guidance_mode?: GuidanceMode;
+  guidance_step?: GuidanceStep;
+  focus_dimension?: string | null;
+  transition_reason?: string | null;
+  option_cards?: DecisionOptionCard[];
+  freeform_affordance?: GuidanceFreeformAffordance | null;
+  available_mode_switches?: GuidanceModeSwitch[];
+  diagnostics?: DecisionDiagnosticItem[];
+  diagnostic_summary?: DecisionDiagnosticSummary;
 }
 
 export interface ConversationMessage {
@@ -124,6 +142,9 @@ export interface AssistantReplyGroup {
 }
 
 export type DecisionStrategy = "greet" | "clarify" | "choose" | "converge" | "confirm";
+export type GuidanceMode = "explore" | "narrow" | "compare" | "confirm";
+export type GuidanceStep = "answer" | "choose" | "compare" | "confirm" | "freeform";
+export type GuidanceResponseMode = "options_first" | "direct_answer" | "confirm_reply";
 
 export interface SuggestionOption {
   content: string;
@@ -133,6 +154,104 @@ export interface SuggestionOption {
   type: string;
 }
 
+export interface DecisionOptionCard {
+  id: string;
+  label: string;
+  title: string;
+  content: string;
+  description: string;
+  priority: number;
+  type: string;
+}
+
+export interface GuidanceFreeformAffordance {
+  label: string;
+  value: string;
+  kind: string;
+}
+
+export interface GuidanceModeSwitch {
+  mode: string;
+  label: string;
+}
+
+export type DecisionDiagnosticType = "contradiction" | "gap" | "assumption";
+export type DecisionDiagnosticBucket = "unknown" | "risk" | "to_validate";
+export type DecisionDiagnosticStatus = "open" | "resolved" | "superseded";
+
+export interface DecisionDiagnosticNextStep {
+  action_kind: string;
+  label: string;
+  prompt: string;
+}
+
+export interface DecisionDiagnosticItem {
+  id: string;
+  type: DecisionDiagnosticType;
+  bucket: DecisionDiagnosticBucket;
+  status: DecisionDiagnosticStatus;
+  title: string;
+  detail: string;
+  impactScope: string[];
+  suggestedNextStep: DecisionDiagnosticNextStep;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface DecisionDiagnosticSummary {
+  openCount: number;
+  unknownCount: number;
+  riskCount: number;
+  toValidateCount: number;
+}
+
+export interface DiagnosticLedgerGroup {
+  label: string;
+  bucket: DecisionDiagnosticBucket;
+  items: DecisionDiagnosticItem[];
+}
+
+export type AssertionState = "confirmed" | "inferred" | "to_validate";
+export type FirstDraftCompleteness = "complete" | "partial" | "missing";
+
+export interface FirstDraftEntry {
+  id: string;
+  text: string;
+  assertionState: AssertionState;
+  evidenceRefIds: string[];
+}
+
+export interface FirstDraftSection {
+  title: string;
+  completeness: FirstDraftCompleteness;
+  entries: FirstDraftEntry[];
+  summary?: string | null;
+}
+
+export interface FirstDraftEvidenceItem {
+  id: string;
+  kind: "user_message" | "assistant_decision" | "system_inference" | "diagnostic";
+  excerpt: string;
+  sectionKeys: string[];
+  messageId?: string | null;
+  turnDecisionId?: string | null;
+  createdAt?: string | null;
+}
+
+export interface FirstDraftUpdateSummary {
+  version: number | null;
+  sectionKeys: string[];
+  entryIds: string[];
+  evidenceIds: string[];
+}
+
+export interface FirstDraftState {
+  version: number | null;
+  status: string | null;
+  sections: Record<string, FirstDraftSection>;
+  evidenceRegistry: Record<string, FirstDraftEvidenceItem>;
+  latestUpdates: FirstDraftUpdateSummary;
+}
+
 export interface AgentTurnDecisionSectionMeta {
   conversation_strategy?: string;
   strategy_label?: string;
@@ -140,6 +259,19 @@ export interface AgentTurnDecisionSectionMeta {
   next_best_questions?: unknown[];
   confirm_quick_replies?: unknown[];
   suggestion_options?: unknown[];
+  response_mode?: string;
+  guidance_mode?: string;
+  guidance_step?: string;
+  focus_dimension?: string;
+  transition_reason?: string;
+  option_cards?: unknown[];
+  freeform_affordance?: GuidanceFreeformAffordance | null;
+  available_mode_switches?: GuidanceModeSwitch[];
+  diagnostics?: unknown[];
+  diagnostic_summary?: unknown;
+  ledger_summary?: unknown;
+  draft_updates?: unknown;
+  evidence_ref_ids?: unknown[];
 }
 
 export interface AgentTurnDecisionSection {
@@ -154,6 +286,16 @@ export interface AgentTurnDecisionStatePatch {
   strategy_label?: string;
   strategy_reason?: string;
   next_best_questions?: unknown[];
+  response_mode?: string;
+  guidance_mode?: string;
+  guidance_step?: string;
+  focus_dimension?: string;
+  transition_reason?: string;
+  option_cards?: unknown[];
+  freeform_affordance?: GuidanceFreeformAffordance | null;
+  available_mode_switches?: GuidanceModeSwitch[];
+  diagnostics?: unknown[];
+  diagnostic_summary?: unknown;
   [key: string]: unknown;
 }
 
@@ -172,9 +314,17 @@ export interface DecisionGuidance {
   conversationStrategy: DecisionStrategy;
   strategyLabel: string;
   strategyReason: string | null;
+  guidanceMode: GuidanceMode | null;
+  guidanceStep: GuidanceStep | null;
+  focusDimension: string | null;
+  transitionReason: string | null;
+  responseMode: GuidanceResponseMode | null;
   nextBestQuestions: string[];
   confirmQuickReplies?: string[];
   suggestionOptions?: SuggestionOption[];
+  optionCards?: DecisionOptionCard[];
+  freeformAffordance?: GuidanceFreeformAffordance | null;
+  availableModeSwitches?: GuidanceModeSwitch[];
 }
 
 export interface SessionSnapshotResponse {
@@ -201,6 +351,39 @@ export interface NextAction {
   challenge?: string;
   suggestion?: string;
   question?: string;
+}
+
+export interface DecisionReadyData {
+  session_id: string;
+  user_message_id: string;
+  phase: string;
+  conversation_strategy: string;
+  next_move: string;
+  suggestions: SuggestionOption[];
+  recommendation: {
+    label: string;
+    content: string;
+  } | null;
+  next_best_questions: string[];
+  response_mode?: GuidanceResponseMode;
+  guidance_mode?: GuidanceMode;
+  guidance_step?: GuidanceStep;
+  focus_dimension?: string | null;
+  transition_reason?: string | null;
+  option_cards?: DecisionOptionCard[];
+  freeform_affordance?: GuidanceFreeformAffordance | null;
+  available_mode_switches?: GuidanceModeSwitch[];
+  diagnostics?: unknown[];
+  diagnostic_summary?: unknown;
+  ledger_summary?: unknown;
+}
+
+export interface DraftUpdatedData {
+  sections: Record<string, unknown>;
+  evidence_registry?: unknown[];
+  draft_summary?: unknown;
+  sections_changed?: string[];
+  entry_ids?: string[];
 }
 
 export interface WorkspaceMessage {
@@ -306,6 +489,8 @@ export type WorkspaceEvent =
       };
     }
   | { type: "action.decided"; data: NextAction }
+  | { type: "decision.ready"; data: DecisionReadyData }
+  | { type: "draft.updated"; data: DraftUpdatedData }
   | {
       type: "assistant.version.started";
       data: {

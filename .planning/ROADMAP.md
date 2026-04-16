@@ -12,9 +12,9 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: 引导节奏与选项澄清** - 建立先探索后收紧的默认引导结构与选项式推进机制。
-- [ ] **Phase 2: 诊断深挖与问题台账** - 识别矛盾、缺口和假设，并把问题持续维护成可行动清单。
-- [ ] **Phase 3: 首稿生成与证据追溯** - 把澄清结果沉淀为可区分确认状态、可回溯来源的结构化首稿。
+- [x] **Phase 1: 引导节奏与选项澄清** - 建立先探索后收紧的默认引导结构与选项式推进机制。
+- [x] **Phase 2: 诊断深挖与问题台账** - 识别矛盾、缺口和假设，并把问题持续维护成可行动清单。
+- [x] **Phase 3: 首稿生成与证据追溯** - 把澄清结果沉淀为可区分确认状态、可回溯来源的结构化首稿。
 - [ ] **Phase 4: PRD 增量编排与收敛确认** - 以章节化、增量更新的方式把会话收束成可确认 PRD 初稿。
 - [ ] **Phase 5: 质量复核与交付回放** - 对 PRD 做基础质量检查，并支持导出与回放分析。
 
@@ -32,9 +32,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — 扩展后端 guidance contract 与 decision.ready 结构化字段
-- [ ] 01-02-PLAN.md — 让 snapshot / session / SSE guidance 保持同一份真相
-- [ ] 01-03-PLAN.md — 消费 guidance contract 并完成工作台引导 UI 渲染
+- [x] 01-01-PLAN.md — 扩展后端 guidance contract 与 decision.ready 结构化字段
+- [x] 01-02-PLAN.md — 让 snapshot / session / SSE guidance 保持同一份真相
+- [x] 01-03-PLAN.md — 消费 guidance contract 并完成工作台引导 UI 渲染
 
 ### Phase 2: 诊断深挖与问题台账
 **Goal**: 用户可以看到系统主动指出当前想法中的矛盾、信息缺口和隐含假设，并给出下一步澄清方向。
@@ -44,10 +44,12 @@ Plans:
   1. 当用户前后表达冲突、信息缺失或带有隐含前提时，系统会把这些问题明确暴露出来，而不是继续顺着错误假设生成内容。
   2. 每个问题项都能让用户看到其类型、影响范围以及建议的下一步澄清动作。
   3. 用户在对话过程中随时都能看到持续更新的未知项、风险和待验证清单，而不是只在结束时一次性总结。
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD
+- [x] 02-01-PLAN.md — 后端诊断契约与 contradiction/gap/assumption 检测规则
+- [x] 02-02-PLAN.md — 持久化、SSE 与 session snapshot 问题台账贯通
+- [x] 02-03-PLAN.md — 会话列最小诊断 UI 与前端台账消费
 
 ### Phase 3: 首稿生成与证据追溯
 **Goal**: 系统把已澄清的内容快速沉淀为结构化首稿，并明确哪些内容已确认、哪些仍是推断或待验证。
@@ -57,10 +59,12 @@ Plans:
   1. 用户输入初始想法并经历基础澄清后，系统能生成覆盖目标用户、核心问题、方案方向、范围边界和成功标准的结构化首稿。
   2. 用户在首稿中能清楚区分“已确认”“推断”“待验证”内容，不会把未确认信息误看成既定事实。
   3. 用户查看首稿任一关键内容时，能够回溯到对应的对话轮次或证据项来源。
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [x] 03-01-PLAN.md — 首稿与 evidence contract：entry 级 assertion_state + 证据 registry
+- [x] 03-02-PLAN.md — enriched prd_draft 持久化、draft.updated 与 snapshot/导出兼容
+- [x] 03-03-PLAN.md — 会话列首稿卡片与证据抽屉，保持 PrdPanel 边界不变
 
 ### Phase 4: PRD 增量编排与收敛确认
 **Goal**: 用户可以在对话进行中持续看到按章节增量更新的 PRD，并在信息充分时获得可确认的结构化初稿。
@@ -96,8 +100,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 引导节奏与选项澄清 | 0/TBD | Not started | - |
-| 2. 诊断深挖与问题台账 | 0/TBD | Not started | - |
-| 3. 首稿生成与证据追溯 | 0/TBD | Not started | - |
+| 1. 引导节奏与选项澄清 | 3/3 | Completed | 2026-04-16 |
+| 2. 诊断深挖与问题台账 | 3/3 | Completed | 2026-04-16 |
+| 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
 | 4. PRD 增量编排与收敛确认 | 0/TBD | Not started | - |
 | 5. 质量复核与交付回放 | 0/TBD | Not started | - |

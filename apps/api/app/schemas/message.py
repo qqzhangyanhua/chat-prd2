@@ -25,6 +25,29 @@ class ReplyGroupCreatedEventData(BaseModel):
     is_latest: bool
 
 
+class DecisionReadyEventData(BaseModel):
+    session_id: str
+    user_message_id: str
+    phase: str
+    conversation_strategy: str
+    next_move: str
+    suggestions: list[dict[str, object]]
+    recommendation: dict[str, object] | None = None
+    next_best_questions: list[str]
+    response_mode: str
+    guidance_mode: str
+    guidance_step: str
+    focus_dimension: str | None = None
+    transition_reason: str | None = None
+    transition_trigger: str | None = None
+    option_cards: list[dict[str, object]] = Field(default_factory=list)
+    freeform_affordance: dict[str, object] | None = None
+    available_mode_switches: list[dict[str, object]] = Field(default_factory=list)
+    diagnostics: list[dict[str, object]] = Field(default_factory=list)
+    diagnostic_summary: dict[str, int] = Field(default_factory=dict)
+    ledger_summary: dict[str, int] = Field(default_factory=dict)
+
+
 class AssistantVersionStartedEventData(BaseModel):
     session_id: str
     user_message_id: str
@@ -88,6 +111,14 @@ class AssistantErrorEventData(BaseModel):
 class PrdUpdatedEventData(BaseModel):
     sections: dict
     meta: dict | None = None
+
+
+class DraftUpdatedEventData(BaseModel):
+    sections: dict[str, object]
+    evidence_registry: list[dict[str, object]] = Field(default_factory=list)
+    draft_summary: dict[str, object] = Field(default_factory=dict)
+    sections_changed: list[str] = Field(default_factory=list)
+    entry_ids: list[str] = Field(default_factory=list)
 
 
 class ConversationMessageResponse(BaseModel):

@@ -1687,6 +1687,11 @@ describe("ConversationPanel decision guidance", () => {
           type: "direction",
         },
       ],
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
     };
 
     workspaceStore.setState({
@@ -1700,7 +1705,7 @@ describe("ConversationPanel decision guidance", () => {
 
     render(<ConversationPanel sessionId="session-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /自由补充/i }));
+    fireEvent.click(screen.getByRole("button", { name: /都不对，我补充/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("textbox")).toHaveFocus();

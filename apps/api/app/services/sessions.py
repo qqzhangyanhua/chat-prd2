@@ -1,66 +1,10 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-
-def _normalize_suggestion_options(raw_options: object) -> list[dict]:
-    if not isinstance(raw_options, list):
-        return []
-
-    normalized: list[dict] = []
-    for item in raw_options:
-        if not isinstance(item, dict):
-            continue
-        label = item.get("label")
-        content = item.get("content")
-        rationale = item.get("rationale")
-        priority = item.get("priority")
-        suggestion_type = item.get("type")
-        if not isinstance(label, str) or not label.strip():
-            continue
-        if not isinstance(content, str) or not content.strip():
-            continue
-        if not isinstance(rationale, str) or not rationale.strip():
-            continue
-        normalized.append(
-            {
-                "label": label.strip(),
-                "content": content.strip(),
-                "rationale": rationale.strip(),
-                "priority": priority if isinstance(priority, int) and priority > 0 else len(normalized) + 1,
-                "type": suggestion_type if isinstance(suggestion_type, str) else "direction",
-            }
-        )
-    return sorted(normalized, key=lambda item: item["priority"])
-
-
-def build_reply_sections(decision: object) -> list[dict]:
-    phase_goal = getattr(decision, "phase_goal", None) or "继续推进当前 PRD"
-    strategy_reason = getattr(decision, "strategy_reason", None) or "继续澄清当前关键信息。"
-    next_best_questions = getattr(decision, "next_best_questions", None) or []
-    next_question = next_best_questions[0] if next_best_questions else "为了继续推进，请先补一个最具体的真实场景。"
-    return [
-        {
-            "key": "judgement",
-            "title": "当前判断：",
-            "content": str(strategy_reason),
-        },
-        {
-            "key": "critic_verdict",
-            "title": "当前目标：",
-            "content": str(phase_goal),
-        },
-        {
-            "key": "next_step",
-            "title": "唯一下一问：",
-            "content": str(next_question),
-        },
-    ]
 from app.core.api_error import raise_api_error
 from app.db.models import AgentTurnDecision, AssistantReplyGroup
 from app.repositories import assistant_reply_versions as assistant_reply_versions_repository
@@ -68,10 +12,10 @@ from app.repositories import messages as messages_repository
 from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
-from app.schemas.message import AssistantReplyGroupResponse
-from app.schemas.message import AssistantReplyVersionResponse
 from app.schemas.message import AgentTurnDecisionResponse
 from app.schemas.message import AgentTurnDecisionSectionResponse
+from app.schemas.message import AssistantReplyGroupResponse
+from app.schemas.message import AssistantReplyVersionResponse
 from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
 from app.schemas.session import (
@@ -83,6 +27,36 @@ from app.schemas.session import (
 )
 from app.schemas.state import StateSnapshot
 from app.services import legacy_session_backfill as legacy_backfill_service
+from app.services.message_state import build_diagnostics_payload, build_guidance_payload
+
+
+def build_reply_sections(
+    *,
+    phase_goal: str | None,
+    strategy_reason: str | None,
+    next_best_questions: list[str] | None,
+) -> list[dict]:
+    resolved_phase_goal = phase_goal or "继续推进当前 PRD"
+    resolved_strategy_reason = strategy_reason or "继续澄清当前关键信息。"
+    next_questions = next_best_questions or []
+    next_question = next_questions[0] if next_questions else "为了继续推进，请先补一个最具体的真实场景。"
+    return [
+        {
+            "key": "judgement",
+            "title": "当前判断：",
+            "content": str(resolved_strategy_reason),
+        },
+        {
+            "key": "critic_verdict",
+            "title": "当前目标：",
+            "content": str(resolved_phase_goal),
+        },
+        {
+            "key": "next_step",
+            "title": "唯一下一问：",
+            "content": str(next_question),
+        },
+    ]
 
 
 SCHEMA_OUTDATED_DETAIL = "数据库结构版本过旧，请先执行 alembic upgrade head"
@@ -258,34 +232,58 @@ def _build_turn_decision_sections(
     strategy_reason = _infer_strategy_reason(decision, conversation_strategy)
     next_best_questions = _infer_next_best_questions(decision, conversation_strategy)
     confirm_quick_replies = _infer_confirm_quick_replies(decision, conversation_strategy)
-    suggestion_options = _normalize_suggestion_options(decision.suggestions_json or [])
-    snapshot = SimpleNamespace(
-        phase=decision.phase,
-        phase_goal=decision.phase_goal,
-        assumptions=decision.assumptions_json or [],
-        next_move=decision.next_move,
-        suggestions=decision.suggestions_json or [],
-        recommendation=decision.recommendation_json,
-        needs_confirmation=decision.needs_confirmation_json or [],
+    guidance = build_guidance_payload(
+        decision,
         conversation_strategy=conversation_strategy,
-        strategy_reason=strategy_reason,
         next_best_questions=next_best_questions,
-        gaps=[],
+        confirm_quick_replies=confirm_quick_replies,
     )
+    diagnostics_payload = build_diagnostics_payload(
+        decision,
+        ledger_diagnostics=(decision.state_patch_json or {}).get("diagnostics"),
+    )
+    draft_state = (decision.state_patch_json or {}).get("prd_draft")
+    draft_summary = draft_state.get("summary", {}) if isinstance(draft_state, dict) else {}
+    evidence_ref_ids = draft_summary.get("evidence_ids", []) if isinstance(draft_summary.get("evidence_ids"), list) else []
     sections: list[AgentTurnDecisionSectionResponse] = []
-    for section in build_reply_sections(snapshot):
+    for section in build_reply_sections(
+        phase_goal=decision.phase_goal,
+        strategy_reason=strategy_reason,
+        next_best_questions=guidance["next_best_questions"],
+    ):
         meta: dict = {}
         if section["key"] == "judgement":
             meta = {
                 "conversation_strategy": conversation_strategy,
                 "strategy_label": _conversation_strategy_label(conversation_strategy),
                 "strategy_reason": strategy_reason,
+                "guidance_mode": guidance.get("guidance_mode"),
+                "guidance_step": guidance.get("guidance_step"),
+                "focus_dimension": guidance.get("focus_dimension"),
+                "transition_reason": guidance.get("transition_reason"),
+                "transition_trigger": guidance.get("transition_trigger"),
+                "diagnostic_summary": diagnostics_payload.get("diagnostic_summary", {}),
+                "ledger_summary": diagnostics_payload.get("ledger_summary", {}),
             }
         elif section["key"] == "next_step":
             meta = {
-                "next_best_questions": next_best_questions,
-                "confirm_quick_replies": confirm_quick_replies,
-                "suggestion_options": suggestion_options,
+                "next_best_questions": guidance["next_best_questions"],
+                "confirm_quick_replies": guidance.get("confirm_quick_replies", []),
+                "suggestion_options": guidance["suggestions"],
+                "response_mode": guidance.get("response_mode"),
+                "guidance_mode": guidance.get("guidance_mode"),
+                "guidance_step": guidance.get("guidance_step"),
+                "focus_dimension": guidance.get("focus_dimension"),
+                "transition_reason": guidance.get("transition_reason"),
+                "transition_trigger": guidance.get("transition_trigger"),
+                "option_cards": guidance.get("option_cards", []),
+                "freeform_affordance": guidance.get("freeform_affordance"),
+                "available_mode_switches": guidance.get("available_mode_switches", []),
+                "diagnostics": diagnostics_payload.get("diagnostics", []),
+                "diagnostic_summary": diagnostics_payload.get("diagnostic_summary", {}),
+                "ledger_summary": diagnostics_payload.get("ledger_summary", {}),
+                "draft_updates": draft_summary if isinstance(draft_summary, dict) else {},
+                "evidence_ref_ids": evidence_ref_ids,
             }
         sections.append(
             AgentTurnDecisionSectionResponse.model_validate({**section, "meta": meta})

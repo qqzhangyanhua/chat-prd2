@@ -104,10 +104,11 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert "assistant.done" in body
     parsed_events = _parse_sse_events(body)
     event_order = [name for name, _ in parsed_events]
-    assert event_order[:4] == [
+    assert event_order[:5] == [
         "message.accepted",
         "reply_group.created",
         "action.decided",
+        "decision.ready",
         "assistant.version.started",
     ]
     assert event_order[-1] == "assistant.done"
@@ -158,6 +159,181 @@ def test_message_stream_emits_progress_and_persists_messages(
     assert done_payload["is_latest"] is True
 
     assert decision is not None
+    assert decision.state_patch_json["diagnostics"]
+    assert decision.state_patch_json["diagnostic_summary"]["open_count"] >= 1
+
+
+def test_message_stream_emits_decision_ready_with_structured_guidance(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="结构化 guidance 模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "prd_draft",
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        "app.agent.pm_mentor.call_pm_mentor_llm",
+        lambda **_: _fake_pm_mentor_llm_response(),
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "help me think through the target user",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    event_order = [name for name, _ in parsed_events]
+    guidance_payload = next(payload for name, payload in parsed_events if name == "decision.ready")
+
+    assert event_order[:5] == [
+        "message.accepted",
+        "reply_group.created",
+        "action.decided",
+        "decision.ready",
+        "assistant.version.started",
+    ]
+    assert guidance_payload["phase"] == "problem"
+    assert guidance_payload["conversation_strategy"] == "clarify"
+    assert guidance_payload["next_move"] == "probe_for_specificity"
+    assert guidance_payload["response_mode"] == "options_first"
+    assert guidance_payload["guidance_mode"] == "explore"
+    assert guidance_payload["guidance_step"] == "choose"
+    assert guidance_payload["focus_dimension"] == "problem"
+    assert guidance_payload["transition_trigger"] == "high_uncertainty"
+    assert guidance_payload["transition_reason"]
+    assert len(guidance_payload["option_cards"]) == 4
+    assert guidance_payload["freeform_affordance"] == {
+        "label": "都不对，我补充",
+        "value": "freeform",
+        "kind": "freeform",
+    }
+    assert guidance_payload["available_mode_switches"]
+    assert len(guidance_payload["suggestions"]) == 4
+    assert guidance_payload["recommendation"]["label"]
+    assert guidance_payload["next_best_questions"] == [
+        item["content"] for item in guidance_payload["suggestions"]
+    ]
+    assert guidance_payload["option_cards"][0]["id"]
+    assert guidance_payload["diagnostics"]
+    assert guidance_payload["diagnostic_summary"]["open_count"] >= 1
+    assert guidance_payload["ledger_summary"]["open_count"] >= guidance_payload["diagnostic_summary"]["open_count"]
+
+
+def test_message_stream_emits_draft_updated_without_polluting_prd_updated(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    db = testing_session_local()
+    try:
+        model_config = model_configs_repository.create_model_config(
+            db,
+            name="首稿事件模型",
+            base_url="https://gateway.example.com/v1",
+            api_key="secret",
+            model="gpt-4o-mini",
+            enabled=True,
+        )
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "prd_draft",
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+        model_config_id = model_config.id
+    finally:
+        db.close()
+
+    monkeypatch.setattr(
+        "app.agent.pm_mentor.call_pm_mentor_llm",
+        lambda **_: {
+            **_fake_pm_mentor_llm_response(),
+            "prd_updates": {
+                "target_user": {"content": "独立开发者", "status": "confirmed"},
+                "success_metrics": {"content": "7 天内完成一次 PRD 初稿", "status": "draft"},
+            },
+        },
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "我想先服务独立开发者。",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = _parse_sse_events(body)
+    event_order = [name for name, _ in parsed_events]
+    draft_payload = next(payload for name, payload in parsed_events if name == "draft.updated")
+    prd_payload = next(payload for name, payload in parsed_events if name == "prd.updated")
+
+    assert event_order[:6] == [
+        "message.accepted",
+        "reply_group.created",
+        "action.decided",
+        "decision.ready",
+        "draft.updated",
+        "assistant.version.started",
+    ]
+    assert draft_payload["sections"]["target_user"]["entries"][0]["assertion_state"] == "confirmed"
+    assert draft_payload["evidence_registry"][0]["kind"] in {"user_message", "system_inference"}
+    assert draft_payload["sections_changed"] == ["target_user", "success_metrics"]
+    assert draft_payload["entry_ids"]
+    assert "evidence_registry" not in prd_payload
+    assert "sections_changed" not in prd_payload
 
 
 def test_message_stream_finalize_action_moves_session_to_completed(
@@ -447,7 +623,7 @@ def test_regenerate_stream_emits_regenerate_events_and_does_not_create_user_mess
     assert "message.accepted" not in body
     parsed_events = _parse_sse_events(body)
     event_order = [name for name, _ in parsed_events]
-    assert event_order[:2] == ["action.decided", "assistant.version.started"]
+    assert event_order[:3] == ["action.decided", "decision.ready", "assistant.version.started"]
     assert event_order[-2:] == ["prd.updated", "assistant.done"]
     delta_payloads = [
         payload

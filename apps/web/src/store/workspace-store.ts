@@ -3,12 +3,29 @@ import { createStore } from "zustand/vanilla";
 
 import type {
   AgentTurnDecision,
+  DecisionDiagnosticBucket,
+  DecisionDiagnosticItem,
+  DecisionDiagnosticSummary,
+  DecisionOptionCard,
+  DecisionReadyData,
   DecisionGuidance,
+  DiagnosticLedgerGroup,
+  GuidanceFreeformAffordance,
+  GuidanceMode,
+  GuidanceModeSwitch,
+  GuidanceResponseMode,
+  GuidanceStep,
   DecisionStrategy,
   AssistantReplyGroup,
   AssistantReplyVersion,
   ConversationMessage,
+  DraftUpdatedData,
   EnabledModelConfigItem,
+  FirstDraftCompleteness,
+  FirstDraftEntry,
+  FirstDraftEvidenceItem,
+  FirstDraftSection,
+  FirstDraftState,
   NextAction,
   PrdState,
   RecommendedScene,
@@ -62,15 +79,20 @@ interface WorkspaceState {
   currentAction: NextAction | null;
   currentModelScene: RecommendedScene | null;
   errorMessage: string | null;
+  diagnosticLedger: DecisionDiagnosticItem[];
+  diagnosticLedgerSummary: DecisionDiagnosticSummary | null;
   inputValue: string;
   isFinalizingSession: boolean;
   isStreaming: boolean;
   lastInterrupted: boolean;
   lastSubmittedInput: string | null;
   messages: WorkspaceMessage[];
+  latestDiagnostics: DecisionDiagnosticItem[];
+  latestDiagnosticSummary: DecisionDiagnosticSummary | null;
   pendingUserInput: string | null;
   pendingRequestMode: RequestMode | null;
   prd: PrdState;
+  firstDraft: FirstDraftState;
   decisionGuidance: DecisionGuidance | null;
   regenerateRequestId: number;
   replyGroups: Record<string, WorkspaceReplyGroup>;
@@ -145,6 +167,16 @@ const STRATEGY_LABEL_MAP: Record<DecisionStrategy, string> = {
   converge: "收敛中",
   confirm: "确认中",
 };
+const DECISION_STRATEGY_SET = new Set<DecisionStrategy>([
+  "greet",
+  "clarify",
+  "choose",
+  "converge",
+  "confirm",
+]);
+const GUIDANCE_MODE_SET = new Set<GuidanceMode>(["explore", "narrow", "compare", "confirm"]);
+const GUIDANCE_STEP_SET = new Set<GuidanceStep>(["answer", "choose", "compare", "confirm", "freeform"]);
+const RESPONSE_MODE_SET = new Set<GuidanceResponseMode>(["options_first", "direct_answer", "confirm_reply"]);
 
 function normalizeBestQuestions(items?: unknown[]): string[] {
   if (!items?.length) {
@@ -219,6 +251,431 @@ function normalizeSuggestionOptions(items?: unknown[]): SuggestionOption[] {
   return normalized.sort((a, b) => a.priority - b.priority);
 }
 
+function normalizeOptionCards(items?: unknown[]): DecisionOptionCard[] {
+  if (!items?.length) {
+    return [];
+  }
+
+  const normalized: DecisionOptionCard[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const candidate = item as Record<string, unknown>;
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    const label = typeof candidate.label === "string" ? candidate.label.trim() : "";
+    const title = typeof candidate.title === "string" ? candidate.title.trim() : label;
+    const content = typeof candidate.content === "string" ? candidate.content.trim() : "";
+    const description = typeof candidate.description === "string" ? candidate.description.trim() : "";
+    const type = typeof candidate.type === "string" ? candidate.type.trim() : "direction";
+    const priority = typeof candidate.priority === "number" && candidate.priority > 0
+      ? candidate.priority
+      : normalized.length + 1;
+    if (!id || !label || !title || !content) {
+      continue;
+    }
+    if (normalized.some((card) => card.id === id)) {
+      continue;
+    }
+    normalized.push({ id, label, title, content, description, type, priority });
+    if (normalized.length >= 4) {
+      break;
+    }
+  }
+  return normalized.sort((a, b) => a.priority - b.priority);
+}
+
+function normalizeFreeformAffordance(value?: unknown): GuidanceFreeformAffordance | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const label = typeof candidate.label === "string" ? candidate.label.trim() : "";
+  const val = typeof candidate.value === "string" ? candidate.value.trim() : "";
+  const kind = typeof candidate.kind === "string" ? candidate.kind.trim() : "";
+  if (!label || !val || !kind) {
+    return null;
+  }
+  return { label, value: val, kind };
+}
+
+function normalizeModeSwitches(items?: unknown[]): GuidanceModeSwitch[] {
+  if (!items?.length) {
+    return [];
+  }
+  const normalized: GuidanceModeSwitch[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const candidate = item as Record<string, unknown>;
+    const mode = typeof candidate.mode === "string" ? candidate.mode.trim() : "";
+    const label = typeof candidate.label === "string" ? candidate.label.trim() : "";
+    if (!mode || !label) {
+      continue;
+    }
+    if (normalized.some((current) => current.mode === mode && current.label === label)) {
+      continue;
+    }
+    normalized.push({ mode, label });
+  }
+  return normalized;
+}
+
+function normalizeGuidanceMode(value?: unknown): GuidanceMode | null {
+  return typeof value === "string" && GUIDANCE_MODE_SET.has(value as GuidanceMode)
+    ? value as GuidanceMode
+    : null;
+}
+
+function normalizeGuidanceStep(value?: unknown): GuidanceStep | null {
+  return typeof value === "string" && GUIDANCE_STEP_SET.has(value as GuidanceStep)
+    ? value as GuidanceStep
+    : null;
+}
+
+function normalizeResponseMode(value?: unknown): GuidanceResponseMode | null {
+  return typeof value === "string" && RESPONSE_MODE_SET.has(value as GuidanceResponseMode)
+    ? value as GuidanceResponseMode
+    : null;
+}
+
+function normalizeDiagnosticSummary(value?: unknown): DecisionDiagnosticSummary | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const openCount = typeof candidate.open_count === "number"
+    ? candidate.open_count
+    : typeof candidate.openCount === "number"
+      ? candidate.openCount
+      : null;
+  const unknownCount = typeof candidate.unknown_count === "number"
+    ? candidate.unknown_count
+    : typeof candidate.unknownCount === "number"
+      ? candidate.unknownCount
+      : null;
+  const riskCount = typeof candidate.risk_count === "number"
+    ? candidate.risk_count
+    : typeof candidate.riskCount === "number"
+      ? candidate.riskCount
+      : null;
+  const toValidateCount = typeof candidate.to_validate_count === "number"
+    ? candidate.to_validate_count
+    : typeof candidate.toValidateCount === "number"
+      ? candidate.toValidateCount
+      : null;
+  if (
+    openCount === null ||
+    unknownCount === null ||
+    riskCount === null ||
+    toValidateCount === null
+  ) {
+    return null;
+  }
+  return {
+    openCount,
+    unknownCount,
+    riskCount,
+    toValidateCount,
+  };
+}
+
+function normalizeDiagnostics(items?: unknown[]): DecisionDiagnosticItem[] {
+  if (!items?.length) {
+    return [];
+  }
+  const normalized: DecisionDiagnosticItem[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const candidate = item as Record<string, unknown>;
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    const type = candidate.type;
+    const bucket = candidate.bucket;
+    const status = candidate.status;
+    const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
+    const detail = typeof candidate.detail === "string" ? candidate.detail.trim() : "";
+    const impactScopeRaw = candidate.impact_scope ?? candidate.impactScope;
+    const nextStepRaw = candidate.suggested_next_step ?? candidate.suggestedNextStep;
+    const confidence = candidate.confidence;
+    if (!id || !title || !detail) {
+      continue;
+    }
+    if (type !== "contradiction" && type !== "gap" && type !== "assumption") {
+      continue;
+    }
+    if (bucket !== "unknown" && bucket !== "risk" && bucket !== "to_validate") {
+      continue;
+    }
+    if (status !== "open" && status !== "resolved" && status !== "superseded") {
+      continue;
+    }
+    if (!Array.isArray(impactScopeRaw)) {
+      continue;
+    }
+    const impactScope = impactScopeRaw
+      .filter((part): part is string => typeof part === "string")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (!impactScope.length || !nextStepRaw || typeof nextStepRaw !== "object") {
+      continue;
+    }
+    const nextStep = nextStepRaw as Record<string, unknown>;
+    const actionKind = typeof nextStep.action_kind === "string"
+      ? nextStep.action_kind.trim()
+      : typeof nextStep.actionKind === "string"
+        ? nextStep.actionKind.trim()
+        : "";
+    const label = typeof nextStep.label === "string" ? nextStep.label.trim() : "";
+    const prompt = typeof nextStep.prompt === "string" ? nextStep.prompt.trim() : "";
+    if (!actionKind || !label || !prompt) {
+      continue;
+    }
+    if (normalized.some((current) => current.id === id)) {
+      continue;
+    }
+    normalized.push({
+      id,
+      type,
+      bucket,
+      status,
+      title,
+      detail,
+      impactScope,
+      suggestedNextStep: {
+        action_kind: actionKind,
+        label,
+        prompt,
+      },
+      confidence: confidence === "high" || confidence === "medium" || confidence === "low"
+        ? confidence
+        : "medium",
+    });
+  }
+  return normalized;
+}
+
+function normalizeAssertionState(value: unknown): FirstDraftEntry["assertionState"] | null {
+  return value === "confirmed" || value === "inferred" || value === "to_validate"
+    ? value
+    : null;
+}
+
+function normalizeFirstDraftCompleteness(value: unknown): FirstDraftCompleteness {
+  return value === "complete" || value === "partial" || value === "missing"
+    ? value
+    : "missing";
+}
+
+function normalizeFirstDraftEntry(item: unknown): FirstDraftEntry | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const candidate = item as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+  const text = typeof candidate.text === "string" ? candidate.text.trim() : "";
+  const assertionState = normalizeAssertionState(candidate.assertion_state ?? candidate.assertionState);
+  const evidenceRefIds = Array.isArray(candidate.evidence_ref_ids ?? candidate.evidenceRefIds)
+    ? (candidate.evidence_ref_ids ?? candidate.evidenceRefIds as unknown[])
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    : [];
+  if (!id || !text || !assertionState) {
+    return null;
+  }
+  return { id, text, assertionState, evidenceRefIds };
+}
+
+function normalizeFirstDraftSection(item: unknown): FirstDraftSection | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const candidate = item as Record<string, unknown>;
+  const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
+  const entries = Array.isArray(candidate.entries)
+    ? candidate.entries
+        .map((entry) => normalizeFirstDraftEntry(entry))
+        .filter((entry): entry is FirstDraftEntry => entry !== null)
+    : [];
+  if (!title) {
+    return null;
+  }
+  return {
+    title,
+    completeness: normalizeFirstDraftCompleteness(candidate.completeness),
+    entries,
+    summary: typeof candidate.summary === "string" ? candidate.summary : null,
+  };
+}
+
+function normalizeFirstDraftEvidence(item: unknown): FirstDraftEvidenceItem | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const candidate = item as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+  const kind = candidate.kind;
+  const excerpt = typeof candidate.excerpt === "string" ? candidate.excerpt.trim() : "";
+  const sectionKeysRaw = candidate.section_keys ?? candidate.sectionKeys;
+  if (
+    kind !== "user_message" &&
+    kind !== "assistant_decision" &&
+    kind !== "system_inference" &&
+    kind !== "diagnostic"
+  ) {
+    return null;
+  }
+  if (!id || !excerpt || !Array.isArray(sectionKeysRaw)) {
+    return null;
+  }
+  return {
+    id,
+    kind,
+    excerpt,
+    sectionKeys: sectionKeysRaw
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    messageId: typeof candidate.message_id === "string"
+      ? candidate.message_id
+      : typeof candidate.messageId === "string"
+        ? candidate.messageId
+        : null,
+    turnDecisionId: typeof candidate.turn_decision_id === "string"
+      ? candidate.turn_decision_id
+      : typeof candidate.turnDecisionId === "string"
+        ? candidate.turnDecisionId
+        : null,
+    createdAt: typeof candidate.created_at === "string"
+      ? candidate.created_at
+      : typeof candidate.createdAt === "string"
+        ? candidate.createdAt
+        : null,
+  };
+}
+
+function createInitialFirstDraftState(): FirstDraftState {
+  return {
+    version: null,
+    status: null,
+    sections: {},
+    evidenceRegistry: {},
+    latestUpdates: {
+      version: null,
+      sectionKeys: [],
+      entryIds: [],
+      evidenceIds: [],
+    },
+  };
+}
+
+function normalizeFirstDraftState(
+  prdDraft: StateSnapshotResponse["prd_draft"],
+  evidence: StateSnapshotResponse["evidence"],
+  decision?: AgentTurnDecision | null,
+): FirstDraftState {
+  if (!prdDraft || typeof prdDraft !== "object") {
+    return createInitialFirstDraftState();
+  }
+  const sectionsRaw = typeof prdDraft.sections === "object" && prdDraft.sections ? prdDraft.sections : {};
+  const sections: Record<string, FirstDraftSection> = {};
+  Object.entries(sectionsRaw).forEach(([key, value]) => {
+    const section = normalizeFirstDraftSection(value);
+    if (section) {
+      sections[key] = section;
+    }
+  });
+  const evidenceRegistry = Object.fromEntries(
+    (Array.isArray(evidence) ? evidence : [])
+      .map((item) => normalizeFirstDraftEvidence(item))
+      .filter((item): item is FirstDraftEvidenceItem => item !== null)
+      .map((item) => [item.id, item]),
+  );
+  const nextStepMeta = decision?.decision_sections?.find((section) => section.key === "next_step")?.meta;
+  const draftUpdates = nextStepMeta?.draft_updates && typeof nextStepMeta.draft_updates === "object"
+    ? nextStepMeta.draft_updates as Record<string, unknown>
+    : typeof prdDraft.summary === "object" && prdDraft.summary
+      ? prdDraft.summary as Record<string, unknown>
+      : {};
+
+  return {
+    version: typeof prdDraft.version === "number" ? prdDraft.version : null,
+    status: typeof prdDraft.status === "string" ? prdDraft.status : null,
+    sections,
+    evidenceRegistry,
+    latestUpdates: {
+      version: typeof draftUpdates.version === "number"
+        ? draftUpdates.version
+        : typeof prdDraft.version === "number"
+          ? prdDraft.version
+          : null,
+      sectionKeys: Array.isArray(draftUpdates.section_keys ?? draftUpdates.sectionKeys)
+        ? (draftUpdates.section_keys ?? draftUpdates.sectionKeys as unknown[])
+            .filter((entry): entry is string => typeof entry === "string")
+        : [],
+      entryIds: Array.isArray(draftUpdates.entry_ids ?? draftUpdates.entryIds)
+        ? (draftUpdates.entry_ids ?? draftUpdates.entryIds as unknown[])
+            .filter((entry): entry is string => typeof entry === "string")
+        : [],
+      evidenceIds: Array.isArray(draftUpdates.evidence_ids ?? draftUpdates.evidenceIds)
+        ? (draftUpdates.evidence_ids ?? draftUpdates.evidenceIds as unknown[])
+            .filter((entry): entry is string => typeof entry === "string")
+        : Array.isArray(nextStepMeta?.evidence_ref_ids)
+          ? nextStepMeta.evidence_ref_ids.filter((entry): entry is string => typeof entry === "string")
+          : [],
+    },
+  };
+}
+
+function isOlderFirstDraftVersion(current: FirstDraftState, nextDraft: FirstDraftState): boolean {
+  return (
+    typeof current.version === "number" &&
+    typeof nextDraft.version === "number" &&
+    current.version > nextDraft.version
+  );
+}
+
+function mergeDiagnosticLedger(
+  current: DecisionDiagnosticItem[],
+  incoming: DecisionDiagnosticItem[],
+): DecisionDiagnosticItem[] {
+  const ledger = new Map<string, DecisionDiagnosticItem>();
+  current.forEach((item) => ledger.set(item.id, item));
+  incoming.forEach((item) => {
+    if (item.status === "open") {
+      ledger.set(item.id, item);
+      return;
+    }
+    ledger.delete(item.id);
+  });
+  return Array.from(ledger.values());
+}
+
+function summarizeDiagnosticLedger(items: DecisionDiagnosticItem[]): DecisionDiagnosticSummary {
+  return {
+    openCount: items.length,
+    unknownCount: items.filter((item) => item.bucket === "unknown").length,
+    riskCount: items.filter((item) => item.bucket === "risk").length,
+    toValidateCount: items.filter((item) => item.bucket === "to_validate").length,
+  };
+}
+
+export function buildDiagnosticLedgerGroups(items: DecisionDiagnosticItem[]): DiagnosticLedgerGroup[] {
+  const buckets: Array<{ bucket: DecisionDiagnosticBucket; label: string }> = [
+    { bucket: "unknown", label: "未知项" },
+    { bucket: "risk", label: "风险" },
+    { bucket: "to_validate", label: "待验证" },
+  ];
+  return buckets.map(({ bucket, label }) => ({
+    bucket,
+    label,
+    items: items.filter((item) => item.status === "open" && item.bucket === bucket),
+  }));
+}
+
 function pickLatestDecision(decisions?: AgentTurnDecision[]): AgentTurnDecision | null {
   if (!decisions?.length) {
     return null;
@@ -241,6 +698,25 @@ function pickLatestDecision(decisions?: AgentTurnDecision[]): AgentTurnDecision 
   return parsedDecisions[0]?.decision ?? lastDecision;
 }
 
+function deriveLatestDiagnostics(decision: AgentTurnDecision | null): {
+  latestDiagnostics: DecisionDiagnosticItem[];
+  latestDiagnosticSummary: DecisionDiagnosticSummary | null;
+} {
+  if (!decision) {
+    return {
+      latestDiagnostics: [],
+      latestDiagnosticSummary: null,
+    };
+  }
+  const nextStepMeta = decision.decision_sections?.find((section) => section.key === "next_step")?.meta;
+  return {
+    latestDiagnostics: normalizeDiagnostics(nextStepMeta?.diagnostics ?? decision.state_patch_json?.diagnostics),
+    latestDiagnosticSummary: normalizeDiagnosticSummary(
+      nextStepMeta?.diagnostic_summary ?? decision.state_patch_json?.diagnostic_summary,
+    ),
+  };
+}
+
 function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance | null {
   const judgementMeta = decision.decision_sections?.find((section) => section.key === "judgement")?.meta;
   const nextStepMeta = decision.decision_sections?.find((section) => section.key === "next_step")?.meta;
@@ -252,16 +728,135 @@ function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance |
     judgementMeta?.strategy_label;
   const mappedLabel = STRATEGY_LABEL_MAP[conversationStrategy];
   const strategyLabel = strategyLabelSource ?? mappedLabel ?? "继续推进";
+  const transitionReason =
+    typeof nextStepMeta?.transition_reason === "string"
+      ? nextStepMeta.transition_reason
+      : typeof judgementMeta?.transition_reason === "string"
+        ? judgementMeta.transition_reason
+        : typeof decision.state_patch_json?.transition_reason === "string"
+          ? decision.state_patch_json.transition_reason
+          : null;
   const strategyReason =
-    judgementMeta?.strategy_reason ?? decision.state_patch_json?.strategy_reason ?? null;
+    judgementMeta?.strategy_reason ?? transitionReason ?? decision.state_patch_json?.strategy_reason ?? null;
 
   const metaNextQuestions = nextStepMeta?.next_best_questions;
   const fallbackNextQuestions = decision.state_patch_json?.next_best_questions;
   const nextBestQuestions = normalizeBestQuestions(metaNextQuestions ?? fallbackNextQuestions);
   const confirmQuickReplies = normalizeBestQuestions(nextStepMeta?.confirm_quick_replies);
   const suggestionOptions = normalizeSuggestionOptions(nextStepMeta?.suggestion_options);
+  const optionCards = normalizeOptionCards(nextStepMeta?.option_cards);
+  const freeformAffordance = normalizeFreeformAffordance(
+    nextStepMeta?.freeform_affordance ?? decision.state_patch_json?.freeform_affordance,
+  );
+  const availableModeSwitches = normalizeModeSwitches(
+    nextStepMeta?.available_mode_switches ?? decision.state_patch_json?.available_mode_switches,
+  );
+  const guidanceMode = normalizeGuidanceMode(
+    nextStepMeta?.guidance_mode ?? judgementMeta?.guidance_mode ?? decision.state_patch_json?.guidance_mode,
+  );
+  const guidanceStep = normalizeGuidanceStep(
+    nextStepMeta?.guidance_step ?? judgementMeta?.guidance_step ?? decision.state_patch_json?.guidance_step,
+  );
+  const focusDimension = typeof (
+    nextStepMeta?.focus_dimension ?? judgementMeta?.focus_dimension ?? decision.state_patch_json?.focus_dimension
+  ) === "string"
+    ? String(nextStepMeta?.focus_dimension ?? judgementMeta?.focus_dimension ?? decision.state_patch_json?.focus_dimension)
+    : null;
+  const responseMode = normalizeResponseMode(
+    nextStepMeta?.response_mode ?? decision.state_patch_json?.response_mode,
+  );
 
-  if (!nextBestQuestions.length && !suggestionOptions.length) {
+  return buildDecisionGuidance({
+    conversationStrategy,
+    strategyLabel,
+    strategyReason,
+    guidanceMode,
+    guidanceStep,
+    focusDimension,
+    transitionReason,
+    responseMode,
+    nextBestQuestions,
+    confirmQuickReplies,
+    suggestionOptions,
+    optionCards,
+    freeformAffordance,
+    availableModeSwitches,
+  });
+}
+
+function deductionStrategyFromState(statePatch?: AgentTurnDecision["state_patch_json"]): string | undefined {
+  return statePatch?.conversation_strategy;
+}
+
+function mapStrategy(value?: string): DecisionStrategy {
+  if (value && DECISION_STRATEGY_SET.has(value as DecisionStrategy)) {
+    return value as DecisionStrategy;
+  }
+  return "clarify";
+}
+
+function deriveGuidanceFromDecisionReady(data: DecisionReadyData): DecisionGuidance | null {
+  const conversationStrategy = mapStrategy(data.conversation_strategy);
+  const strategyLabel = STRATEGY_LABEL_MAP[conversationStrategy] ?? "继续推进";
+  const nextBestQuestions = normalizeBestQuestions(data.next_best_questions);
+  const suggestionOptions = normalizeSuggestionOptions(data.suggestions);
+  const optionCards = normalizeOptionCards(data.option_cards);
+  const freeformAffordance = normalizeFreeformAffordance(data.freeform_affordance);
+  const availableModeSwitches = normalizeModeSwitches(data.available_mode_switches);
+  const transitionReason = typeof data.transition_reason === "string" ? data.transition_reason : null;
+
+  return buildDecisionGuidance({
+    conversationStrategy,
+    strategyLabel,
+    strategyReason: transitionReason,
+    guidanceMode: normalizeGuidanceMode(data.guidance_mode),
+    guidanceStep: normalizeGuidanceStep(data.guidance_step),
+    focusDimension: typeof data.focus_dimension === "string" ? data.focus_dimension : null,
+    transitionReason,
+    responseMode: normalizeResponseMode(data.response_mode),
+    nextBestQuestions,
+    confirmQuickReplies: [],
+    suggestionOptions,
+    optionCards,
+    freeformAffordance,
+    availableModeSwitches,
+  });
+}
+
+function buildDecisionGuidance(input: {
+  conversationStrategy: DecisionStrategy;
+  strategyLabel: string;
+  strategyReason: string | null;
+  guidanceMode: GuidanceMode | null;
+  guidanceStep: GuidanceStep | null;
+  focusDimension: string | null;
+  transitionReason: string | null;
+  responseMode: GuidanceResponseMode | null;
+  nextBestQuestions: string[];
+  confirmQuickReplies: string[];
+  suggestionOptions: SuggestionOption[];
+  optionCards: DecisionOptionCard[];
+  freeformAffordance: GuidanceFreeformAffordance | null;
+  availableModeSwitches: GuidanceModeSwitch[];
+}): DecisionGuidance | null {
+  const {
+    conversationStrategy,
+    strategyLabel,
+    strategyReason,
+    guidanceMode,
+    guidanceStep,
+    focusDimension,
+    transitionReason,
+    responseMode,
+    nextBestQuestions,
+    confirmQuickReplies,
+    suggestionOptions,
+    optionCards,
+    freeformAffordance,
+    availableModeSwitches,
+  } = input;
+
+  if (!nextBestQuestions.length && !suggestionOptions.length && !optionCards.length && !freeformAffordance) {
     return null;
   }
 
@@ -271,22 +866,16 @@ function deriveDecisionGuidance(decision: AgentTurnDecision): DecisionGuidance |
     strategyReason,
     nextBestQuestions,
     confirmQuickReplies,
+    ...(guidanceMode ? { guidanceMode } : {}),
+    ...(guidanceStep ? { guidanceStep } : {}),
+    ...(focusDimension ? { focusDimension } : {}),
+    ...(transitionReason ? { transitionReason } : {}),
+    ...(responseMode ? { responseMode } : {}),
+    ...(optionCards.length ? { optionCards } : {}),
+    ...(freeformAffordance ? { freeformAffordance } : {}),
+    ...(availableModeSwitches.length ? { availableModeSwitches } : {}),
     ...(suggestionOptions.length ? { suggestionOptions } : {}),
   };
-}
-
-function deductionStrategyFromState(statePatch?: AgentTurnDecision["state_patch_json"]): string | undefined {
-  return statePatch?.conversation_strategy;
-}
-
-function mapStrategy(value?: string): DecisionStrategy {
-  if (!value) {
-    return "clarify";
-  }
-  if (value === "greet" || value === "clarify" || value === "choose" || value === "converge" || value === "confirm") {
-    return value;
-  }
-  return "clarify";
 }
 
 function deriveGuidanceFromSnapshot(snapshot: SessionSnapshotResponse): DecisionGuidance | null {
@@ -366,6 +955,13 @@ function buildHydratedSessionState(
   const preserveByPrdVersion = preserveFresherPrd && shouldPreserveCurrentPrd(state.prd, nextPrd);
   const preserveByWorkflowSemantics = preserveFresherPrd && isSnapshotOlderByDraftVersion(state, snapshot.state);
   const shouldPreserveSnapshotSemantics = preserveByPrdVersion || preserveByWorkflowSemantics;
+  const latestDecision = pickLatestDecision(snapshot.turn_decisions ?? []);
+  const nextFirstDraft = normalizeFirstDraftState(snapshot.state.prd_draft, snapshot.state.evidence, latestDecision);
+  const derivedDiagnostics = deriveLatestDiagnostics(latestDecision);
+  const nextDiagnosticLedger = normalizeDiagnostics(snapshot.state.diagnostics);
+  const nextDiagnosticLedgerSummary =
+    normalizeDiagnosticSummary(snapshot.state.diagnostic_summary) ??
+    summarizeDiagnosticLedger(nextDiagnosticLedger);
   const workflowFlags = shouldPreserveSnapshotSemantics
     ? {
         workflowStage: state.workflowStage,
@@ -374,6 +970,7 @@ function buildHydratedSessionState(
       }
     : deriveWorkflowFlags(snapshot.state);
   const prd = preserveByPrdVersion ? state.prd : nextPrd;
+  const preserveFirstDraft = preserveFresherPrd && isOlderFirstDraftVersion(state.firstDraft, nextFirstDraft);
 
   return {
     ...state,
@@ -394,16 +991,25 @@ function buildHydratedSessionState(
         ? snapshot.state.current_model_scene
         : null,
     errorMessage: null,
+    diagnosticLedger: shouldPreserveSnapshotSemantics ? state.diagnosticLedger : nextDiagnosticLedger,
+    diagnosticLedgerSummary: shouldPreserveSnapshotSemantics
+      ? state.diagnosticLedgerSummary
+      : nextDiagnosticLedgerSummary,
     inputValue: preserveInputValue ? state.inputValue : "",
     isStreaming: false,
     lastInterrupted: false,
     lastSubmittedInput: preserveLastSubmittedInput
       ? state.lastSubmittedInput ?? fallbackLastSubmittedInput
       : null,
+    latestDiagnostics: shouldPreserveSnapshotSemantics ? state.latestDiagnostics : derivedDiagnostics.latestDiagnostics,
+    latestDiagnosticSummary: shouldPreserveSnapshotSemantics
+      ? state.latestDiagnosticSummary
+      : derivedDiagnostics.latestDiagnosticSummary,
     messages: normalizeMessages(snapshot.messages),
     pendingRequestMode: null,
     pendingUserInput: null,
     prd,
+    firstDraft: preserveFirstDraft ? state.firstDraft : nextFirstDraft,
     regenerateRequestId: 0,
     replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),
     selectedHistoryGroupId: null,
@@ -484,12 +1090,16 @@ function createInitialState(): Omit<
     },
     currentModelScene: null,
     errorMessage: null,
+    diagnosticLedger: [],
+    diagnosticLedgerSummary: null,
     isLeftNavCollapsed: false,
     isFinalizingSession: false,
     inputValue: "",
     isStreaming: false,
     lastInterrupted: false,
     lastSubmittedInput: null,
+    latestDiagnostics: [],
+    latestDiagnosticSummary: null,
     messages: [
       {
         role: "assistant",
@@ -503,6 +1113,7 @@ function createInitialState(): Omit<
       meta: createInitialPrdMeta(),
       sections: createInitialPrdSections(),
     },
+    firstDraft: createInitialFirstDraftState(),
     regenerateRequestId: 0,
     replyGroups: {},
     selectedModelConfigId: null,
@@ -563,6 +1174,73 @@ export function createWorkspaceStore() {
               ...state,
               currentAction: event.data,
             };
+          case "decision.ready":
+            {
+              const latestDiagnostics = normalizeDiagnostics(event.data.diagnostics);
+              const diagnosticLedger = mergeDiagnosticLedger(state.diagnosticLedger, latestDiagnostics);
+              return {
+                ...state,
+                decisionGuidance: deriveGuidanceFromDecisionReady(event.data),
+                latestDiagnostics,
+                latestDiagnosticSummary: normalizeDiagnosticSummary(event.data.diagnostic_summary),
+                diagnosticLedger,
+                diagnosticLedgerSummary:
+                  normalizeDiagnosticSummary(event.data.ledger_summary) ??
+                  summarizeDiagnosticLedger(diagnosticLedger),
+              };
+            }
+          case "draft.updated": {
+            const data = event.data as DraftUpdatedData;
+            const sections: Record<string, FirstDraftSection> = { ...state.firstDraft.sections };
+            Object.entries(data.sections ?? {}).forEach(([key, value]) => {
+              const section = normalizeFirstDraftSection(value);
+              if (section) {
+                sections[key] = section;
+              }
+            });
+            const evidenceRegistry = { ...state.firstDraft.evidenceRegistry };
+            (Array.isArray(data.evidence_registry) ? data.evidence_registry : []).forEach((item) => {
+              const normalized = normalizeFirstDraftEvidence(item);
+              if (normalized) {
+                evidenceRegistry[normalized.id] = normalized;
+              }
+            });
+            const draftSummary = data.draft_summary && typeof data.draft_summary === "object"
+              ? data.draft_summary as Record<string, unknown>
+              : {};
+            return {
+              ...state,
+              firstDraft: {
+                version: typeof draftSummary.version === "number"
+                  ? draftSummary.version
+                  : state.firstDraft.version,
+                status: state.firstDraft.status,
+                sections,
+                evidenceRegistry,
+                latestUpdates: {
+                  version: typeof draftSummary.version === "number"
+                    ? draftSummary.version
+                    : state.firstDraft.latestUpdates.version,
+                  sectionKeys: Array.isArray(draftSummary.section_keys ?? draftSummary.sectionKeys)
+                    ? (draftSummary.section_keys ?? draftSummary.sectionKeys as unknown[])
+                        .filter((entry): entry is string => typeof entry === "string")
+                    : Array.isArray(data.sections_changed)
+                      ? data.sections_changed.filter((entry): entry is string => typeof entry === "string")
+                      : [],
+                  entryIds: Array.isArray(draftSummary.entry_ids ?? draftSummary.entryIds)
+                    ? (draftSummary.entry_ids ?? draftSummary.entryIds as unknown[])
+                        .filter((entry): entry is string => typeof entry === "string")
+                    : Array.isArray(data.entry_ids)
+                      ? data.entry_ids.filter((entry): entry is string => typeof entry === "string")
+                      : [],
+                  evidenceIds: Array.isArray(draftSummary.evidence_ids ?? draftSummary.evidenceIds)
+                    ? (draftSummary.evidence_ids ?? draftSummary.evidenceIds as unknown[])
+                        .filter((entry): entry is string => typeof entry === "string")
+                    : state.firstDraft.latestUpdates.evidenceIds,
+                },
+              },
+            };
+          }
           case "assistant.version.started": {
             const existingGroup = state.replyGroups[event.data.reply_group_id] ?? {
               id: event.data.reply_group_id,

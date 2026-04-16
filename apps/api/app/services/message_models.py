@@ -14,7 +14,7 @@ class MessageResult:
 @dataclass(frozen=True)
 class MessageStreamEvent:
     type: str
-    data: dict
+    data: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class PreparedMessageStream:
     assistant_version_id: str
     next_version_no: int
     action: dict
+    guidance: dict[str, object]
     turn_decision: object
     state: dict
     state_patch: dict

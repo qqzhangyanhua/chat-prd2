@@ -320,6 +320,34 @@ def test_run_pm_mentor_calls_llm_and_returns_agent_result():
     assert result.turn_decision.suggestions[0].label == "先聊个人用户"
 
 
+def test_run_pm_mentor_emits_structured_prd_draft_entries_and_evidence_refs():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    fake_llm_output = {
+        "observation": "用户已经明确第一版先服务独立开发者。",
+        "challenge": "还需要继续验证这个群体的第一痛点。",
+        "suggestion": "先把目标用户和成功标准沉淀成首稿。",
+        "question": "如果只保留一个最重要的成功标准，你最先看什么？",
+        "reply": "我先把目前已确认和待验证的信息沉淀成首稿。",
+        "prd_updates": {
+            "target_user": {"content": "独立开发者", "status": "confirmed"},
+            "success_metrics": {"content": "7 天内完成一次 PRD 初稿", "status": "draft"},
+        },
+        "confidence": "medium",
+        "next_focus": "solution",
+    }
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=fake_llm_output):
+        result = run_pm_mentor({}, "我想先服务独立开发者，后面再扩到小团队。", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    draft = result.turn_decision.state_patch["prd_draft"]
+    assert draft["sections"]["target_user"]["entries"][0]["assertion_state"] == "confirmed"
+    assert draft["sections"]["success_metrics"]["entries"][0]["assertion_state"] == "inferred"
+    assert draft["sections"]["target_user"]["entries"][0]["evidence_ref_ids"]
+    assert result.turn_decision.state_patch["evidence"][0]["kind"] in {"user_message", "system_inference"}
+
+
 def test_run_pm_mentor_main_path_preserves_four_llm_suggestions():
     from app.agent.pm_mentor import run_pm_mentor
 
@@ -495,6 +523,292 @@ def test_run_pm_mentor_suggestion_content_must_be_sendable_complete_sentences():
         assert _is_sendable_user_draft(item.content)
     assert result.turn_decision.recommendation is not None
     assert _is_sendable_user_draft(result.turn_decision.recommendation["content"])
+
+
+def test_run_pm_mentor_target_user_focus_generates_second_level_suggestions():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "target_user",
+        "current_phase": "target_user",
+        "prd_snapshot": {"sections": {}},
+    }
+    broken_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品主要给谁用。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的这个产品核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=broken_output):
+        result = run_pm_mentor(state, "我想先明确这个产品主要给谁用", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    labels = [item.label for item in result.turn_decision.suggestions]
+    assert "先聊核心问题" not in labels
+    assert "先聊核心功能" not in labels
+    assert any(
+        "角色" in item.content or "场景" in item.content or "决策" in item.content
+        for item in result.turn_decision.suggestions
+    )
+
+
+def test_run_pm_mentor_problem_focus_rejects_generic_top_level_menu():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "problem",
+        "current_phase": "problem",
+        "prd_snapshot": {"sections": {}},
+    }
+    broken_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品主要给谁用。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的这个产品核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=broken_output):
+        result = run_pm_mentor(state, "我想先讲清楚这个产品到底解决什么问题", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    labels = [item.label for item in result.turn_decision.suggestions]
+    assert "先聊目标用户" not in labels
+    assert "先聊核心功能" not in labels
+    assert any(
+        "麻烦" in item.content or "高频" in item.content or "替代" in item.content or "场景" in item.content
+        for item in result.turn_decision.suggestions
+    )
+
+
+def test_run_pm_mentor_problem_focus_marks_high_uncertainty_as_options_first():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "problem",
+        "current_phase": "problem",
+        "prd_snapshot": {"sections": {}},
+    }
+    broken_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先讲高频麻烦", "我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。", priority=1),
+            _make_suggestion("先讲最痛一刻", "我想先描述用户最崩溃的一次具体场景，你帮我抽出核心问题。", priority=2),
+            _make_suggestion("先讲替代方案", "我想先说说，用户现在是怎么勉强解决这个问题的。", priority=3),
+            _make_suggestion("我直接补充", "我直接补充我现在对这个产品核心问题的判断。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=broken_output):
+        result = run_pm_mentor(state, "我还不确定到底哪个问题最值得先解决", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.response_mode == "options_first"
+    assert result.turn_decision.guidance_mode == "explore"
+    assert result.turn_decision.guidance_step == "choose"
+    assert result.turn_decision.focus_dimension == "problem"
+    assert result.turn_decision.transition_trigger == "high_uncertainty"
+    assert result.turn_decision.transition_reason
+    assert 2 <= len(result.turn_decision.option_cards) <= 4
+    assert all(card["id"] for card in result.turn_decision.option_cards)
+    assert result.turn_decision.freeform_affordance == {
+        "label": "都不对，我补充",
+        "value": "freeform",
+        "kind": "freeform",
+    }
+    assert result.turn_decision.available_mode_switches
+
+
+def test_run_pm_mentor_greeting_result_exposes_structured_guidance_contract():
+    from app.agent.runtime import _build_greeting_result
+
+    result = _build_greeting_result({"iteration": 0})
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.response_mode == "options_first"
+    assert result.turn_decision.guidance_mode == "explore"
+    assert result.turn_decision.guidance_step == "choose"
+    assert result.turn_decision.focus_dimension == "target_user"
+    assert len(result.turn_decision.option_cards) == 4
+    assert result.turn_decision.freeform_affordance == {
+        "label": "都不对，我补充",
+        "value": "freeform",
+        "kind": "freeform",
+    }
+
+
+def test_run_pm_mentor_solution_focus_rejects_generic_top_level_menu():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "solution",
+        "current_phase": "solution",
+        "prd_snapshot": {"sections": {}},
+    }
+    broken_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品主要给谁用。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的这个产品核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=broken_output):
+        result = run_pm_mentor(state, "我想先说明这个产品第一版到底怎么解决问题", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    labels = [item.label for item in result.turn_decision.suggestions]
+    assert "先聊目标用户" not in labels
+    assert "先聊核心问题" not in labels
+    assert any(
+        "解决方式" in item.content or "流程" in item.content or "差异" in item.content
+        for item in result.turn_decision.suggestions
+    )
+
+
+def test_run_pm_mentor_mvp_scope_focus_rejects_generic_top_level_menu():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "mvp_scope",
+        "current_phase": "mvp_scope",
+        "prd_snapshot": {"sections": {}},
+    }
+    broken_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊目标用户", "我想先明确，这个产品主要给谁用。", priority=1),
+            _make_suggestion("先聊核心问题", "我想先讲清楚，这个产品到底想解决什么具体麻烦。", priority=2),
+            _make_suggestion("先聊核心功能", "我想先列一下，我脑子里已经想到的这个产品核心功能。", priority=3),
+            _make_suggestion("我直接补充", "我不想选项，我直接补充我现在对这个产品的想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=broken_output):
+        result = run_pm_mentor(state, "我想先确定这个产品第一版必须做和不做什么", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    labels = [item.label for item in result.turn_decision.suggestions]
+    assert "先聊目标用户" not in labels
+    assert "先聊核心问题" not in labels
+    assert any(
+        "必须" in item.content or "不做" in item.content or "完成标准" in item.content
+        for item in result.turn_decision.suggestions
+    )
+
+
+def test_run_pm_mentor_solution_focus_replaces_low_diversity_guidance():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "solution",
+        "current_phase": "solution",
+        "prd_snapshot": {"sections": {}},
+    }
+    low_diversity_output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先讲方案主线", "我想先说明这个产品第一版的核心解决方式。", priority=1),
+            _make_suggestion("先讲方案细节", "我想先补充这个产品第一版的核心解决方式细节。", priority=2),
+            _make_suggestion("先讲方案补充", "我想继续说明这个产品第一版的核心解决方式。", priority=3),
+            _make_suggestion("我直接补充方案", "我直接补充这个产品第一版的核心解决方式想法。", priority=4),
+        ]
+    )
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=low_diversity_output):
+        result = run_pm_mentor(state, "我想先说明这个产品第一版到底怎么解决问题", _build_mock_model_config())
+
+    assert result.turn_decision is not None
+    labels = [item.label for item in result.turn_decision.suggestions]
+    assert "先讲差异化" in labels or "先讲关键流程" in labels
+    assert any("差异" in item.content or "流程" in item.content for item in result.turn_decision.suggestions)
+
+
+def test_run_pm_mentor_detects_contradiction_gap_and_assumption_diagnostics():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "problem",
+        "current_phase": "problem",
+        "prd_snapshot": {
+            "sections": {
+                "target_user": {"content": "独立开发者", "status": "confirmed"},
+                "problem": {"content": "任务经常忘记跟进", "status": "confirmed"},
+                "solution": {"content": "", "status": "missing"},
+                "mvp_scope": {"content": "", "status": "missing"},
+            }
+        },
+    }
+    output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先讲最高频麻烦", "我想先讲清楚最高频的那个麻烦。", priority=1),
+            _make_suggestion("先讲最痛一刻", "我想先描述最痛的一次场景。", priority=2),
+            _make_suggestion("先讲替代方案", "我想先说说现在怎么勉强解决。", priority=3),
+            _make_suggestion("我直接补充", "我直接补充我对核心问题的判断。", priority=4),
+        ]
+    )
+    output["next_focus"] = "problem"
+    output["reply"] = "我们先把问题和假设压实。"
+    output["prd_updates"] = {
+        "problem": {"content": "其实更像是找不到合适的协作者", "status": "draft"},
+    }
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=output):
+        result = run_pm_mentor(
+            state,
+            "其实我改主意了，这个产品应该面向小团队负责人，而且我默认先做 Web 端。",
+            _build_mock_model_config(),
+        )
+
+    assert result.turn_decision is not None
+    diagnostics = result.turn_decision.diagnostics
+    assert {item["type"] for item in diagnostics} >= {"contradiction", "gap", "assumption"}
+    contradiction = next(item for item in diagnostics if item["type"] == "contradiction")
+    assert contradiction["impact_scope"] == ["target_user"]
+    assert contradiction["suggested_next_step"]["action_kind"] == "ask_user"
+    gap = next(item for item in diagnostics if item["type"] == "gap")
+    assert gap["impact_scope"] == ["solution"]
+    assert gap["suggested_next_step"]["prompt"]
+    assumption = next(item for item in diagnostics if item["type"] == "assumption")
+    assert assumption["bucket"] == "risk"
+    assert assumption["suggested_next_step"]["prompt"]
+    assert result.turn_decision.gaps
+    assert result.turn_decision.assumptions
+
+
+def test_run_pm_mentor_does_not_misclassify_exploratory_input_as_contradiction():
+    from app.agent.pm_mentor import run_pm_mentor
+
+    state = {
+        "stage_hint": "target_user",
+        "current_phase": "target_user",
+        "prd_snapshot": {
+            "sections": {
+                "target_user": {"content": "独立开发者", "status": "draft"},
+            }
+        },
+    }
+    output = _make_pm_output(
+        suggestions=[
+            _make_suggestion("先聊角色", "我想先聊用户是什么角色。", priority=1),
+            _make_suggestion("先聊场景", "我想先聊用户在什么场景下会用。", priority=2),
+            _make_suggestion("先聊动机", "我想先聊用户为什么会在意这件事。", priority=3),
+            _make_suggestion("我直接补充", "我直接补充我对目标用户的判断。", priority=4),
+        ]
+    )
+    output["next_focus"] = "target_user"
+
+    with patch("app.agent.pm_mentor.call_pm_mentor_llm", return_value=output):
+        result = run_pm_mentor(
+            state,
+            "也可能是独立开发者，也可能是小团队负责人，我还没完全想清楚。",
+            _build_mock_model_config(),
+        )
+
+    assert result.turn_decision is not None
+    assert all(item["type"] != "contradiction" for item in result.turn_decision.diagnostics)
 
 
 def test_run_pm_mentor_llm_failure_returns_fallback():

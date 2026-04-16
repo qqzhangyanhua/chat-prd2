@@ -133,4 +133,47 @@ describe("PrdPanel", () => {
     expect(screen.getByText("首版只支持浏览器端，不做桌面插件。")).toBeInTheDocument();
     expect(screen.getByText("7 天内至少完成 10 次有效预览。")).toBeInTheDocument();
   });
+
+  it("does not render first draft content from draft.updated events", () => {
+    render(<PrdPanel sessionId="demo-session" />);
+
+    act(() => {
+      workspaceStore.getState().applyEvent({
+        type: "draft.updated",
+        data: {
+          sections: {
+            target_user: {
+              title: "目标用户",
+              completeness: "partial",
+              entries: [
+                {
+                  id: "entry-target-user-1",
+                  text: "第一版先服务独立开发者。",
+                  assertion_state: "confirmed",
+                  evidence_ref_ids: ["evidence-user-1"],
+                },
+              ],
+            },
+          },
+          evidence_registry: [
+            {
+              id: "evidence-user-1",
+              kind: "user_message",
+              excerpt: "我想先服务独立开发者。",
+              section_keys: ["target_user"],
+            },
+          ],
+          draft_summary: {
+            section_keys: ["target_user"],
+            entry_ids: ["entry-target-user-1"],
+            evidence_ids: ["evidence-user-1"],
+          },
+          sections_changed: ["target_user"],
+          entry_ids: ["entry-target-user-1"],
+        },
+      });
+    });
+
+    expect(screen.queryByText("第一版先服务独立开发者。")).not.toBeInTheDocument();
+  });
 });

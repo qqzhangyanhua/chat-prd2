@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AssistantTurnCard } from "../components/workspace/assistant-turn-card";
 import { workspaceStore } from "../store/workspace-store";
-import type { DecisionGuidance } from "../lib/types";
+import type { DecisionDiagnosticItem, DecisionDiagnosticSummary, DecisionGuidance } from "../lib/types";
 
 describe("AssistantTurnCard", () => {
   afterEach(() => {
@@ -121,6 +121,11 @@ describe("AssistantTurnCard", () => {
       conversationStrategy: "choose",
       strategyLabel: "推动取舍",
       strategyReason: "目标用户过泛，先确定主线取舍。",
+      guidanceMode: "compare",
+      guidanceStep: "compare",
+      focusDimension: "problem",
+      transitionReason: "目标用户过泛，先确定主线取舍。",
+      responseMode: "options_first",
       nextBestQuestions: [
         "你愿意先收敛用户还是首个场景？",
         "最佳主线是聚焦哪个核心问题？",
@@ -140,9 +145,51 @@ describe("AssistantTurnCard", () => {
     expect(screen.getByText("推动取舍")).toBeInTheDocument();
     expect(screen.getByText("目标用户过泛，先确定主线取舍。"))
       .toBeInTheDocument();
+    expect(screen.getByText(/当前处于：.*对比选项/)).toBeInTheDocument();
+    expect(screen.getByText(/聚焦维度：.*核心问题/)).toBeInTheDocument();
     guidance.nextBestQuestions.forEach((question) => {
       expect(screen.getByRole("button", { name: question })).toBeInTheDocument();
     });
+  });
+
+  it("renders latest diagnostics inside the conversation card", () => {
+    const latestDiagnostics: DecisionDiagnosticItem[] = [
+      {
+        id: "gap-solution",
+        type: "gap",
+        bucket: "unknown",
+        status: "open",
+        title: "方案主线缺失",
+        detail: "还没有说清楚第一版如何解决问题。",
+        impactScope: ["solution"],
+        suggestedNextStep: {
+          action_kind: "ask_user",
+          label: "先说方案主线",
+          prompt: "如果只保留一个核心动作，第一版到底怎么解决这个问题？",
+        },
+        confidence: "medium",
+      },
+    ];
+    const latestDiagnosticSummary: DecisionDiagnosticSummary = {
+      openCount: 1,
+      unknownCount: 1,
+      riskCount: 0,
+      toValidateCount: 0,
+    };
+
+    render(
+      <AssistantTurnCard
+        currentAction={null}
+        latestAssistantMessage="这轮我们先把问题压实。"
+        latestDiagnostics={latestDiagnostics}
+        latestDiagnosticSummary={latestDiagnosticSummary}
+      />,
+    );
+
+    expect(screen.getByText("本轮诊断")).toBeInTheDocument();
+    expect(screen.getByText("方案主线缺失")).toBeInTheDocument();
+    expect(screen.getByText("缺口")).toBeInTheDocument();
+    expect(screen.getByText(/下一步：先说方案主线/)).toBeInTheDocument();
   });
 
   it("renders structured suggestion options before question chips", () => {
@@ -150,17 +197,29 @@ describe("AssistantTurnCard", () => {
       conversationStrategy: "greet",
       strategyLabel: "欢迎引导",
       strategyReason: "先给用户几个容易选择的方向。",
+      guidanceMode: "explore",
+      guidanceStep: "choose",
+      focusDimension: "target_user",
+      transitionReason: "先选一个入口，再继续展开。",
+      responseMode: "options_first",
       nextBestQuestions: [],
       confirmQuickReplies: [],
-      suggestionOptions: [
+      optionCards: [
         {
+          id: "target-1",
           label: "讨论产品想法",
+          title: "讨论产品想法",
           content: "我有一个产品想法，想和你一起梳理成清晰的 PRD。",
-          rationale: "适合已经有方向、想快速进入产品讨论的情况。",
+          description: "适合已经有方向、想快速进入产品讨论的情况。",
           priority: 1,
           type: "direction",
         },
       ],
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
     };
 
     render(
@@ -174,6 +233,7 @@ describe("AssistantTurnCard", () => {
     expect(screen.getByText("可直接选择一个方向")).toBeInTheDocument();
     expect(screen.getByText("讨论产品想法")).toBeInTheDocument();
     expect(screen.getByText("我有一个产品想法，想和你一起梳理成清晰的 PRD。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /都不对，我补充/i })).toBeInTheDocument();
   });
 
   it("renders fixed A/B/C/D guidance options together with a free supplement entry", () => {
@@ -181,38 +241,56 @@ describe("AssistantTurnCard", () => {
       conversationStrategy: "greet",
       strategyLabel: "欢迎引导",
       strategyReason: "先给用户四个最接近当前上下文的方向。",
+      guidanceMode: "explore",
+      guidanceStep: "choose",
+      focusDimension: "target_user",
+      transitionReason: "用户还在探索入口，先从可反应选项开始。",
+      responseMode: "options_first",
       nextBestQuestions: [],
       confirmQuickReplies: [],
-      suggestionOptions: [
+      optionCards: [
         {
+          id: "target-1",
           label: "先聊目标用户",
+          title: "先聊目标用户",
           content: "我想先把目标用户讲清楚，再继续往下拆。",
-          rationale: "先定用户，后续问题和方案更容易收敛。",
+          description: "先定用户，后续问题和方案更容易收敛。",
           priority: 1,
           type: "direction",
         },
         {
+          id: "target-2",
           label: "先聊使用场景",
+          title: "先聊使用场景",
           content: "我想先把用户会在哪个场景下使用这款产品讲清楚。",
-          rationale: "先锁定场景，便于判断需求强度。",
+          description: "先锁定场景，便于判断需求强度。",
           priority: 2,
           type: "direction",
         },
         {
+          id: "target-3",
           label: "先聊核心痛点",
+          title: "先聊核心痛点",
           content: "我想先确认用户最痛的那个问题到底是什么。",
-          rationale: "先抓痛点，再看功能是否成立。",
+          description: "先抓痛点，再看功能是否成立。",
           priority: 3,
           type: "direction",
         },
         {
+          id: "target-4",
           label: "先聊验证方式",
+          title: "先聊验证方式",
           content: "我想先聊第一轮要怎么验证这个想法值不值得做。",
-          rationale: "优先明确验证动作，降低空想风险。",
+          description: "优先明确验证动作，降低空想风险。",
           priority: 4,
           type: "direction",
         },
       ],
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
     };
 
     render(
@@ -223,11 +301,11 @@ describe("AssistantTurnCard", () => {
       />,
     );
 
-    expect(screen.getByText("方案 A")).toBeInTheDocument();
-    expect(screen.getByText("方案 B")).toBeInTheDocument();
-    expect(screen.getByText("方案 C")).toBeInTheDocument();
-    expect(screen.getByText("方案 D")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /自由补充/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /方案 A/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /方案 B/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /方案 C/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /方案 D/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /都不对，我补充/i })).toBeInTheDocument();
   });
 
   it("uses suggestion option content for the selection callback", () => {
@@ -300,6 +378,11 @@ describe("AssistantTurnCard", () => {
           type: "direction",
         },
       ],
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
     };
     const onSelect = vi.fn();
     const onRequestFreeSupplement = vi.fn();
@@ -316,7 +399,7 @@ describe("AssistantTurnCard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /自由补充/i }));
+    fireEvent.click(screen.getByRole("button", { name: /都不对，我补充/i }));
 
     expect(onRequestFreeSupplement).toHaveBeenCalledTimes(1);
     expect(onSelect).not.toHaveBeenCalled();

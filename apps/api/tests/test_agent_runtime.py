@@ -323,3 +323,29 @@ def test_run_agent_delegates_to_pm_mentor_when_model_config_given():
         mock_pm.assert_called_once()
 
     assert result.reply == "mentor reply"
+
+
+def test_run_agent_completed_stage_returns_empty_diagnostics_contract():
+    result = run_agent({"workflow_stage": "completed"}, "继续", model_config=MagicMock())
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.diagnostics == []
+    assert result.turn_decision.diagnostic_summary == {
+        "open_count": 0,
+        "unknown_count": 0,
+        "risk_count": 0,
+        "to_validate_count": 0,
+    }
+
+
+def test_run_agent_fallback_returns_empty_diagnostics_contract():
+    result = run_agent({}, "我想做一个应用", model_config=None)
+
+    assert result.turn_decision is not None
+    assert result.turn_decision.diagnostics == []
+    assert result.turn_decision.diagnostic_summary == {
+        "open_count": 0,
+        "unknown_count": 0,
+        "risk_count": 0,
+        "to_validate_count": 0,
+    }

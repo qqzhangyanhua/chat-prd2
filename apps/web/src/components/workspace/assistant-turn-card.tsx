@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { RefreshCw, AlertTriangle, ChevronRight, Layers } from "lucide-react";
-import type { DecisionGuidance, NextAction } from "../../lib/types";
+import type {
+  DecisionDiagnosticItem,
+  DecisionDiagnosticSummary,
+  DecisionGuidance,
+  NextAction,
+} from "../../lib/types";
 import {
   AssistantVersionHistoryDialog,
   type AssistantReplyVersionItem,
@@ -8,6 +13,25 @@ import {
 import { ActionOptions } from "./action-options";
 
 export const DECISION_GUIDANCE_REASON_LABEL = "decision-guidance-reason";
+const GUIDANCE_MODE_LABELS: Record<string, string> = {
+  explore: "继续探索",
+  narrow: "逐步收紧",
+  compare: "对比选项",
+  confirm: "开始确认",
+};
+const FOCUS_DIMENSION_LABELS: Record<string, string> = {
+  target_user: "目标用户",
+  problem: "核心问题",
+  solution: "解决方案",
+  boundary: "范围边界",
+  constraint: "约束条件",
+  validation: "验证标准",
+};
+const DIAGNOSTIC_TYPE_LABELS: Record<string, string> = {
+  contradiction: "矛盾",
+  gap: "缺口",
+  assumption: "假设",
+};
 
 interface AssistantStatusBadge {
   hint?: string | null;
@@ -32,6 +56,8 @@ interface AssistantTurnCardProps {
   statusBadge?: AssistantStatusBadge | null;
   showInterruptedMarker?: boolean;
   decisionGuidance?: DecisionGuidance | null;
+  latestDiagnostics?: DecisionDiagnosticItem[];
+  latestDiagnosticSummary?: DecisionDiagnosticSummary | null;
   onSelectDecisionGuidanceQuestion?: (question: string) => void;
   onRequestFreeSupplement?: () => void;
 }
@@ -53,6 +79,8 @@ export function AssistantTurnCard({
   statusBadge = null,
   showInterruptedMarker = false,
   decisionGuidance = null,
+  latestDiagnostics = [],
+  latestDiagnosticSummary = null,
   onSelectDecisionGuidanceQuestion,
   onRequestFreeSupplement,
 }: AssistantTurnCardProps) {
@@ -70,6 +98,17 @@ export function AssistantTurnCard({
       ? decisionGuidance.confirmQuickReplies ?? []
       : [];
   const suggestionOptions = decisionGuidance?.suggestionOptions ?? [];
+  const optionCards = decisionGuidance?.optionCards ?? [];
+  const hasActionOptions =
+    optionCards.length > 0 ||
+    suggestionOptions.length > 0 ||
+    Boolean(decisionGuidance?.freeformAffordance);
+  const guidanceModeLabel = decisionGuidance?.guidanceMode
+    ? GUIDANCE_MODE_LABELS[decisionGuidance.guidanceMode] ?? decisionGuidance.guidanceMode
+    : null;
+  const focusDimensionLabel = decisionGuidance?.focusDimension
+    ? FOCUS_DIMENSION_LABELS[decisionGuidance.focusDimension] ?? decisionGuidance.focusDimension
+    : null;
   const hasAnalysis = !!(
     currentAction?.observation ||
     currentAction?.challenge ||
@@ -205,14 +244,42 @@ export function AssistantTurnCard({
                 {decisionGuidance.strategyReason}
               </p>
             ) : null}
-            {suggestionOptions.length > 0 ? (
+            {guidanceModeLabel || focusDimensionLabel ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {guidanceModeLabel ? (
+                  <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-medium text-amber-700">
+                    当前处于：{guidanceModeLabel}
+                  </span>
+                ) : null}
+                {focusDimensionLabel ? (
+                  <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-medium text-stone-700">
+                    聚焦维度：{focusDimensionLabel}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            {hasActionOptions ? (
               <div className="mt-3">
                 <p className="mb-2 text-xs font-medium text-stone-500">可直接选择一个方向</p>
                 <ActionOptions
+                  freeformAffordance={decisionGuidance.freeformAffordance}
                   onRequestFreeSupplement={onRequestFreeSupplement}
                   onSelect={onSelectDecisionGuidanceQuestion}
+                  optionCards={optionCards}
                   options={suggestionOptions}
                 />
+              </div>
+            ) : null}
+            {decisionGuidance.availableModeSwitches?.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {decisionGuidance.availableModeSwitches.map((item) => (
+                  <span
+                    key={`${item.mode}-${item.label}`}
+                    className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-600"
+                  >
+                    你也可以切到：{item.label}
+                  </span>
+                ))}
               </div>
             ) : null}
             {confirmationReplies.length > 0 ? (
@@ -232,7 +299,7 @@ export function AssistantTurnCard({
                 </div>
               </>
             ) : null}
-            {suggestionOptions.length === 0 ? (
+            {!hasActionOptions ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {decisionGuidance.nextBestQuestions.map((question, index) => (
                   <button
@@ -246,6 +313,48 @@ export function AssistantTurnCard({
                 ))}
               </div>
             ) : null}
+          </div>
+        ) : null}
+
+        {latestDiagnostics.length > 0 ? (
+          <div className="mt-2 rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+            <div className="flex items-center justify-between gap-3 border-b border-rose-100 pb-3">
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-rose-500">
+                  本轮诊断
+                </span>
+                <p className="mt-1 text-sm font-semibold text-stone-900">这轮暴露出的关键问题</p>
+              </div>
+              {latestDiagnosticSummary ? (
+                <span className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs text-rose-600">
+                  open {latestDiagnosticSummary.openCount}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-4 flex flex-col gap-3">
+              {latestDiagnostics.slice(0, 3).map((item) => (
+                <article key={item.id} className="rounded-xl border border-rose-100 bg-white p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700">
+                      {DIAGNOSTIC_TYPE_LABELS[item.type] ?? item.type}
+                    </span>
+                    {item.impactScope.map((scope) => (
+                      <span
+                        key={`${item.id}-${scope}`}
+                        className="rounded-full border border-stone-200 px-2.5 py-1 text-[11px] text-stone-600"
+                      >
+                        {scope}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-stone-900">{item.title}</p>
+                  <p className="mt-1 text-xs leading-6 text-stone-600">{item.detail}</p>
+                  <p className="mt-2 text-xs font-medium text-stone-700">
+                    下一步：{item.suggestedNextStep.label}
+                  </p>
+                </article>
+              ))}
+            </div>
           </div>
         ) : null}
 

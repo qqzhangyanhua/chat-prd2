@@ -13,9 +13,40 @@ def _compact_text(value: object) -> str:
 
 
 def _normalize_export_sections_from_draft(raw_sections: dict) -> dict:
+    def _content_from_entries(value: dict) -> tuple[str, str]:
+        entries = value.get("entries")
+        if not isinstance(entries, list):
+            return "", "missing"
+        texts: list[str] = []
+        statuses: list[str] = []
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            text = _compact_text(item.get("text"))
+            if not text:
+                continue
+            assertion_state = item.get("assertion_state")
+            if assertion_state == "to_validate":
+                texts.append(f"待验证：{text}")
+                statuses.append("draft")
+            else:
+                texts.append(text)
+                statuses.append("confirmed" if assertion_state == "confirmed" else "draft")
+        if not texts:
+            return "", "missing"
+        status = "confirmed" if statuses and all(item == "confirmed" for item in statuses) else "draft"
+        return "\n".join(texts), status
+
     def _get_dict(key: str) -> dict:
         value = raw_sections.get(key)
         return value if isinstance(value, dict) else {}
+
+    def _get_content(key: str) -> tuple[str, str]:
+        value = _get_dict(key)
+        direct_content = _compact_text(value.get("content"))
+        if direct_content:
+            return direct_content, value.get("status", "draft")
+        return _content_from_entries(value)
 
     summary = _get_dict("summary")
     if not _compact_text(summary.get("content")):
@@ -42,43 +73,43 @@ def _normalize_export_sections_from_draft(raw_sections: dict) -> dict:
         },
         "target_user": {
             "title": "目标用户",
-            "content": _compact_text(_get_dict("target_user").get("content")),
-            "status": _get_dict("target_user").get("status", "missing"),
+            "content": _get_content("target_user")[0],
+            "status": _get_content("target_user")[1],
         },
         "problem": {
             "title": "核心问题",
-            "content": _compact_text(_get_dict("problem").get("content")),
-            "status": _get_dict("problem").get("status", "missing"),
+            "content": _get_content("problem")[0],
+            "status": _get_content("problem")[1],
         },
         "solution": {
             "title": "解决方案",
-            "content": _compact_text(_get_dict("solution").get("content")),
-            "status": _get_dict("solution").get("status", "missing"),
+            "content": _get_content("solution")[0],
+            "status": _get_content("solution")[1],
         },
         "mvp_scope": {
             "title": "MVP 范围",
-            "content": _compact_text(_get_dict("mvp_scope").get("content")),
-            "status": _get_dict("mvp_scope").get("status", "missing"),
+            "content": _get_content("mvp_scope")[0],
+            "status": _get_content("mvp_scope")[1],
         },
         "constraints": {
             "title": "约束条件",
-            "content": _compact_text(_get_dict("constraints").get("content")),
-            "status": _get_dict("constraints").get("status", "missing"),
+            "content": _get_content("constraints")[0],
+            "status": _get_content("constraints")[1],
         },
         "success_metrics": {
             "title": "成功指标",
-            "content": _compact_text(_get_dict("success_metrics").get("content")),
-            "status": _get_dict("success_metrics").get("status", "missing"),
+            "content": _get_content("success_metrics")[0],
+            "status": _get_content("success_metrics")[1],
         },
         "out_of_scope": {
             "title": "不做清单",
-            "content": _compact_text(_get_dict("out_of_scope").get("content")),
-            "status": _get_dict("out_of_scope").get("status", "missing"),
+            "content": _get_content("out_of_scope")[0],
+            "status": _get_content("out_of_scope")[1],
         },
         "open_questions": {
             "title": "待确认问题",
-            "content": _compact_text(_get_dict("open_questions").get("content")),
-            "status": _get_dict("open_questions").get("status", "missing"),
+            "content": _get_content("open_questions")[0],
+            "status": _get_content("open_questions")[1],
         },
     }
 

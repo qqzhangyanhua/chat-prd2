@@ -4,6 +4,11 @@ import sys
 from typing import get_args
 
 from app.agent.types import (
+    AssertionState,
+    DraftCompleteness,
+    DraftEntry,
+    DraftSection,
+    EvidenceItem,
     NextMove,
     Suggestion,
     TurnDecision,
@@ -167,6 +172,35 @@ def test_pm_mentor_output_dataclass():
     assert output.observation == "obs"
     assert output.prd_updates["target_user"]["status"] == "draft"
     assert output.confidence == "medium"
+
+
+def test_phase3_draft_contract_literals_are_defined():
+    assert set(get_args(AssertionState)) == {"confirmed", "inferred", "to_validate"}
+    assert set(get_args(DraftCompleteness)) == {"complete", "partial", "missing"}
+
+
+def test_phase3_draft_entry_and_evidence_contract_support_entry_level_sources():
+    evidence = EvidenceItem(
+        id="evidence-user-1",
+        kind="user_message",
+        excerpt="我想先服务独立开发者。",
+        section_keys=["target_user"],
+        message_id="msg-1",
+    )
+    entry = DraftEntry(
+        id="entry-target-user-1",
+        text="第一版先服务独立开发者。",
+        assertion_state="confirmed",
+        evidence_ref_ids=[evidence.id],
+    )
+    section = DraftSection(
+        title="目标用户",
+        entries=[entry],
+        completeness="partial",
+    )
+
+    assert section.entries[0].assertion_state == "confirmed"
+    assert section.entries[0].evidence_ref_ids == ["evidence-user-1"]
 
 
 def test_app_db_models_resolution_stays_inside_current_repo_when_foreign_app_exists():

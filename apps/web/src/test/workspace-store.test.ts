@@ -29,6 +29,167 @@ function buildSnapshotWithDecisions(
 }
 
 describe("workspace store", () => {
+  it("hydrates first draft from structured snapshot without mutating prd panel state", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession(
+      buildSnapshotWithDecisions([], {
+        prd_draft: {
+          version: 2,
+          status: "drafting",
+          sections: {
+            target_user: {
+              title: "目标用户",
+              completeness: "partial",
+              entries: [
+                {
+                  id: "entry-target-user-1",
+                  text: "第一版先服务独立开发者。",
+                  assertion_state: "confirmed",
+                  evidence_ref_ids: ["evidence-user-1"],
+                },
+              ],
+            },
+          },
+          summary: {
+            section_keys: ["target_user"],
+            entry_ids: ["entry-target-user-1"],
+            evidence_ids: ["evidence-user-1"],
+          },
+        },
+        evidence: [
+          {
+            id: "evidence-user-1",
+            kind: "user_message",
+            excerpt: "我想先服务独立开发者。",
+            section_keys: ["target_user"],
+          },
+        ],
+      }),
+    );
+
+    expect(store.getState().firstDraft.sections.target_user?.entries[0]?.assertionState).toBe("confirmed");
+    expect(store.getState().firstDraft.evidenceRegistry["evidence-user-1"]?.kind).toBe("user_message");
+    expect(store.getState().prd.sections.target_user?.content).not.toBe("第一版先服务独立开发者。");
+  });
+
+  it("merges draft.updated into firstDraft and does not mutate prd panel state", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "draft.updated",
+      data: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            completeness: "partial",
+            entries: [
+              {
+                id: "entry-target-user-1",
+                text: "第一版先服务独立开发者。",
+                assertion_state: "confirmed",
+                evidence_ref_ids: ["evidence-user-1"],
+              },
+            ],
+          },
+        },
+        evidence_registry: [
+          {
+            id: "evidence-user-1",
+            kind: "user_message",
+            excerpt: "我想先服务独立开发者。",
+            section_keys: ["target_user"],
+          },
+        ],
+        draft_summary: {
+          version: 2,
+          section_keys: ["target_user"],
+          entry_ids: ["entry-target-user-1"],
+          evidence_ids: ["evidence-user-1"],
+        },
+        sections_changed: ["target_user"],
+        entry_ids: ["entry-target-user-1"],
+      },
+    });
+
+    expect(store.getState().firstDraft.latestUpdates.entryIds).toEqual(["entry-target-user-1"]);
+    expect(store.getState().firstDraft.sections.target_user?.entries[0]?.evidenceRefIds).toEqual(["evidence-user-1"]);
+    expect(store.getState().prd.sections.target_user?.content).not.toBe("第一版先服务独立开发者。");
+  });
+
+  it("ignores stale snapshot first draft versions", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "draft.updated",
+      data: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            completeness: "partial",
+            entries: [
+              {
+                id: "entry-target-user-2",
+                text: "先服务设计师。",
+                assertion_state: "inferred",
+                evidence_ref_ids: ["evidence-user-2"],
+              },
+            ],
+          },
+        },
+        evidence_registry: [
+          {
+            id: "evidence-user-2",
+            kind: "system_inference",
+            excerpt: "当前先按设计师方向推断。",
+            section_keys: ["target_user"],
+          },
+        ],
+        draft_summary: {
+          version: 3,
+          section_keys: ["target_user"],
+          entry_ids: ["entry-target-user-2"],
+          evidence_ids: ["evidence-user-2"],
+        },
+        sections_changed: ["target_user"],
+        entry_ids: ["entry-target-user-2"],
+      },
+    });
+
+    store.getState().refreshSessionSnapshot(
+      buildSnapshotWithDecisions([], {
+        prd_draft: {
+          version: 2,
+          status: "drafting",
+          sections: {
+            target_user: {
+              title: "目标用户",
+              completeness: "partial",
+              entries: [
+                {
+                  id: "entry-target-user-1",
+                  text: "第一版先服务独立开发者。",
+                  assertion_state: "confirmed",
+                  evidence_ref_ids: ["evidence-user-1"],
+                },
+              ],
+            },
+          },
+        },
+        evidence: [
+          {
+            id: "evidence-user-1",
+            kind: "user_message",
+            excerpt: "我想先服务独立开发者。",
+            section_keys: ["target_user"],
+          },
+        ],
+      }),
+    );
+
+    expect(store.getState().firstDraft.sections.target_user?.entries[0]?.text).toBe("先服务设计师。");
+  });
+
   it("updates prd panel when prd.updated event arrives", () => {
     const store = createWorkspaceStore();
 
@@ -183,6 +344,382 @@ describe("workspace store", () => {
     });
 
     expect(store.getState().lastSubmittedInput).toBe("我想先服务独立开发者");
+  });
+
+  it("updates decision guidance immediately when decision.ready arrives", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "decision.ready",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        phase: "solution",
+        conversation_strategy: "converge",
+        next_move: "assume_and_advance",
+        suggestions: [
+          {
+            label: "先讲方案主线",
+            content: "我想先说明这个产品第一版最核心的解决方式是什么。",
+            rationale: "先讲主线方案，能避免功能堆砌。",
+            priority: 1,
+            type: "direction",
+          },
+          {
+            label: "先讲差异化",
+            content: "我想先比较这个产品和现有做法最大的不同是什么。",
+            rationale: "差异化清楚了，方案价值才站得住。",
+            priority: 2,
+            type: "tradeoff",
+          },
+        ],
+        recommendation: {
+          label: "先讲方案主线",
+          content: "我想先说明这个产品第一版最核心的解决方式是什么。",
+        },
+        response_mode: "options_first",
+        guidance_mode: "narrow",
+        guidance_step: "choose",
+        focus_dimension: "solution",
+        transition_reason: "当前方案方向还不够稳定，先从两个候选主线里选一个。",
+        transition_trigger: "high_uncertainty",
+        option_cards: [
+          {
+            id: "solution-1-mainline",
+            label: "先讲方案主线",
+            title: "先讲方案主线",
+            content: "我想先说明这个产品第一版最核心的解决方式是什么。",
+            description: "先讲主线方案，能避免功能堆砌。",
+            type: "direction",
+            priority: 1,
+          },
+        ],
+        freeform_affordance: {
+          label: "都不对，我补充",
+          value: "freeform",
+          kind: "freeform",
+        },
+        available_mode_switches: [
+          {
+            mode: "confirm",
+            label: "直接进入确认",
+          },
+        ],
+        next_best_questions: [
+          "我想先说明这个产品第一版最核心的解决方式是什么。",
+          "我想先比较这个产品和现有做法最大的不同是什么。",
+        ],
+      },
+    });
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "converge",
+      strategyLabel: "收敛中",
+      strategyReason: "当前方案方向还不够稳定，先从两个候选主线里选一个。",
+      guidanceMode: "narrow",
+      guidanceStep: "choose",
+      focusDimension: "solution",
+      transitionReason: "当前方案方向还不够稳定，先从两个候选主线里选一个。",
+      responseMode: "options_first",
+      nextBestQuestions: [
+        "我想先说明这个产品第一版最核心的解决方式是什么。",
+        "我想先比较这个产品和现有做法最大的不同是什么。",
+      ],
+      confirmQuickReplies: [],
+      optionCards: [
+        {
+          id: "solution-1-mainline",
+          label: "先讲方案主线",
+          title: "先讲方案主线",
+          content: "我想先说明这个产品第一版最核心的解决方式是什么。",
+          description: "先讲主线方案，能避免功能堆砌。",
+          type: "direction",
+          priority: 1,
+        },
+      ],
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
+      availableModeSwitches: [
+        {
+          mode: "confirm",
+          label: "直接进入确认",
+        },
+      ],
+      suggestionOptions: [
+        {
+          label: "先讲方案主线",
+          content: "我想先说明这个产品第一版最核心的解决方式是什么。",
+          rationale: "先讲主线方案，能避免功能堆砌。",
+          priority: 1,
+          type: "direction",
+        },
+        {
+          label: "先讲差异化",
+          content: "我想先比较这个产品和现有做法最大的不同是什么。",
+          rationale: "差异化清楚了，方案价值才站得住。",
+          priority: 2,
+          type: "tradeoff",
+        },
+      ],
+    });
+  });
+
+  it("merges diagnostics from decision.ready into the open ledger", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession(buildSnapshotWithDecisions([], {
+      diagnostics: [
+        {
+          id: "gap-solution",
+          type: "gap",
+          bucket: "unknown",
+          status: "open",
+          title: "方案主线缺失",
+          detail: "还没有说清楚第一版如何解决问题。",
+          impact_scope: ["solution"],
+          suggested_next_step: {
+            action_kind: "ask_user",
+            label: "先说方案主线",
+            prompt: "如果只保留一个核心动作，第一版到底怎么解决这个问题？",
+          },
+          confidence: "medium",
+        },
+      ],
+      diagnostic_summary: {
+        open_count: 1,
+        unknown_count: 1,
+        risk_count: 0,
+        to_validate_count: 0,
+      },
+    }));
+
+    store.getState().applyEvent({
+      type: "decision.ready",
+      data: {
+        session_id: "session-1",
+        user_message_id: "user-1",
+        phase: "problem",
+        conversation_strategy: "clarify",
+        next_move: "probe_for_specificity",
+        suggestions: [],
+        recommendation: null,
+        next_best_questions: [],
+        diagnostics: [
+          {
+            id: "assumption-web",
+            type: "assumption",
+            bucket: "risk",
+            status: "open",
+            title: "默认先做 Web 端",
+            detail: "当前推进默认第一版只做 Web 端。",
+            impact_scope: ["solution", "mvp_scope"],
+            suggested_next_step: {
+              action_kind: "ask_user",
+              label: "确认首发载体",
+              prompt: "你是不是已经决定第一版只做 Web 端？",
+            },
+            confidence: "medium",
+          },
+        ],
+        diagnostic_summary: {
+          open_count: 1,
+          unknown_count: 0,
+          risk_count: 1,
+          to_validate_count: 0,
+        },
+        ledger_summary: {
+          open_count: 2,
+          unknown_count: 1,
+          risk_count: 1,
+          to_validate_count: 0,
+        },
+      },
+    });
+
+    expect(store.getState().latestDiagnostics).toHaveLength(1);
+    expect(store.getState().diagnosticLedger).toHaveLength(2);
+    expect(store.getState().diagnosticLedgerSummary).toEqual({
+      openCount: 2,
+      unknownCount: 1,
+      riskCount: 1,
+      toValidateCount: 0,
+    });
+  });
+
+  it("keeps the fresher diagnostic ledger when a stale snapshot hydrates", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {},
+        meta: {
+          draftVersion: 4,
+        },
+      },
+    });
+    store.setState((state) => ({
+      ...state,
+      diagnosticLedger: [
+        {
+          id: "assumption-web",
+          type: "assumption",
+          bucket: "risk",
+          status: "open",
+          title: "默认先做 Web 端",
+          detail: "当前推进默认第一版只做 Web 端。",
+          impactScope: ["solution"],
+          suggestedNextStep: {
+            action_kind: "ask_user",
+            label: "确认首发载体",
+            prompt: "你是不是已经决定第一版只做 Web 端？",
+          },
+          confidence: "medium",
+        },
+      ],
+      diagnosticLedgerSummary: {
+        openCount: 1,
+        unknownCount: 0,
+        riskCount: 1,
+        toValidateCount: 0,
+      },
+    }));
+
+    store.getState().refreshSessionSnapshot(buildSnapshotWithDecisions([], {
+      prd_draft: { version: 2 },
+      diagnostics: [],
+      diagnostic_summary: {
+        open_count: 0,
+        unknown_count: 0,
+        risk_count: 0,
+        to_validate_count: 0,
+      },
+    }));
+
+    expect(store.getState().diagnosticLedger).toHaveLength(1);
+    expect(store.getState().diagnosticLedgerSummary).toEqual({
+      openCount: 1,
+      unknownCount: 0,
+      riskCount: 1,
+      toValidateCount: 0,
+    });
+  });
+
+  it("hydrates decision guidance from session snapshot without re-deriving mode from old fields", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession(buildSnapshotWithDecisions([
+      {
+        id: "decision-1",
+        session_id: "session-1",
+        user_message_id: "user-1",
+        phase: "problem",
+        next_move: "force_rank_or_choose",
+        created_at: "2026-04-05T00:00:00Z",
+        state_patch_json: {
+          conversation_strategy: "choose",
+          guidance_mode: "compare",
+          guidance_step: "compare",
+          focus_dimension: "problem",
+          transition_reason: "候选问题不止一个，先做取舍。",
+          response_mode: "options_first",
+          freeform_affordance: {
+            label: "都不对，我补充",
+            value: "freeform",
+            kind: "freeform",
+          },
+          available_mode_switches: [{ mode: "confirm", label: "直接进入确认" }],
+        },
+        decision_sections: [
+          {
+            key: "judgement",
+            meta: {
+              conversation_strategy: "choose",
+              strategy_label: "推动取舍",
+              strategy_reason: "候选问题不止一个，先做取舍。",
+              guidance_mode: "compare",
+              guidance_step: "compare",
+              focus_dimension: "problem",
+              transition_reason: "候选问题不止一个，先做取舍。",
+            },
+          },
+          {
+            key: "next_step",
+            meta: {
+              next_best_questions: ["先讲最高频问题", "先讲最痛一刻"],
+              suggestion_options: [],
+              option_cards: [
+                {
+                  id: "problem-1",
+                  label: "先讲最高频问题",
+                  title: "先讲最高频问题",
+                  content: "我想先讲清楚最高频的那个问题。",
+                  description: "先锁定高频，再看值不值得做。",
+                  type: "direction",
+                  priority: 1,
+                },
+              ],
+              freeform_affordance: {
+                label: "都不对，我补充",
+                value: "freeform",
+                kind: "freeform",
+              },
+              available_mode_switches: [{ mode: "confirm", label: "直接进入确认" }],
+              guidance_mode: "compare",
+              guidance_step: "compare",
+              focus_dimension: "problem",
+              transition_reason: "候选问题不止一个，先做取舍。",
+              response_mode: "options_first",
+            },
+          },
+        ],
+      },
+    ], {
+      guidance_mode: "compare",
+      guidance_step: "compare",
+      focus_dimension: "problem",
+      transition_reason: "候选问题不止一个，先做取舍。",
+      response_mode: "options_first",
+      freeform_affordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
+      available_mode_switches: [{ mode: "confirm", label: "直接进入确认" }],
+    }));
+
+    expect(store.getState().decisionGuidance).toEqual({
+      conversationStrategy: "choose",
+      strategyLabel: "推动取舍",
+      strategyReason: "候选问题不止一个，先做取舍。",
+      guidanceMode: "compare",
+      guidanceStep: "compare",
+      focusDimension: "problem",
+      transitionReason: "候选问题不止一个，先做取舍。",
+      responseMode: "options_first",
+      nextBestQuestions: ["先讲最高频问题", "先讲最痛一刻"],
+      confirmQuickReplies: [],
+      optionCards: [
+        {
+          id: "problem-1",
+          label: "先讲最高频问题",
+          title: "先讲最高频问题",
+          content: "我想先讲清楚最高频的那个问题。",
+          description: "先锁定高频，再看值不值得做。",
+          type: "direction",
+          priority: 1,
+        },
+      ],
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
+      availableModeSwitches: [{ mode: "confirm", label: "直接进入确认" }],
+    });
   });
 
   it("closes streaming state and preserves accepted user message when assistant.error arrives", () => {
@@ -2056,6 +2593,54 @@ describe("parseEventStream", () => {
         type: "assistant.delta",
         data: {
           delta: "先把目标用户再缩窄一层。",
+        },
+      },
+    ]);
+  });
+
+  it("parses decision.ready events from sse chunks", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'event: decision.ready\ndata: {"session_id":"session-1","user_message_id":"user-1","phase":"problem","conversation_strategy":"clarify","next_move":"probe_for_specificity","suggestions":[{"label":"先讲高频麻烦","content":"我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。","rationale":"先锁定高频问题，后面才容易判断值不值得做。","priority":1,"type":"direction"}],"recommendation":{"label":"先讲高频麻烦","content":"我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。"},"next_best_questions":["我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。"]}\n\n',
+          ),
+        );
+        controller.close();
+      },
+    });
+
+    const events = [];
+    for await (const event of parseEventStream(stream)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      {
+        type: "decision.ready",
+        data: {
+          session_id: "session-1",
+          user_message_id: "user-1",
+          phase: "problem",
+          conversation_strategy: "clarify",
+          next_move: "probe_for_specificity",
+          suggestions: [
+            {
+              label: "先讲高频麻烦",
+              content: "我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。",
+              rationale: "先锁定高频问题，后面才容易判断值不值得做。",
+              priority: 1,
+              type: "direction",
+            },
+          ],
+          recommendation: {
+            label: "先讲高频麻烦",
+            content: "我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。",
+          },
+          next_best_questions: [
+            "我想先讲清楚，这个产品里最高频出现的那个麻烦是什么。",
+          ],
         },
       },
     ]);

@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from app.agent.finalize_flow import normalize_prd_draft_sections
 from app.db.models import PrdSnapshot, ProjectStateVersion, User
 from app.repositories import prd as prd_repository
 from app.repositories import state as state_repository
@@ -192,3 +193,41 @@ def test_backfilled_legacy_session_still_requires_finalize_confirmation(db_sessi
     error = exc_info.value
     assert getattr(error, "status_code", None) == 409
     assert getattr(error, "code", None) == "FINALIZE_CONFIRMATION_REQUIRED"
+
+
+def test_normalize_prd_draft_sections_accepts_enriched_entry_sections():
+    sections = normalize_prd_draft_sections(
+        {
+            "sections": {
+                "target_user": {
+                    "title": "目标用户",
+                    "completeness": "partial",
+                    "entries": [
+                        {
+                            "id": "entry-target-user-1",
+                            "text": "第一版先服务独立开发者。",
+                            "assertion_state": "confirmed",
+                            "evidence_ref_ids": ["evidence-user-1"],
+                        }
+                    ],
+                },
+                "open_questions": {
+                    "title": "待确认问题",
+                    "completeness": "partial",
+                    "entries": [
+                        {
+                            "id": "entry-open-question-1",
+                            "text": "还需要验证这个群体是否愿意持续使用。",
+                            "assertion_state": "to_validate",
+                            "evidence_ref_ids": ["evidence-inference-1"],
+                        }
+                    ],
+                },
+            }
+        }
+    )
+
+    assert sections["target_user"]["content"] == "第一版先服务独立开发者。"
+    assert sections["target_user"]["status"] == "confirmed"
+    assert sections["open_questions"]["content"] == "还需要验证这个群体是否愿意持续使用。"
+    assert sections["open_questions"]["status"] == "draft"

@@ -10,6 +10,26 @@ from app.agent.types import TurnDecision
 from app.db.models import AgentTurnDecision, ConversationMessage
 
 
+def _build_turn_decision_state_patch(turn_decision: TurnDecision) -> dict:
+    state_patch = dict(turn_decision.state_patch or {})
+    state_patch.setdefault("current_phase_subfocus", turn_decision.phase_subfocus)
+    state_patch.setdefault("conversation_strategy", turn_decision.conversation_strategy)
+    state_patch.setdefault("strategy_reason", turn_decision.strategy_reason)
+    state_patch.setdefault("next_best_questions", list(turn_decision.next_best_questions or []))
+    state_patch.setdefault("response_mode", turn_decision.response_mode)
+    state_patch.setdefault("guidance_mode", turn_decision.guidance_mode)
+    state_patch.setdefault("guidance_step", turn_decision.guidance_step)
+    state_patch.setdefault("focus_dimension", turn_decision.focus_dimension)
+    state_patch.setdefault("transition_reason", turn_decision.transition_reason)
+    state_patch.setdefault("transition_trigger", turn_decision.transition_trigger)
+    state_patch.setdefault("option_cards", list(turn_decision.option_cards or []))
+    state_patch.setdefault("freeform_affordance", turn_decision.freeform_affordance)
+    state_patch.setdefault("available_mode_switches", list(turn_decision.available_mode_switches or []))
+    state_patch.setdefault("diagnostics", list(turn_decision.diagnostics or []))
+    state_patch.setdefault("diagnostic_summary", dict(turn_decision.diagnostic_summary or {}))
+    return state_patch
+
+
 def _apply_turn_decision_fields(entity: AgentTurnDecision, turn_decision: TurnDecision) -> AgentTurnDecision:
     entity.phase = turn_decision.phase
     entity.phase_goal = turn_decision.phase_goal
@@ -21,7 +41,7 @@ def _apply_turn_decision_fields(entity: AgentTurnDecision, turn_decision: TurnDe
     entity.recommendation_json = turn_decision.recommendation
     entity.needs_confirmation_json = turn_decision.needs_confirmation
     entity.confidence = turn_decision.confidence
-    entity.state_patch_json = turn_decision.state_patch
+    entity.state_patch_json = _build_turn_decision_state_patch(turn_decision)
     entity.prd_patch_json = turn_decision.prd_patch
     return entity
 
@@ -56,7 +76,7 @@ def create_turn_decision(
         recommendation_json=turn_decision.recommendation,
         needs_confirmation_json=turn_decision.needs_confirmation,
         confidence=turn_decision.confidence,
-        state_patch_json=turn_decision.state_patch,
+        state_patch_json=_build_turn_decision_state_patch(turn_decision),
         prd_patch_json=turn_decision.prd_patch,
     )
     db.add(decision)

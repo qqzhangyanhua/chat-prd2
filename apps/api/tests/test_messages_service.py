@@ -20,6 +20,7 @@ from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
 import app.services.messages as messages_service
 from app.services import sessions as sessions_service
+from app.services.message_state import normalize_guidance_suggestions
 from app.services.messages import apply_prd_patch, apply_state_patch, handle_user_message
 from app.services.messages import stream_regenerate_message_events
 from app.services.model_gateway import ModelGatewayError
@@ -197,7 +198,7 @@ def _create_initial_reply(db_session, monkeypatch, session, model_config, *, rep
 
 
 def test_sample_turn_decision_suggestions_can_be_serialized_for_snapshot_meta():
-    normalized = sessions_service._normalize_suggestion_options(
+    normalized = normalize_guidance_suggestions(
         [
             {
                 "label": "独立开发者",
@@ -1185,6 +1186,7 @@ def test_stream_regenerate_message_events_appends_version_without_new_user_messa
 
     assert [event.type for event in events] == [
         "action.decided",
+        "decision.ready",
         "assistant.version.started",
         "assistant.delta",
         "assistant.delta",
@@ -1347,6 +1349,7 @@ def test_stream_regenerate_message_events_keeps_latest_version_when_stream_fails
 
     assert [event.type for event in events] == [
         "action.decided",
+        "decision.ready",
         "assistant.version.started",
         "assistant.delta",
         "assistant.error",
@@ -1408,6 +1411,7 @@ def test_stream_user_message_events_emits_assistant_error_when_stream_fails(db_s
         "message.accepted",
         "reply_group.created",
         "action.decided",
+        "decision.ready",
         "assistant.version.started",
         "assistant.delta",
         "assistant.error",

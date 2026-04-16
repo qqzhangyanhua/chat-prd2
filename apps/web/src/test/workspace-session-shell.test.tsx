@@ -98,6 +98,334 @@ describe("WorkspaceSessionShell", () => {
     expect(workspaceStore.getState().isCompleted).toBe(false);
   });
 
+  it("hydrates structured guidance from the session snapshot", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        stage_hint: "明确问题",
+        workflow_stage: "refine_loop",
+        finalization_ready: false,
+        guidance_mode: "compare",
+        guidance_step: "compare",
+        focus_dimension: "problem",
+        transition_reason: "候选问题还不止一个，先做取舍。",
+        response_mode: "options_first",
+        freeform_affordance: {
+          label: "都不对，我补充",
+          value: "freeform",
+          kind: "freeform",
+        },
+        available_mode_switches: [{ mode: "confirm", label: "直接进入确认" }],
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+      turn_decisions: [
+        {
+          id: "decision-1",
+          session_id: "session-1",
+          user_message_id: "user-1",
+          phase: "problem",
+          next_move: "force_rank_or_choose",
+          created_at: "2026-04-05T00:00:00Z",
+          state_patch_json: {
+            conversation_strategy: "choose",
+            guidance_mode: "compare",
+            guidance_step: "compare",
+            focus_dimension: "problem",
+            transition_reason: "候选问题还不止一个，先做取舍。",
+            response_mode: "options_first",
+          },
+          decision_sections: [
+            {
+              key: "judgement",
+              title: "judgement",
+              content: "",
+              meta: {
+                conversation_strategy: "choose",
+                strategy_label: "推动取舍",
+                strategy_reason: "候选问题还不止一个，先做取舍。",
+                guidance_mode: "compare",
+                guidance_step: "compare",
+                focus_dimension: "problem",
+                transition_reason: "候选问题还不止一个，先做取舍。",
+              },
+            },
+            {
+              key: "next_step",
+              title: "next_step",
+              content: "",
+              meta: {
+                next_best_questions: ["先讲最高频问题"],
+                suggestion_options: [],
+                option_cards: [
+                  {
+                    id: "problem-1",
+                    label: "先讲最高频问题",
+                    title: "先讲最高频问题",
+                    content: "我想先讲清楚最高频的那个问题。",
+                    description: "先锁定高频，再判断值不值得做。",
+                    type: "direction",
+                    priority: 1,
+                  },
+                ],
+                freeform_affordance: {
+                  label: "都不对，我补充",
+                  value: "freeform",
+                  kind: "freeform",
+                },
+                available_mode_switches: [{ mode: "confirm", label: "直接进入确认" }],
+                guidance_mode: "compare",
+                guidance_step: "compare",
+                focus_dimension: "problem",
+                transition_reason: "候选问题还不止一个，先做取舍。",
+                response_mode: "options_first",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    expect(workspaceStore.getState().decisionGuidance).toMatchObject({
+      conversationStrategy: "choose",
+      strategyLabel: "推动取舍",
+      guidanceMode: "compare",
+      guidanceStep: "compare",
+      focusDimension: "problem",
+      transitionReason: "候选问题还不止一个，先做取舍。",
+      responseMode: "options_first",
+      freeformAffordance: {
+        label: "都不对，我补充",
+        value: "freeform",
+        kind: "freeform",
+      },
+    });
+  });
+
+  it("renders diagnostics only in the conversation column after hydrate", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        workflow_stage: "refine_loop",
+        diagnostics: [
+          {
+            id: "assumption-web",
+            type: "assumption",
+            bucket: "risk",
+            status: "open",
+            title: "默认先做 Web 端",
+            detail: "当前推进默认第一版只做 Web 端。",
+            impact_scope: ["solution"],
+            suggested_next_step: {
+              action_kind: "ask_user",
+              label: "确认首发载体",
+              prompt: "你是不是已经决定第一版只做 Web 端？",
+            },
+            confidence: "medium",
+          },
+        ],
+        diagnostic_summary: {
+          open_count: 1,
+          unknown_count: 0,
+          risk_count: 1,
+          to_validate_count: 0,
+        },
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [
+        {
+          id: "user-1",
+          session_id: "session-1",
+          role: "user",
+          content: "我想先把方案讲清楚。",
+          message_type: "chat",
+        },
+        {
+          id: "assistant-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "这轮我们先把范围压实。",
+          message_type: "chat",
+        },
+      ],
+      assistant_reply_groups: [],
+      turn_decisions: [
+        {
+          id: "decision-1",
+          session_id: "session-1",
+          user_message_id: "user-1",
+          phase: "solution",
+          next_move: "probe_for_specificity",
+          created_at: "2026-04-05T00:00:00Z",
+          state_patch_json: {
+            diagnostics: [
+              {
+                id: "gap-solution",
+                type: "gap",
+                bucket: "unknown",
+                status: "open",
+                title: "方案主线缺失",
+                detail: "还没有说清楚第一版如何解决问题。",
+                impact_scope: ["solution"],
+                suggested_next_step: {
+                  action_kind: "ask_user",
+                  label: "先说方案主线",
+                  prompt: "如果只保留一个核心动作，第一版到底怎么解决这个问题？",
+                },
+                confidence: "medium",
+              },
+            ],
+            diagnostic_summary: {
+              open_count: 1,
+              unknown_count: 1,
+              risk_count: 0,
+              to_validate_count: 0,
+            },
+          },
+          decision_sections: [
+            {
+              key: "next_step",
+              title: "next_step",
+              content: "",
+              meta: {
+                diagnostics: [
+                  {
+                    id: "gap-solution",
+                    type: "gap",
+                    bucket: "unknown",
+                    status: "open",
+                    title: "方案主线缺失",
+                    detail: "还没有说清楚第一版如何解决问题。",
+                    impact_scope: ["solution"],
+                    suggested_next_step: {
+                      action_kind: "ask_user",
+                      label: "先说方案主线",
+                      prompt: "如果只保留一个核心动作，第一版到底怎么解决这个问题？",
+                    },
+                    confidence: "medium",
+                  },
+                ],
+                diagnostic_summary: {
+                  open_count: 1,
+                  unknown_count: 1,
+                  risk_count: 0,
+                  to_validate_count: 0,
+                },
+                next_best_questions: [],
+                suggestion_options: [],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    expect(screen.getByText("持续问题台账")).toBeInTheDocument();
+    expect(screen.getByText("默认先做 Web 端")).toBeInTheDocument();
+    expect(screen.getByText("方案主线缺失")).toBeInTheDocument();
+    expect(screen.queryByText("PRD 诊断面板")).not.toBeInTheDocument();
+  });
+
+  it("renders first draft card in the conversation column and can open evidence drawer", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 2,
+          status: "drafting",
+          sections: {
+            target_user: {
+              title: "目标用户",
+              completeness: "partial",
+              entries: [
+                {
+                  id: "entry-target-user-1",
+                  text: "第一版先服务独立开发者。",
+                  assertion_state: "confirmed",
+                  evidence_ref_ids: ["evidence-user-1"],
+                },
+              ],
+            },
+          },
+          summary: {
+            section_keys: ["target_user"],
+            entry_ids: ["entry-target-user-1"],
+            evidence_ids: ["evidence-user-1"],
+          },
+        },
+        evidence: [
+          {
+            id: "evidence-user-1",
+            kind: "user_message",
+            excerpt: "我想先服务独立开发者。",
+            section_keys: ["target_user"],
+          },
+        ],
+      },
+      prd_snapshot: {
+        sections: {},
+      },
+      messages: [],
+      assistant_reply_groups: [],
+      turn_decisions: [],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    expect(screen.getByText("结构化首稿")).toBeInTheDocument();
+    expect(screen.getByText("第一版先服务独立开发者。")).toBeInTheDocument();
+    expect(screen.getAllByText("已确认").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "查看来源" }));
+
+    expect(screen.getByText("我想先服务独立开发者。")).toBeInTheDocument();
+  });
+
   it("renders legacy backfilled finalize state without extra client-side guessing", async () => {
     getSessionMock.mockResolvedValue({
       session: {

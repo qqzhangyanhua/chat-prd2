@@ -20,6 +20,7 @@ from app.services.message_models import (
     PreparedMessageStream,
     PreparedRegenerateStream,
 )
+from app.services.message_state import build_diagnostics_payload, build_guidance_payload
 from app.services.model_gateway import ModelGatewayError, open_reply_stream
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,26 @@ def build_gateway_messages_for_regenerate(
     return messages
 
 
+def build_decision_guidance_payload(
+    *,
+    session_id: str,
+    user_message_id: str,
+    turn_decision: object,
+    state: dict | None = None,
+) -> dict[str, object]:
+    guidance = build_guidance_payload(
+        turn_decision,
+        session_id=session_id,
+        user_message_id=user_message_id,
+        next_best_questions=list(getattr(turn_decision, "next_best_questions", []) or []),
+    )
+    diagnostics = build_diagnostics_payload(
+        turn_decision,
+        ledger_diagnostics=(state or {}).get("diagnostics") if isinstance(state, dict) else None,
+    )
+    return {**guidance, **diagnostics}
+
+
 def get_user_and_mirror_assistant_message(
     db: Session,
     session_id: str,
@@ -373,6 +394,12 @@ def prepare_message_stream(
         assistant_version_id=str(uuid4()),
         next_version_no=1,
         action=asdict(agent_result.action),
+        guidance=build_decision_guidance_payload(
+            session_id=session_id,
+            user_message_id=user_message.id,
+            turn_decision=turn_decision,
+            state=state,
+        ),
         turn_decision=turn_decision,
         state=state,
         state_patch=agent_result.state_patch,
@@ -461,6 +488,12 @@ def prepare_regenerate_stream(
         assistant_version_id=str(uuid4()),
         next_version_no=next_version_no,
         action=asdict(agent_result.action),
+        guidance=build_decision_guidance_payload(
+            session_id=session_id,
+            user_message_id=user_message.id,
+            turn_decision=turn_decision,
+            state=state,
+        ),
         turn_decision=turn_decision,
         state=state,
         state_patch=agent_result.state_patch,

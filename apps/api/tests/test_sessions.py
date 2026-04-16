@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent.types import NextAction, Suggestion, TurnDecision
+from app.db.models import AgentTurnDecision
 from app.db.models import (
     AssistantReplyGroup,
     AssistantReplyVersion,
@@ -123,6 +124,56 @@ def _sample_turn_decision_with_four_suggestions() -> TurnDecision:
         ],
         strategy_reason="先锁定首个具体场景，再决定后续推进主线。",
         conversation_strategy="choose",
+        response_mode="options_first",
+        guidance_mode="compare",
+        guidance_step="compare",
+        focus_dimension="problem",
+        transition_reason="当前候选方向不止一个，先做取舍比继续泛问更有效。",
+        transition_trigger="high_uncertainty",
+        option_cards=[
+            {
+                "id": "problem-1-independent",
+                "label": "A. 先聊独立开发者",
+                "title": "A. 先聊独立开发者",
+                "content": "我先从独立开发者的真实使用场景开始补充。",
+                "description": "更容易快速拿到高频反馈。",
+                "type": "direction",
+                "priority": 1,
+            },
+            {
+                "id": "problem-2-team-lead",
+                "label": "B. 先聊小团队负责人",
+                "title": "B. 先聊小团队负责人",
+                "content": "我更想先看 3-10 人团队的协作问题。",
+                "description": "协作链路更完整，但场景更复杂。",
+                "type": "tradeoff",
+                "priority": 2,
+            },
+            {
+                "id": "problem-3-pain",
+                "label": "C. 先锁定高频痛点",
+                "title": "C. 先锁定高频痛点",
+                "content": "先别分人群，先确定一个最高频的问题。",
+                "description": "可以直接筛掉低价值需求。",
+                "type": "recommendation",
+                "priority": 3,
+            },
+            {
+                "id": "problem-4-freeform",
+                "label": "D. 我直接补充真实案例",
+                "title": "D. 我直接补充真实案例",
+                "content": "我直接讲一个最近遇到的具体案例。",
+                "description": "真实案例能最快暴露需求真假。",
+                "type": "warning",
+                "priority": 4,
+            },
+        ],
+        freeform_affordance={"label": "都不对，我补充", "value": "freeform", "kind": "freeform"},
+        can_switch_mode=True,
+        available_mode_switches=[
+            {"mode": "confirm", "label": "直接进入确认"},
+            {"mode": "freeform", "label": "直接自由补充"},
+        ],
     )
 
 
@@ -219,6 +270,66 @@ def test_create_session_persists_phase1_default_state(auth_client, testing_sessi
     assert state_version.state_json["working_hypotheses"] == []
     assert state_version.state_json["recommended_directions"] == []
     assert state_version.state_json["pending_confirmations"] == []
+
+
+def test_build_turn_decision_sections_includes_draft_update_meta():
+    decision = AgentTurnDecision(
+        id="decision-1",
+        session_id="session-1",
+        user_message_id="message-1",
+        phase="problem",
+        phase_goal="先沉淀结构化首稿",
+        understanding_summary="用户已经补充了明确目标用户",
+        assumptions_json=[],
+        risk_flags_json=[],
+        next_move="probe_for_specificity",
+        suggestions_json=[],
+        recommendation_json=None,
+        needs_confirmation_json=[],
+        confidence="medium",
+        state_patch_json={
+            "next_best_questions": ["下一步先补成功标准。"],
+            "prd_draft": {
+                "version": 2,
+                "status": "drafting",
+                "sections": {
+                    "target_user": {
+                        "title": "目标用户",
+                        "completeness": "partial",
+                        "entries": [
+                            {
+                                "id": "entry-target-user-1",
+                                "text": "第一版先服务独立开发者。",
+                                "assertion_state": "confirmed",
+                                "evidence_ref_ids": ["evidence-user-1"],
+                            }
+                        ],
+                    }
+                },
+                "summary": {
+                    "section_keys": ["target_user"],
+                    "entry_ids": ["entry-target-user-1"],
+                    "evidence_ids": ["evidence-user-1"],
+                },
+            },
+            "evidence": [
+                {
+                    "id": "evidence-user-1",
+                    "kind": "user_message",
+                    "excerpt": "我想先服务独立开发者。",
+                    "section_keys": ["target_user"],
+                }
+            ],
+        },
+        prd_patch_json={},
+    )
+
+    sections = session_service._build_turn_decision_sections(decision)
+    next_step = next(section for section in sections if section.key == "next_step")
+
+    assert next_step.meta["draft_updates"]["entry_ids"] == ["entry-target-user-1"]
+    assert next_step.meta["draft_updates"]["section_keys"] == ["target_user"]
+    assert next_step.meta["evidence_ref_ids"] == ["evidence-user-1"]
 
 
 def test_create_session_rejects_blank_title_and_initial_idea(auth_client):
@@ -552,6 +663,9 @@ def test_get_session_snapshot_preserves_all_four_suggestion_options(
         section for section in latest_decision["decision_sections"] if section["key"] == "next_step"
     )
     suggestion_options = next_step["meta"]["suggestion_options"]
+    judgement = next(
+        section for section in latest_decision["decision_sections"] if section["key"] == "judgement"
+    )
 
     assert len(suggestion_options) == 4
     assert [item["label"] for item in suggestion_options] == [
@@ -562,6 +676,118 @@ def test_get_session_snapshot_preserves_all_four_suggestion_options(
     ]
     assert [item["priority"] for item in suggestion_options] == [1, 2, 3, 4]
     assert next_step["meta"]["next_best_questions"]
+    assert next_step["meta"]["guidance_mode"] == "compare"
+    assert next_step["meta"]["guidance_step"] == "compare"
+    assert next_step["meta"]["focus_dimension"] == "problem"
+    assert next_step["meta"]["transition_reason"]
+    assert next_step["meta"]["option_cards"][0]["id"] == "problem-1-independent"
+    assert next_step["meta"]["freeform_affordance"] == {
+        "label": "都不对，我补充",
+        "value": "freeform",
+        "kind": "freeform",
+    }
+    assert next_step["meta"]["available_mode_switches"]
+    assert judgement["meta"]["strategy_label"]
+    assert judgement["meta"]["guidance_mode"] == "compare"
+    assert judgement["meta"]["focus_dimension"] == "problem"
+
+    assert data["state"]["guidance_mode"] == "compare"
+    assert data["state"]["guidance_step"] == "compare"
+    assert data["state"]["focus_dimension"] == "problem"
+    assert data["state"]["transition_reason"]
+    assert data["state"]["freeform_affordance"] == {
+        "label": "都不对，我补充",
+        "value": "freeform",
+        "kind": "freeform",
+    }
+    assert data["state"]["available_mode_switches"]
+
+
+def test_stream_guidance_matches_session_snapshot_guidance(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(
+        monkeypatch,
+        suggestions=[
+            {
+                "type": "direction",
+                "label": "先聊独立开发者",
+                "content": "我想先从独立开发者的场景开始聊。",
+                "rationale": "更容易快速举出真实例子。",
+                "priority": 1,
+            },
+            {
+                "type": "tradeoff",
+                "label": "先聊目标用户",
+                "content": "我想先明确，这个产品主要给谁用。",
+                "rationale": "先锁定用户，后面的需求判断才不会发散。",
+                "priority": 2,
+            },
+            {
+                "type": "recommendation",
+                "label": "先聊核心痛点",
+                "content": "我想先判断用户最痛的那个问题是什么。",
+                "rationale": "先确认痛点，才能快速判断主线。",
+                "priority": 3,
+            },
+            {
+                "type": "warning",
+                "label": "直接补充真实案例",
+                "content": "我可以直接讲一个最近发生的真实案例。",
+                "rationale": "真实案例最容易暴露信息缺口。",
+                "priority": 4,
+            },
+        ],
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "我有个想法，但不知道怎么说",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events = []
+    current_event = None
+    for line in body.splitlines():
+        if line.startswith("event: "):
+            current_event = line.removeprefix("event: ").strip()
+            continue
+        if line.startswith("data: ") and current_event is not None:
+            parsed_events.append((current_event, json.loads(line.removeprefix("data: "))))
+            current_event = None
+
+    guidance_payload = next(payload for name, payload in parsed_events if name == "decision.ready")
+
+    response = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert response.status_code == 200
+    data = response.json()
+    latest_decision = data["turn_decisions"][-1]
+    next_step = next(
+        section for section in latest_decision["decision_sections"] if section["key"] == "next_step"
+    )
+
+    assert guidance_payload["suggestions"] == next_step["meta"]["suggestion_options"]
+    assert guidance_payload["next_best_questions"] == next_step["meta"]["next_best_questions"]
+    assert guidance_payload["guidance_mode"] == next_step["meta"]["guidance_mode"]
+    assert guidance_payload["guidance_step"] == next_step["meta"]["guidance_step"]
+    assert guidance_payload["focus_dimension"] == next_step["meta"]["focus_dimension"]
+    assert guidance_payload["transition_reason"] == next_step["meta"]["transition_reason"]
+    assert guidance_payload["option_cards"] == next_step["meta"]["option_cards"]
+    assert guidance_payload["freeform_affordance"] == next_step["meta"]["freeform_affordance"]
+    assert guidance_payload["available_mode_switches"] == next_step["meta"]["available_mode_switches"]
+    assert guidance_payload["diagnostics"] == next_step["meta"]["diagnostics"]
+    assert guidance_payload["diagnostic_summary"] == next_step["meta"]["diagnostic_summary"]
+    assert data["state"]["diagnostics"]
+    assert data["state"]["diagnostic_summary"]["open_count"] >= guidance_payload["diagnostic_summary"]["open_count"]
 
 
 def test_get_session_returns_explicit_503_when_turn_decision_table_is_missing():

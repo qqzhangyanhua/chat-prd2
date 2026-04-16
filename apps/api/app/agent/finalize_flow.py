@@ -38,29 +38,68 @@ def normalize_section(title: str, content: str | None, status: str = "confirmed"
     }
 
 
+def _section_content_from_entries(value: dict) -> tuple[str, str]:
+    entries = value.get("entries")
+    if not isinstance(entries, list):
+        return "", "missing"
+    texts: list[str] = []
+    statuses: list[str] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        text = normalize_text(str(item.get("text") or ""))
+        if not text:
+            continue
+        texts.append(text)
+        assertion_state = item.get("assertion_state")
+        if assertion_state == "confirmed":
+            statuses.append("confirmed")
+        else:
+            statuses.append("draft")
+    if not texts:
+        return "", "missing"
+    status = "confirmed" if statuses and all(item == "confirmed" for item in statuses) else "draft"
+    return "\n".join(texts), status
+
+
 def normalize_prd_draft_sections(prd_draft: dict) -> dict[str, dict[str, str]]:
     raw_sections = deepcopy((prd_draft or {}).get("sections") or {})
 
     def _read_content(key: str) -> str:
         value = raw_sections.get(key)
         if isinstance(value, dict):
-            return normalize_text(str(value.get("content") or ""))
+            direct_content = normalize_text(str(value.get("content") or ""))
+            if direct_content:
+                return direct_content
+            entry_content, _ = _section_content_from_entries(value)
+            return entry_content
         return ""
+
+    def _read_status(key: str, fallback: str) -> str:
+        value = raw_sections.get(key)
+        if isinstance(value, dict):
+            status = value.get("status")
+            if isinstance(status, str) and status:
+                return status
+            _, entry_status = _section_content_from_entries(value)
+            if entry_status != "missing":
+                return entry_status
+        return fallback
 
     summary_content = _read_content("summary")
     if not summary_content:
         summary_content = _read_content("one_liner") or _read_content("positioning")
 
     return {
-        "summary": normalize_section("一句话概述", summary_content, "draft"),
-        "target_user": normalize_section("目标用户", _read_content("target_user"), "confirmed"),
-        "problem": normalize_section("核心问题", _read_content("problem"), "confirmed"),
-        "solution": normalize_section("解决方案", _read_content("solution"), "confirmed"),
-        "mvp_scope": normalize_section("MVP 范围", _read_content("mvp_scope"), "confirmed"),
-        "constraints": normalize_section("约束条件", _read_content("constraints"), "draft"),
-        "success_metrics": normalize_section("成功指标", _read_content("success_metrics"), "draft"),
-        "out_of_scope": normalize_section("不做清单", _read_content("out_of_scope"), "draft"),
-        "open_questions": normalize_section("待确认问题", _read_content("open_questions"), "draft"),
+        "summary": normalize_section("一句话概述", summary_content, _read_status("summary", "draft")),
+        "target_user": normalize_section("目标用户", _read_content("target_user"), _read_status("target_user", "confirmed")),
+        "problem": normalize_section("核心问题", _read_content("problem"), _read_status("problem", "confirmed")),
+        "solution": normalize_section("解决方案", _read_content("solution"), _read_status("solution", "confirmed")),
+        "mvp_scope": normalize_section("MVP 范围", _read_content("mvp_scope"), _read_status("mvp_scope", "confirmed")),
+        "constraints": normalize_section("约束条件", _read_content("constraints"), _read_status("constraints", "draft")),
+        "success_metrics": normalize_section("成功指标", _read_content("success_metrics"), _read_status("success_metrics", "draft")),
+        "out_of_scope": normalize_section("不做清单", _read_content("out_of_scope"), _read_status("out_of_scope", "draft")),
+        "open_questions": normalize_section("待确认问题", _read_content("open_questions"), _read_status("open_questions", "draft")),
     }
 
 
