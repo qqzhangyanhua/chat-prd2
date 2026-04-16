@@ -560,10 +560,10 @@ def test_get_session_snapshot_returns_panel_projection_shape_from_structured_dra
     assert data["prd_snapshot"]["sections"]["target_user"]["title"] == "目标用户"
     assert data["prd_snapshot"]["sections"]["target_user"]["content"] == "第一版先服务独立开发者。"
     assert data["prd_snapshot"]["sections"]["problem"]["status"] == "inferred"
-    assert data["prd_review"]["verdict"] == "needs_input"
-    assert data["prd_review"]["status"] == "needs_input"
+    assert data["prd_review"]["verdict"] == "revise"
+    assert data["prd_review"]["status"] == "drafting"
     assert data["prd_review"]["missing_sections"] == ["constraints", "mvp_scope", "solution"]
-    assert data["prd_review"]["checks"]["goal_clarity"]["verdict"] == "pass"
+    assert data["prd_review"]["checks"]["goal_clarity"]["verdict"] == "missing"
     assert data["prd_review"]["checks"]["scope_boundary"]["verdict"] == "missing"
     assert data["prd_review"]["checks"]["success_metrics"]["verdict"] == "needs_input"
     assert data["prd_review"]["checks"]["risk_exposure"]["verdict"] == "needs_input"

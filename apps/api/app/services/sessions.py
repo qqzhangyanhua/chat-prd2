@@ -18,6 +18,7 @@ from app.schemas.message import AssistantReplyGroupResponse
 from app.schemas.message import AssistantReplyVersionResponse
 from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
+from app.schemas.review import PrdReviewResponse
 from app.schemas.session import (
     SessionCreateRequest,
     SessionCreateResponse,
@@ -28,6 +29,8 @@ from app.schemas.session import (
 from app.schemas.state import StateSnapshot
 from app.services import legacy_session_backfill as legacy_backfill_service
 from app.services.message_state import build_diagnostics_payload, build_guidance_payload
+from app.services.prd_review import build_prd_review
+from app.services.prd_runtime import build_prd_snapshot_payload
 
 
 def build_reply_sections(
@@ -467,7 +470,15 @@ def create_session(
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(initial_state),
-        prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+        prd_snapshot=PrdSnapshotResponse.model_validate(
+            build_prd_snapshot_payload(
+                initial_state,
+                snapshot_id=prd_snapshot.id,
+                session_id=prd_snapshot.session_id,
+                version=prd_snapshot.version,
+            )
+        ),
+        prd_review=PrdReviewResponse.model_validate(build_prd_review(initial_state)),
         messages=[],
         assistant_reply_groups=[],
         turn_decisions=[],
@@ -509,7 +520,15 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
     return SessionCreateResponse(
         session=SessionResponse.model_validate(session),
         state=StateSnapshot.model_validate(state_version.state_json),
-        prd_snapshot=PrdSnapshotResponse.model_validate(prd_snapshot),
+        prd_snapshot=PrdSnapshotResponse.model_validate(
+            build_prd_snapshot_payload(
+                state_version.state_json,
+                snapshot_id=prd_snapshot.id,
+                session_id=prd_snapshot.session_id,
+                version=prd_snapshot.version,
+            )
+        ),
+        prd_review=PrdReviewResponse.model_validate(build_prd_review(state_version.state_json)),
         messages=messages,
         assistant_reply_groups=assistant_reply_groups,
         turn_decisions=turn_decisions,
