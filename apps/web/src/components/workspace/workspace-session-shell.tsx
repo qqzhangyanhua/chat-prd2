@@ -13,6 +13,7 @@ import { useToastStore } from "../../store/toast-store";
 import { workspaceStore } from "../../store/workspace-store";
 import { ConversationPanel } from "./conversation-panel";
 import { PrdPanel } from "./prd-panel";
+import { ReplayPanel } from "./replay-panel";
 import { WorkspaceErrorNotice } from "./workspace-error-notice";
 import { SchemaOutdatedNotice } from "./schema-outdated-notice";
 import { SkeletonCard } from "./skeleton-card";
@@ -193,16 +194,24 @@ export function WorkspaceSessionShell({ sessionId, searchParams }: WorkspaceSess
       </section>
 
       {/* PRD column */}
-      {isLoading ? (
-        <SkeletonCard className="h-full w-[360px] shrink-0" />
-      ) : !loadError ? (
-        <PrdPanel sessionId={sessionId} />
-      ) : (
-        <WorkspaceErrorNotice
-          className="h-fit w-[360px] shrink-0"
-          message="当前会话加载失败，暂不展示 PRD 快照。"
-        />
-      )}
+      <section className="flex w-[360px] shrink-0 flex-col gap-4">
+        {isLoading ? (
+          <>
+            <SkeletonCard className="h-80 w-full" />
+            <SkeletonCard className="h-72 w-full" />
+          </>
+        ) : !loadError ? (
+          <>
+            <PrdPanel sessionId={sessionId} />
+            <ReplayPanel />
+          </>
+        ) : (
+          <WorkspaceErrorNotice
+            className="h-fit w-full shrink-0"
+            message="当前会话加载失败，暂不展示 PRD 快照。"
+          />
+        )}
+      </section>
     </WorkspaceLayout>
   );
 }

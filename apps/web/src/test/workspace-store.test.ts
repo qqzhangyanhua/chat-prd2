@@ -22,6 +22,16 @@ function buildSnapshotWithDecisions(
     prd_snapshot: {
       sections: {},
     },
+    prd_review: {
+      verdict: "needs_input",
+      status: "drafting",
+      summary: "仍需继续补齐关键章节。",
+      checks: {},
+      gaps: [],
+      missing_sections: [],
+      ready_for_confirmation: false,
+    },
+    replay_timeline: [],
     messages: [],
     assistant_reply_groups: [],
     turn_decisions: decisions,
@@ -211,7 +221,108 @@ describe("workspace store", () => {
     );
   });
 
-  it("routes extra draft sections into extraSections when prd.updated event arrives", () => {
+  it("hydrates prd panel snapshot gap and changed state from phase4 contract", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+      },
+      prd_snapshot: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            content: "独立开发者",
+            status: "confirmed",
+          },
+          problem: {
+            title: "核心问题",
+            content: "需求确认成本高",
+            status: "inferred",
+          },
+          risks_to_validate: {
+            title: "待验证 / 风险",
+            content: "需确认：付费意愿尚未验证",
+            status: "inferred",
+          },
+          open_questions: {
+            title: "待确认问题",
+            content: "是否需要团队协作仍待确认",
+            status: "inferred",
+          },
+        },
+        meta: {
+          stageLabel: "草稿中",
+          stageTone: "draft",
+          criticSummary: "当前还有关键缺口待补齐。",
+          criticGaps: [],
+          draftVersion: 3,
+          nextQuestion: null,
+        },
+        sections_changed: ["target_user", "open_questions"],
+        missing_sections: ["solution", "mvp_scope"],
+        gap_prompts: ["请补充「solution」内容", "请补充「mvp_scope」内容"],
+        ready_for_confirmation: false,
+      } as SessionSnapshotResponse["prd_snapshot"],
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.sectionsChanged).toEqual(["target_user", "open_questions"]);
+    expect(store.getState().prd.missingSections).toEqual(["solution", "mvp_scope"]);
+    expect(store.getState().prd.gapPrompts).toEqual(["请补充「solution」内容", "请补充「mvp_scope」内容"]);
+    expect(store.getState().prd.readyForConfirmation).toBe(false);
+    expect(store.getState().prd.meta.stageLabel).toBe("草稿中");
+  });
+
+  it("merges prd panel changed sections and ready state from prd.updated event", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "先做浏览器内预览和分享闭环。",
+            status: "confirmed",
+          },
+          success_metrics: {
+            title: "成功指标",
+            content: "7 天内完成一版可确认初稿。",
+            status: "confirmed",
+          },
+        },
+        meta: {
+          stageLabel: "可确认初稿",
+          stageTone: "ready",
+          criticSummary: "关键信息已基本齐备，可以给用户确认当前 PRD 初稿。",
+          criticGaps: [],
+          draftVersion: 4,
+          nextQuestion: null,
+        },
+        sections_changed: ["solution", "success_metrics"],
+        missing_sections: [],
+        gap_prompts: [],
+        ready_for_confirmation: true,
+      } as Record<string, unknown>,
+    });
+
+    expect(store.getState().prd.sections.solution?.content).toBe("先做浏览器内预览和分享闭环。");
+    expect(store.getState().prd.sectionsChanged).toEqual(["solution", "success_metrics"]);
+    expect(store.getState().prd.readyForConfirmation).toBe(true);
+    expect(store.getState().prd.meta.stageLabel).toBe("可确认初稿");
+  });
+
+  it("routes phase4 panel sections into the ordered prd state when prd.updated event arrives", () => {
     const store = createWorkspaceStore();
 
     store.getState().applyEvent({
@@ -240,13 +351,12 @@ describe("workspace store", () => {
     expect(store.getState().prd.sections.solution?.content).toBe(
       "先做浏览器内预览、评论和分享闭环。",
     );
-    expect(store.getState().prd.extraSections.constraints?.content).toBe(
+    expect(store.getState().prd.sections.constraints?.content).toBe(
       "首版只支持浏览器端，不做桌面插件。",
     );
-    expect(store.getState().prd.extraSections.success_metrics?.content).toBe(
+    expect(store.getState().prd.sections.success_metrics?.content).toBe(
       "7 天内至少完成 10 次有效预览。",
     );
-    expect(store.getState().prd.sections.constraints).toBeUndefined();
   });
 
   it("updates prd meta when prd.updated event includes meta", () => {
@@ -1433,8 +1543,8 @@ describe("workspace store", () => {
       assistant_reply_groups: [],
     });
 
-    expect(store.getState().prd.extraSections.constraints?.content).toContain("浏览器端");
-    expect(store.getState().prd.extraSections.success_metrics?.content).toContain("5 个团队");
+    expect(store.getState().prd.sections.constraints?.content).toContain("浏览器端");
+    expect(store.getState().prd.sections.success_metrics?.content).toContain("5 个团队");
   });
 
   it("prefers prd_draft primary sections over legacy prd snapshot", () => {
@@ -1687,7 +1797,82 @@ describe("workspace store", () => {
     expect(store.getState().prd.meta.draftVersion).toBe(3);
     expect(store.getState().prd.meta.stageLabel).toBe("可整理终稿");
     expect(store.getState().prd.sections.solution?.content).toBe("更新后的方案 v3");
-    expect(store.getState().prd.extraSections.constraints?.content).toBe("更新后的约束 v3");
+    expect(store.getState().prd.sections.constraints?.content).toBe("更新后的约束 v3");
+  });
+
+  it("keeps fresher prd panel changed state when refreshed snapshot is stale", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().applyEvent({
+      type: "prd.updated",
+      data: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "更新后的方案 v4",
+            status: "confirmed",
+          },
+        },
+        meta: {
+          stageLabel: "可确认初稿",
+          stageTone: "ready",
+          criticSummary: "可以确认初稿。",
+          criticGaps: [],
+          draftVersion: 4,
+          nextQuestion: null,
+        },
+        sections_changed: ["solution"],
+        missing_sections: [],
+        gap_prompts: [],
+        ready_for_confirmation: true,
+      } as Record<string, unknown>,
+    });
+
+    store.getState().refreshSessionSnapshot({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "refine_loop",
+        prd_draft: {
+          version: 3,
+          status: "draft_refined",
+        },
+      },
+      prd_snapshot: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "旧快照方案 v3",
+            status: "inferred",
+          },
+        },
+        meta: {
+          stageLabel: "草稿中",
+          stageTone: "draft",
+          criticSummary: "旧快照仍需补充。",
+          criticGaps: ["缺少范围边界"],
+          draftVersion: 3,
+          nextQuestion: "请继续补充范围边界",
+        },
+        sections_changed: ["problem"],
+        missing_sections: ["mvp_scope"],
+        gap_prompts: ["请补充「mvp_scope」内容"],
+        ready_for_confirmation: false,
+      } as SessionSnapshotResponse["prd_snapshot"],
+      messages: [],
+      assistant_reply_groups: [],
+    });
+
+    expect(store.getState().prd.meta.draftVersion).toBe(4);
+    expect(store.getState().prd.sections.solution?.content).toBe("更新后的方案 v4");
+    expect(store.getState().prd.sectionsChanged).toEqual(["solution"]);
+    expect(store.getState().prd.readyForConfirmation).toBe(true);
   });
 
   it("resets prd sections when the loaded session has an empty snapshot", () => {
@@ -2644,5 +2829,62 @@ describe("parseEventStream", () => {
         },
       },
     ]);
+  });
+
+  it("stores prd review and replay timeline separately from prd panel sections", () => {
+    const store = createWorkspaceStore();
+
+    store.getState().hydrateSession({
+      ...buildSnapshotWithDecisions([], {
+        workflow_stage: "completed",
+      }),
+      prd_snapshot: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "单会话 replay",
+            status: "confirmed",
+          },
+        },
+      },
+      prd_review: {
+        verdict: "revise",
+        status: "drafting",
+        summary: "当前 PRD 结构已成型，但仍需补齐边界。",
+        checks: {
+          scope_boundary: {
+            verdict: "needs_input",
+            summary: "还缺明确边界。",
+            evidence: [],
+          },
+        },
+        gaps: ["请补充范围边界"],
+        missing_sections: ["constraints"],
+        ready_for_confirmation: false,
+      },
+      replay_timeline: [
+        {
+          id: "guidance-1",
+          type: "guidance",
+          title: "Guidance Decision",
+          summary: "先把 guidance、diagnostics 和 PRD 变化串起来。",
+          sections_changed: [],
+          metadata: {},
+        },
+        {
+          id: "export-1",
+          type: "export",
+          title: "Export Milestone",
+          summary: "终稿已具备导出条件。",
+          sections_changed: [],
+          metadata: { file_name: "ai-cofounder-prd.md" },
+        },
+      ],
+    });
+
+    expect(store.getState().prd.sections.solution?.content).toBe("单会话 replay");
+    expect(store.getState().prdReview?.summary).toBe("当前 PRD 结构已成型，但仍需补齐边界。");
+    expect(store.getState().replayTimeline.map((item) => item.type)).toEqual(["guidance", "export"]);
+    expect(store.getState().prd.sections.scope_boundary).toBeUndefined();
   });
 });

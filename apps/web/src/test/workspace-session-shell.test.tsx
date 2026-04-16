@@ -72,6 +72,16 @@ describe("WorkspaceSessionShell", () => {
       prd_snapshot: {
         sections: {},
       },
+      prd_review: {
+        verdict: "needs_input",
+        status: "drafting",
+        summary: "仍需继续补齐关键章节。",
+        checks: {},
+        gaps: [],
+        missing_sections: [],
+        ready_for_confirmation: false,
+      },
+      replay_timeline: [],
       messages: [],
       assistant_reply_groups: [],
     });
@@ -96,6 +106,72 @@ describe("WorkspaceSessionShell", () => {
     expect(workspaceStore.getState().workflowStage).toBe("refine_loop");
     expect(workspaceStore.getState().isFinalizeReady).toBe(false);
     expect(workspaceStore.getState().isCompleted).toBe(false);
+  });
+
+  it("hydrates prd review and replay timeline from session snapshot", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        idea: "idea",
+        workflow_stage: "completed",
+        finalization_ready: true,
+      },
+      prd_snapshot: {
+        sections: {
+          solution: {
+            title: "解决方案",
+            content: "单会话 replay",
+            status: "confirmed",
+          },
+        },
+      },
+      prd_review: {
+        verdict: "revise",
+        status: "drafting",
+        summary: "当前 PRD 结构已成型，但仍需补齐边界。",
+        checks: {},
+        gaps: ["请补充范围边界"],
+        missing_sections: ["constraints"],
+        ready_for_confirmation: false,
+      },
+      replay_timeline: [
+        {
+          id: "guidance-1",
+          type: "guidance",
+          title: "Guidance Decision",
+          summary: "先让用户看到关键决策和变更。",
+          sections_changed: [],
+          metadata: {},
+        },
+        {
+          id: "export-1",
+          type: "export",
+          title: "Export Milestone",
+          summary: "终稿已具备导出条件。",
+          sections_changed: [],
+          metadata: { file_name: "ai-cofounder-prd.md" },
+        },
+      ],
+      messages: [],
+      assistant_reply_groups: [],
+      turn_decisions: [],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    expect(await screen.findByTestId("prd-review-summary")).toBeInTheDocument();
+    expect(screen.getByText("当前 PRD 结构已成型，但仍需补齐边界。")).toBeInTheDocument();
+    expect(screen.getByTestId("replay-item-guidance")).toBeInTheDocument();
+    expect(screen.getByTestId("replay-item-export")).toBeInTheDocument();
+    expect(workspaceStore.getState().prdReview?.summary).toBe("当前 PRD 结构已成型，但仍需补齐边界。");
+    expect(workspaceStore.getState().replayTimeline).toHaveLength(2);
   });
 
   it("hydrates structured guidance from the session snapshot", async () => {
@@ -495,6 +571,95 @@ describe("WorkspaceSessionShell", () => {
     expect(screen.getByRole("button", { name: "生成最终版 PRD" })).toBeInTheDocument();
   });
 
+  it("keeps first draft in conversation column while prd panel renders gap and confirm state", async () => {
+    getSessionMock.mockResolvedValue({
+      session: {
+        id: "session-1",
+        user_id: "user-1",
+        title: "AI Co-founder",
+        initial_idea: "idea",
+        created_at: "2026-04-05T00:00:00Z",
+        updated_at: "2026-04-05T00:00:00Z",
+      },
+      state: {
+        workflow_stage: "finalize",
+        finalization_ready: true,
+        prd_draft: {
+          version: 4,
+          status: "draft_refined",
+          sections: {
+            target_user: {
+              title: "目标用户",
+              completeness: "partial",
+              entries: [
+                {
+                  id: "entry-target-user-1",
+                  text: "第一版先服务独立开发者。",
+                  assertion_state: "confirmed",
+                  evidence_ref_ids: ["evidence-user-1"],
+                },
+              ],
+            },
+          },
+          summary: {
+            section_keys: ["target_user"],
+            entry_ids: ["entry-target-user-1"],
+            evidence_ids: ["evidence-user-1"],
+          },
+        },
+        evidence: [
+          {
+            id: "evidence-user-1",
+            kind: "user_message",
+            excerpt: "我想先服务独立开发者。",
+            section_keys: ["target_user"],
+          },
+        ],
+      },
+      prd_snapshot: {
+        sections: {
+          target_user: {
+            title: "目标用户",
+            content: "独立开发者",
+            status: "confirmed",
+          },
+          solution: {
+            title: "解决方案",
+            content: "结构化澄清 + PRD 输出",
+            status: "confirmed",
+          },
+        },
+        meta: {
+          stageLabel: "可确认初稿",
+          stageTone: "ready",
+          criticSummary: "关键信息已基本齐备，可以给用户确认当前 PRD 初稿。",
+          criticGaps: [],
+          draftVersion: 4,
+          nextQuestion: null,
+        },
+        sections_changed: ["solution"],
+        missing_sections: ["success_metrics"],
+        gap_prompts: ["请补充「success_metrics」内容"],
+        ready_for_confirmation: true,
+      },
+      messages: [],
+      assistant_reply_groups: [],
+      turn_decisions: [],
+    });
+
+    render(<WorkspaceSessionShell sessionId="session-1" />);
+
+    await waitFor(() => {
+      expect(getSessionMock).toHaveBeenCalledWith("session-1", null);
+    });
+
+    expect(screen.getByText("结构化首稿")).toBeInTheDocument();
+    expect(screen.getByText("第一版先服务独立开发者。")).toBeInTheDocument();
+    expect(screen.getByText("继续补这 1 项")).toBeInTheDocument();
+    expect(screen.getByText("请补充「success_metrics」内容")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认初稿并生成最终版 PRD" })).toBeInTheDocument();
+  });
+
   it("loads enabled model configs on mount and writes them into the store", async () => {
     render(<WorkspaceSessionShell sessionId="session-1" />);
 
@@ -599,9 +764,9 @@ describe("WorkspaceSessionShell", () => {
         },
       ],
       prd: {
-        extraSections: {},
-        meta: workspaceStore.getInitialState().prd.meta,
+        ...workspaceStore.getInitialState().prd,
         sections: {
+          ...workspaceStore.getInitialState().prd.sections,
           target_user: {
             title: "目标用户",
             content: "这是旧会话残留的 PRD",
@@ -1087,8 +1252,6 @@ describe("WorkspaceSessionShell", () => {
     });
 
     expect(await screen.findByText("重生成后采用浏览器预览加评论分享。")).toBeInTheDocument();
-    expect(screen.getByText("草稿补充")).toBeInTheDocument();
-    expect(screen.getByText("首版只支持浏览器端。")).toBeInTheDocument();
   });
 
   it("hydrates turn decision guidance from the session snapshot", async () => {

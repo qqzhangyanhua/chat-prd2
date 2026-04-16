@@ -310,6 +310,34 @@ export interface AgentTurnDecision {
   state_patch_json?: AgentTurnDecisionStatePatch;
 }
 
+export interface PrdReviewCheck {
+  verdict: string;
+  summary: string;
+  evidence: string[];
+}
+
+export interface PrdReviewResponse {
+  verdict: string;
+  status: string;
+  summary: string;
+  checks: Record<string, PrdReviewCheck>;
+  gaps: string[];
+  missing_sections: string[];
+  ready_for_confirmation: boolean;
+}
+
+export type ReplayTimelineItemType = "guidance" | "diagnostics" | "prd_delta" | "finalize" | "export";
+
+export interface ReplayTimelineItem {
+  id: string;
+  type: ReplayTimelineItemType;
+  title: string;
+  summary: string;
+  event_at?: string | null;
+  sections_changed?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface DecisionGuidance {
   conversationStrategy: DecisionStrategy;
   strategyLabel: string;
@@ -332,7 +360,14 @@ export interface SessionSnapshotResponse {
   state: StateSnapshotResponse;
   prd_snapshot: {
     sections: Record<string, Record<string, unknown>>;
+    meta?: PrdMeta;
+    sections_changed?: string[];
+    missing_sections?: string[];
+    gap_prompts?: string[];
+    ready_for_confirmation?: boolean;
   };
+  prd_review: PrdReviewResponse;
+  replay_timeline?: ReplayTimelineItem[];
   messages: ConversationMessage[];
   assistant_reply_groups?: AssistantReplyGroup[];
   turn_decisions?: AgentTurnDecision[];
@@ -471,9 +506,13 @@ export interface PrdMeta {
 }
 
 export interface PrdState {
-  extraSections: Record<string, PrdSection>;
   meta: PrdMeta;
+  sectionOrder: string[];
   sections: Record<string, PrdSection>;
+  sectionsChanged: string[];
+  missingSections: string[];
+  gapPrompts: string[];
+  readyForConfirmation: boolean;
 }
 
 export type WorkspaceEvent =
@@ -563,5 +602,9 @@ export type WorkspaceEvent =
       data: {
         sections: Record<string, PrdSection>;
         meta?: PrdMeta;
+        sections_changed?: string[];
+        missing_sections?: string[];
+        gap_prompts?: string[];
+        ready_for_confirmation?: boolean;
       };
     };

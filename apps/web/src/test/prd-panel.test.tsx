@@ -15,7 +15,9 @@ describe("PrdPanel", () => {
       isFinalizeReady: true,
       isCompleted: false,
       prd: {
-        extraSections: {
+        ...workspaceStore.getState().prd,
+        sections: {
+          ...workspaceStore.getState().prd.sections,
           constraints: {
             title: "约束条件",
             content: "首版优先浏览器端，不做桌面插件。",
@@ -27,7 +29,10 @@ describe("PrdPanel", () => {
             status: "inferred",
           },
         },
-        sections: workspaceStore.getState().prd.sections,
+        sectionsChanged: [],
+        missingSections: [],
+        gapPrompts: [],
+        readyForConfirmation: false,
         meta: {
           stageLabel: "可整理终稿",
           stageTone: "ready",
@@ -46,10 +51,6 @@ describe("PrdPanel", () => {
     expect(screen.getByText("PRD v3")).toBeInTheDocument();
     expect(screen.getByText("缺少成功指标")).toBeInTheDocument();
     expect(screen.getByText("缺少不做清单")).toBeInTheDocument();
-    expect(
-      screen.getByText("如果你确认无误，我可以开始整理最终版 PRD。你希望最终版更偏业务描述还是更偏技术实现细节？"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("草稿补充")).toBeInTheDocument();
     expect(screen.getByText("首版优先浏览器端，不做桌面插件。")).toBeInTheDocument();
     expect(screen.getByText("是否需要外链分享与到期控制？")).toBeInTheDocument();
     expect(screen.getByText("当前已满足终稿整理条件，你可以直接生成最终版 PRD。")).toBeInTheDocument();
@@ -60,8 +61,9 @@ describe("PrdPanel", () => {
     workspaceStore.setState({
       ...workspaceStore.getState(),
       prd: {
-        sections: workspaceStore.getState().prd.sections,
-        extraSections: {
+        ...workspaceStore.getState().prd,
+        sections: {
+          ...workspaceStore.getState().prd.sections,
           open_questions: {
             title: "待确认问题",
             content: "是否需要审批流？",
@@ -78,6 +80,10 @@ describe("PrdPanel", () => {
             status: "confirmed",
           },
         },
+        sectionsChanged: [],
+        missingSections: [],
+        gapPrompts: [],
+        readyForConfirmation: false,
         meta: {
           stageLabel: "已生成终稿",
           stageTone: "final",
@@ -96,7 +102,7 @@ describe("PrdPanel", () => {
 
     expect(titles.indexOf("约束条件")).toBeLessThan(titles.indexOf("待确认问题"));
     expect(titles.indexOf("成功指标")).toBeLessThan(titles.indexOf("待确认问题"));
-    expect(screen.getByText("已生成最终版 PRD，后续补充会基于终稿继续迭代。")).toBeInTheDocument();
+    expect(screen.getByText("当前已经进入稳定终稿视图，后续补充会基于终稿继续增量更新。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "生成最终版 PRD" })).not.toBeInTheDocument();
   });
 
@@ -129,7 +135,6 @@ describe("PrdPanel", () => {
     });
 
     expect(screen.getByText("先做浏览器内预览、评论和分享闭环。")).toBeInTheDocument();
-    expect(screen.getByText("草稿补充")).toBeInTheDocument();
     expect(screen.getByText("首版只支持浏览器端，不做桌面插件。")).toBeInTheDocument();
     expect(screen.getByText("7 天内至少完成 10 次有效预览。")).toBeInTheDocument();
   });
@@ -175,5 +180,108 @@ describe("PrdPanel", () => {
     });
 
     expect(screen.queryByText("第一版先服务独立开发者。")).not.toBeInTheDocument();
+  });
+
+  it("renders changed section highlight and gap prompts from phase4 contract", () => {
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      prd: {
+        ...workspaceStore.getState().prd,
+        sections: {
+          ...workspaceStore.getState().prd.sections,
+          target_user: {
+            title: "目标用户",
+            content: "独立开发者",
+            status: "confirmed",
+          },
+          problem: {
+            title: "核心问题",
+            content: "需求确认成本高",
+            status: "inferred",
+          },
+        },
+        sectionsChanged: ["problem"],
+        missingSections: ["solution"],
+        gapPrompts: ["请补充「solution」内容"],
+        readyForConfirmation: false,
+        meta: {
+          stageLabel: "草稿中",
+          stageTone: "draft",
+          criticSummary: "还有缺口待补齐。",
+          criticGaps: [],
+          draftVersion: 3,
+          nextQuestion: null,
+        },
+      },
+    });
+
+    render(<PrdPanel sessionId="demo-session" />);
+
+    expect(screen.getByText("本轮更新")).toBeInTheDocument();
+    expect(screen.getByText("继续补这 1 项")).toBeInTheDocument();
+    expect(screen.getByText("请补充「solution」内容")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认初稿并生成最终版 PRD" })).not.toBeInTheDocument();
+  });
+
+  it("renders review summary without polluting prd sections", () => {
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      prdReview: {
+        verdict: "revise",
+        status: "drafting",
+        summary: "当前 PRD 结构已成型，但仍需补齐边界。",
+        checks: {},
+        gaps: ["请补充范围边界"],
+        missing_sections: ["constraints"],
+        ready_for_confirmation: false,
+      },
+      prd: {
+        ...workspaceStore.getState().prd,
+        sections: {
+          ...workspaceStore.getState().prd.sections,
+          solution: {
+            title: "解决方案",
+            content: "通过 replay timeline 回看收敛过程。",
+            status: "confirmed",
+          },
+        },
+      },
+    });
+
+    render(<PrdPanel sessionId="demo-session" />);
+
+    expect(screen.getByTestId("prd-review-summary")).toBeInTheDocument();
+    expect(screen.getByText("当前 PRD 结构已成型，但仍需补齐边界。")).toBeInTheDocument();
+    expect(screen.getByText("请补充范围边界")).toBeInTheDocument();
+    expect(screen.getByText("通过 replay timeline 回看收敛过程。")).toBeInTheDocument();
+    expect(screen.queryByText("scope_boundary")).not.toBeInTheDocument();
+  });
+
+  it("renders confirm cta when prd panel is ready for confirmation", () => {
+    workspaceStore.setState({
+      ...workspaceStore.getState(),
+      isFinalizeReady: true,
+      isCompleted: false,
+      prd: {
+        ...workspaceStore.getState().prd,
+        sectionsChanged: ["solution"],
+        missingSections: [],
+        gapPrompts: [],
+        readyForConfirmation: true,
+        meta: {
+          stageLabel: "可确认初稿",
+          stageTone: "ready",
+          criticSummary: "关键信息已基本齐备，可以给用户确认当前 PRD 初稿。",
+          criticGaps: [],
+          draftVersion: 4,
+          nextQuestion: null,
+        },
+      },
+    });
+
+    render(<PrdPanel sessionId="demo-session" />);
+
+    expect(screen.getByText("可以先确认当前 PRD 初稿，再生成最终版。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认初稿并生成最终版 PRD" })).toBeInTheDocument();
   });
 });

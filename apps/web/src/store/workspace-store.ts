@@ -28,6 +28,8 @@ import type {
   FirstDraftState,
   NextAction,
   PrdState,
+  PrdReviewResponse,
+  ReplayTimelineItem,
   RecommendedScene,
   SessionSnapshotResponse,
   StateSnapshotResponse,
@@ -37,13 +39,9 @@ import type {
   WorkspaceMessage,
 } from "../lib/types";
 import {
-  createInitialExtraPrdSections,
-  createInitialPrdMeta,
-  createInitialPrdSections,
-  deriveExtraPrdSections,
-  derivePrimaryPrdSections,
-  derivePrdMeta,
-  normalizeIncomingPrdSections,
+  createInitialPrdState,
+  normalizeIncomingPrdPanelUpdate,
+  normalizePrdSnapshotState,
   shouldPreserveCurrentPrd,
 } from "./prd-store-helpers";
 
@@ -92,6 +90,8 @@ interface WorkspaceState {
   pendingUserInput: string | null;
   pendingRequestMode: RequestMode | null;
   prd: PrdState;
+  prdReview: PrdReviewResponse | null;
+  replayTimeline: ReplayTimelineItem[];
   firstDraft: FirstDraftState;
   decisionGuidance: DecisionGuidance | null;
   regenerateRequestId: number;
@@ -145,13 +145,19 @@ function deriveWorkflowFlags(state: StateSnapshotResponse): Pick<
 function isSnapshotOlderByDraftVersion(
   current: Pick<WorkspaceState, "prd">,
   nextState: StateSnapshotResponse,
+  nextSnapshot?: SessionSnapshotResponse["prd_snapshot"],
 ): boolean {
   const currentVersion = current.prd.meta.draftVersion;
+  const nextVersionFromMeta =
+    nextSnapshot?.meta && typeof nextSnapshot.meta === "object" && typeof nextSnapshot.meta.draftVersion === "number"
+      ? nextSnapshot.meta.draftVersion
+      : null;
   const prdDraft = nextState.prd_draft;
-  const nextVersion =
+  const nextVersion = nextVersionFromMeta ?? (
     prdDraft && typeof prdDraft === "object" && typeof prdDraft.version === "number"
       ? prdDraft.version
-      : null;
+      : null
+  );
 
   return (
     typeof currentVersion === "number" &&
@@ -887,6 +893,64 @@ function deriveGuidanceFromSnapshot(snapshot: SessionSnapshotResponse): Decision
   return deriveDecisionGuidance(latest);
 }
 
+function normalizePrdReview(review: SessionSnapshotResponse["prd_review"]): PrdReviewResponse | null {
+  if (!review || typeof review !== "object") {
+    return null;
+  }
+  const checks = review.checks && typeof review.checks === "object" ? review.checks : {};
+  return {
+    verdict: typeof review.verdict === "string" ? review.verdict : "needs_input",
+    status: typeof review.status === "string" ? review.status : "drafting",
+    summary: typeof review.summary === "string" ? review.summary : "",
+    checks: Object.fromEntries(
+      Object.entries(checks).map(([key, value]) => {
+        const candidate = value && typeof value === "object" ? value as Record<string, unknown> : {};
+        return [key, {
+          verdict: typeof candidate.verdict === "string" ? candidate.verdict : "needs_input",
+          summary: typeof candidate.summary === "string" ? candidate.summary : "",
+          evidence: Array.isArray(candidate.evidence)
+            ? candidate.evidence.filter((entry): entry is string => typeof entry === "string")
+            : [],
+        }];
+      }),
+    ),
+    gaps: Array.isArray(review.gaps) ? review.gaps.filter((entry): entry is string => typeof entry === "string") : [],
+    missing_sections: Array.isArray(review.missing_sections)
+      ? review.missing_sections.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    ready_for_confirmation: review.ready_for_confirmation === true,
+  };
+}
+
+function normalizeReplayTimeline(items?: SessionSnapshotResponse["replay_timeline"]): ReplayTimelineItem[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  const allowedTypes = new Set<ReplayTimelineItem["type"]>([
+    "guidance",
+    "diagnostics",
+    "prd_delta",
+    "finalize",
+    "export",
+  ]);
+  return items
+    .filter((item): item is ReplayTimelineItem => Boolean(
+      item &&
+      typeof item === "object" &&
+      typeof item.id === "string" &&
+      typeof item.title === "string" &&
+      typeof item.summary === "string" &&
+      allowedTypes.has(item.type),
+    ))
+    .map((item) => ({
+      ...item,
+      sections_changed: Array.isArray(item.sections_changed)
+        ? item.sections_changed.filter((entry): entry is string => typeof entry === "string")
+        : [],
+      metadata: item.metadata && typeof item.metadata === "object" ? item.metadata : {},
+    }));
+}
+
 function normalizeMessages(messages: ConversationMessage[]): WorkspaceMessage[] {
   return messages
     .filter((message) => message.role === "user" || message.role === "assistant")
@@ -947,13 +1011,9 @@ function buildHydratedSessionState(
     .reverse()
     .find((message) => message.role === "user")
     ?.content ?? null;
-  const nextPrd: PrdState = {
-    extraSections: deriveExtraPrdSections(snapshot.state),
-    meta: derivePrdMeta(snapshot.state),
-    sections: derivePrimaryPrdSections(snapshot.state, snapshot.prd_snapshot.sections),
-  };
+  const nextPrd = normalizePrdSnapshotState(snapshot);
   const preserveByPrdVersion = preserveFresherPrd && shouldPreserveCurrentPrd(state.prd, nextPrd);
-  const preserveByWorkflowSemantics = preserveFresherPrd && isSnapshotOlderByDraftVersion(state, snapshot.state);
+  const preserveByWorkflowSemantics = preserveFresherPrd && isSnapshotOlderByDraftVersion(state, snapshot.state, snapshot.prd_snapshot);
   const shouldPreserveSnapshotSemantics = preserveByPrdVersion || preserveByWorkflowSemantics;
   const latestDecision = pickLatestDecision(snapshot.turn_decisions ?? []);
   const nextFirstDraft = normalizeFirstDraftState(snapshot.state.prd_draft, snapshot.state.evidence, latestDecision);
@@ -962,13 +1022,19 @@ function buildHydratedSessionState(
   const nextDiagnosticLedgerSummary =
     normalizeDiagnosticSummary(snapshot.state.diagnostic_summary) ??
     summarizeDiagnosticLedger(nextDiagnosticLedger);
+  const derivedWorkflowFlags = deriveWorkflowFlags(snapshot.state);
   const workflowFlags = shouldPreserveSnapshotSemantics
     ? {
         workflowStage: state.workflowStage,
         isFinalizeReady: state.isFinalizeReady,
         isCompleted: state.isCompleted,
       }
-    : deriveWorkflowFlags(snapshot.state);
+    : {
+        ...derivedWorkflowFlags,
+        isFinalizeReady:
+          snapshot.prd_snapshot.ready_for_confirmation === true ||
+          derivedWorkflowFlags.isFinalizeReady,
+      };
   const prd = preserveByPrdVersion ? state.prd : nextPrd;
   const preserveFirstDraft = preserveFresherPrd && isOlderFirstDraftVersion(state.firstDraft, nextFirstDraft);
 
@@ -1009,6 +1075,8 @@ function buildHydratedSessionState(
     pendingRequestMode: null,
     pendingUserInput: null,
     prd,
+    prdReview: normalizePrdReview(snapshot.prd_review),
+    replayTimeline: normalizeReplayTimeline(snapshot.replay_timeline),
     firstDraft: preserveFirstDraft ? state.firstDraft : nextFirstDraft,
     regenerateRequestId: 0,
     replyGroups: normalizeReplyGroups(snapshot.assistant_reply_groups ?? []),
@@ -1108,11 +1176,9 @@ function createInitialState(): Omit<
     ],
     pendingUserInput: null,
     pendingRequestMode: null,
-    prd: {
-      extraSections: createInitialExtraPrdSections(),
-      meta: createInitialPrdMeta(),
-      sections: createInitialPrdSections(),
-    },
+    prd: createInitialPrdState(),
+    prdReview: null,
+    replayTimeline: [],
     firstDraft: createInitialFirstDraftState(),
     regenerateRequestId: 0,
     replyGroups: {},
@@ -1531,21 +1597,14 @@ export function createWorkspaceStore() {
             };
           }
           case "prd.updated": {
-            const normalizedPrdUpdate = normalizeIncomingPrdSections(event.data.sections);
+            const nextPrd = normalizeIncomingPrdPanelUpdate(state.prd, event.data);
             return {
               ...state,
-              prd: {
-                ...state.prd,
-                meta: event.data.meta ?? state.prd.meta,
-                sections: {
-                  ...state.prd.sections,
-                  ...normalizedPrdUpdate.sections,
-                },
-                extraSections: {
-                  ...state.prd.extraSections,
-                  ...normalizedPrdUpdate.extraSections,
-                },
-              },
+              prd: nextPrd,
+              isFinalizeReady:
+                typeof event.data.ready_for_confirmation === "boolean"
+                  ? event.data.ready_for_confirmation
+                  : state.isFinalizeReady,
             };
           }
           default:
