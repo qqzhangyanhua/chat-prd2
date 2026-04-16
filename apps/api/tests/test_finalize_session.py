@@ -33,6 +33,11 @@ def _seed_finalize_ready_state(db_session, session_id: str, *, ready: bool):
     latest = state_repository.get_latest_state_version(db_session, session_id)
     assert latest is not None
     base_state = latest.state_json
+    success_metrics_section = (
+        {"title": "成功指标", "content": "7 天内完成一版 PRD", "status": "confirmed"}
+        if ready else
+        {"title": "成功指标", "content": "是否有人愿意持续使用仍需验证", "status": "draft"}
+    )
     state_json = {
         **base_state,
         "workflow_stage": "finalize",
@@ -46,7 +51,15 @@ def _seed_finalize_ready_state(db_session, session_id: str, *, ready: bool):
                 "problem": {"title": "核心问题", "content": "需求讨论低效", "status": "confirmed"},
                 "solution": {"title": "解决方案", "content": "结构化澄清 + 输出 PRD", "status": "confirmed"},
                 "mvp_scope": {"title": "MVP 范围", "content": "会话、总结、导出", "status": "confirmed"},
+                "constraints": {"title": "约束条件", "content": "本季度上线", "status": "confirmed"},
+                "success_metrics": success_metrics_section,
             },
+        },
+        "diagnostic_summary": {
+            "open_count": 0,
+            "unknown_count": 0,
+            "risk_count": 0,
+            "to_validate_count": 0 if ready else 1,
         },
     }
     state_repository.create_state_version(
@@ -129,6 +142,13 @@ def test_finalize_session_allows_completed_when_ready_and_confirmation_source_pr
     assert result.state.finalization_ready is True
     assert result.state.prd_draft["status"] == "finalized"
     assert result.state.prd_draft["sections"]["summary"]["content"] == "智能需求助手"
+    latest_state = state_repository.get_latest_state_version(db_session, session_id)
+    assert latest_state is not None
+    delivery_milestone = latest_state.state_json["delivery_milestone"]
+    assert delivery_milestone["status"] == "finalized"
+    assert delivery_milestone["confirmation_source"] == "button"
+    assert delivery_milestone["finalize_preference"] == "technical"
+    assert delivery_milestone["prd_snapshot_version"] == latest_state.version
 
     after_state_count = len(
         db_session.execute(
@@ -142,6 +162,96 @@ def test_finalize_session_allows_completed_when_ready_and_confirmation_source_pr
     )
     assert after_state_count == before_state_count + 1
     assert after_prd_count == before_prd_count + 1
+
+
+def test_finalize_session_uses_readiness_projector_not_stale_ready_flag(db_session):
+    user_id, session_id = _create_user_and_session(db_session)
+    latest = state_repository.get_latest_state_version(db_session, session_id)
+    assert latest is not None
+    state_json = {
+        **latest.state_json,
+        "workflow_stage": "finalize",
+        "finalization_ready": True,
+        "prd_draft": {
+            "version": latest.version + 1,
+            "status": "draft_refined",
+            "sections": {
+                "target_user": {
+                    "title": "目标用户",
+                    "completeness": "complete",
+                    "entries": [
+                        {"id": "entry-user-1", "text": "产品团队", "assertion_state": "confirmed"}
+                    ],
+                },
+                "problem": {
+                    "title": "核心问题",
+                    "completeness": "complete",
+                    "entries": [
+                        {"id": "entry-problem-1", "text": "需求讨论低效", "assertion_state": "confirmed"}
+                    ],
+                },
+                "solution": {
+                    "title": "解决方案",
+                    "completeness": "complete",
+                    "entries": [
+                        {"id": "entry-solution-1", "text": "结构化澄清 + 输出 PRD", "assertion_state": "confirmed"}
+                    ],
+                },
+                "mvp_scope": {
+                    "title": "MVP 范围",
+                    "completeness": "complete",
+                    "entries": [
+                        {"id": "entry-scope-1", "text": "会话、总结、导出", "assertion_state": "confirmed"}
+                    ],
+                },
+                "constraints": {
+                    "title": "约束条件",
+                    "completeness": "complete",
+                    "entries": [
+                        {"id": "entry-constraint-1", "text": "本季度上线", "assertion_state": "confirmed"}
+                    ],
+                },
+                "success_metrics": {
+                    "title": "成功指标",
+                    "completeness": "partial",
+                    "entries": [
+                        {"id": "entry-metric-1", "text": "验证愿意持续使用", "assertion_state": "to_validate"}
+                    ],
+                },
+            },
+        },
+        "diagnostic_summary": {
+            "open_count": 0,
+            "unknown_count": 0,
+            "risk_count": 0,
+            "to_validate_count": 1,
+        },
+    }
+    state_repository.create_state_version(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        state_json=state_json,
+    )
+    prd_repository.create_prd_snapshot(
+        db=db_session,
+        session_id=session_id,
+        version=latest.version + 1,
+        sections={},
+    )
+    db_session.commit()
+
+    with pytest.raises(Exception) as exc_info:
+        finalize_service.finalize_session(
+            db_session,
+            session_id,
+            user_id,
+            confirmation_source="button",
+        )
+
+    error = exc_info.value
+    assert getattr(error, "status_code", None) == 409
+    assert getattr(error, "code", None) == "FINALIZE_NOT_READY"
 
 
 def test_backfilled_legacy_session_still_requires_finalize_confirmation(db_session):

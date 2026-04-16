@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.agent.finalize_flow import FINALIZE_PREFERENCES, build_finalized_sections, normalize_finalize_preference
+from app.agent.readiness import evaluate_finalize_readiness
 from app.core.api_error import raise_api_error
 from app.repositories import prd as prd_repository
 from app.repositories import state as state_repository
@@ -23,6 +25,22 @@ class FinalizeSessionTransition:
     prd_snapshot_version: int
 
 
+def build_finalize_delivery_milestone(state: dict) -> dict[str, Any]:
+    prd_draft = state.get("prd_draft") if isinstance(state.get("prd_draft"), dict) else {}
+    prd_snapshot = state.get("prd_snapshot") if isinstance(state.get("prd_snapshot"), dict) else {}
+    version = prd_draft.get("version")
+    if not isinstance(version, int):
+        snapshot_version = prd_snapshot.get("version")
+        version = snapshot_version if isinstance(snapshot_version, int) else None
+
+    return {
+        "status": "finalized" if prd_draft.get("status") == "finalized" else "draft",
+        "prd_snapshot_version": version,
+        "confirmation_source": state.get("finalize_confirmation_source"),
+        "finalize_preference": state.get("finalize_preference"),
+    }
+
+
 def _resolve_next_state_version(db: Session, session_id: str, current_state: dict) -> int:
     get_latest_state_version = getattr(state_repository, "get_latest_state_version", None)
     if callable(get_latest_state_version):
@@ -36,7 +54,9 @@ def _resolve_next_state_version(db: Session, session_id: str, current_state: dic
 
 
 def _require_finalize_ready(state: dict) -> None:
-    if state.get("workflow_stage") != "finalize" or state.get("finalization_ready") is not True:
+    readiness = evaluate_finalize_readiness(state)
+    ready_for_confirmation = bool(readiness.get("ready_for_confirmation"))
+    if state.get("workflow_stage") != "finalize" or not ready_for_confirmation:
         raise_api_error(
             status_code=status.HTTP_409_CONFLICT,
             code="FINALIZE_NOT_READY",
@@ -98,13 +118,13 @@ def create_finalize_session_transition(
     normalized_source = _validate_confirmation_source(confirmation_source)
     resolved_preference = _resolve_finalize_preference(preference, current_state)
 
-    prd_draft = current_state.get("prd_draft") if isinstance(current_state.get("prd_draft"), dict) else {}
-    finalized_sections = build_finalized_sections(prd_draft, resolved_preference)
+    readiness = evaluate_finalize_readiness(current_state)
+    finalized_sections = build_finalized_sections(current_state, resolved_preference)
     next_state_version = _resolve_next_state_version(db, session_id, current_state)
 
     next_state = deepcopy(current_state)
     next_state["workflow_stage"] = "completed"
-    next_state["finalization_ready"] = True
+    next_state["finalization_ready"] = bool(readiness.get("ready_for_confirmation"))
     next_state["finalize_confirmation_source"] = normalized_source
     next_state["finalize_preference"] = resolved_preference
     next_state["prd_snapshot"] = {"sections": finalized_sections}
@@ -112,6 +132,18 @@ def create_finalize_session_transition(
         "version": next_state_version,
         "status": "finalized",
         "sections": finalized_sections,
+    }
+    next_state["delivery_milestone"] = {
+        **build_finalize_delivery_milestone(
+            {
+                **next_state,
+                "prd_draft": {
+                    "version": next_state_version,
+                    "status": "finalized",
+                    "sections": finalized_sections,
+                },
+            }
+        ),
     }
 
     try:
