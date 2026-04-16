@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: 首稿生成与证据追溯** - 把澄清结果沉淀为可区分确认状态、可回溯来源的结构化首稿。
 - [x] **Phase 4: PRD 增量编排与收敛确认** - 以章节化、增量更新的方式把会话收束成可确认 PRD 初稿。
 - [x] **Phase 5: 质量复核与交付回放** - 对 PRD 做基础质量检查，并支持导出与回放分析。
-- [ ] **Phase 6: 引导与诊断验证补录** - 为 Phase 1-2 补 phase 级验证证据并校验 guidance 到 diagnostics 的跨阶段链路。
+- [x] **Phase 6: 引导与诊断验证补录** - 为 Phase 1-2 补 phase 级验证证据并校验 guidance 到 diagnostics 的跨阶段链路。
 - [ ] **Phase 7: 首稿与 PRD 收敛验证补录** - 为 Phase 3-4 补验证证据并收口首稿到 panel projection 的跨阶段行为。
 - [ ] **Phase 8: 交付回放与里程碑验收收口** - 为 Phase 5 与整条主线补 milestone 级 integration / E2E 验证并完成归档前一致性修正。
 
@@ -112,9 +112,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — 生成 `01-VERIFICATION.md`，把 GUID requirements 提升为可审计证据
-- [ ] 06-02-PLAN.md — 生成 `02-VERIFICATION.md` 与 `06-INTEGRATION.md`，关闭 `Phase 1 → Phase 2` integration gap
-- [ ] 06-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
+- [x] 06-01-PLAN.md — 生成 `01-VERIFICATION.md`，把 GUID requirements 提升为可审计证据
+- [x] 06-02-PLAN.md — 生成 `02-VERIFICATION.md` 与 `06-INTEGRATION.md`，关闭 `Phase 1 → Phase 2` integration gap
+- [x] 06-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
 
 ### Phase 7: 首稿与 PRD 收敛验证补录
 **Goal**: 为首稿生成、证据追溯与 PRD 章节化收敛补齐验证证据，消除 INTK/PRD requirements 的 orphaned 状态，并收口文档漂移。
@@ -150,6 +150,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
 | 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
 | 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
-| 6. 引导与诊断验证补录 | 0/3 | Planned | - |
+| 6. 引导与诊断验证补录 | 3/3 | Completed | 2026-04-16 |
 | 7. 首稿与 PRD 收敛验证补录 | 0/0 | Planned | - |
 | 8. 交付回放与里程碑验收收口 | 0/0 | Planned | - |

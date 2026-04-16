@@ -15,16 +15,16 @@ Requirements for the current enhancement release. Each maps to roadmap phases.
 
 ### Guided Clarification
 
-- [ ] **GUID-01**: 系统默认采用“先探索、再逐步收紧”的引导节奏，并能在关键节点切换为聚焦澄清或确认模式
-- [ ] **GUID-02**: 系统每轮追问都必须围绕用户、问题、方案、边界、约束或验证路径推进，避免泛泛陪聊式提问
-- [ ] **GUID-03**: 在高不确定节点，系统优先给出 2-4 个可反应选项，并始终提供“都不对，我补充”入口
-- [ ] **GUID-04**: 系统能判断当前更适合继续深挖、比较选项还是开始收敛，并把该判断反映到下一轮引导动作
+- [x] **GUID-01**: 系统默认采用“先探索、再逐步收紧”的引导节奏，并能在关键节点切换为聚焦澄清或确认模式
+- [x] **GUID-02**: 系统每轮追问都必须围绕用户、问题、方案、边界、约束或验证路径推进，避免泛泛陪聊式提问
+- [x] **GUID-03**: 在高不确定节点，系统优先给出 2-4 个可反应选项，并始终提供“都不对，我补充”入口
+- [x] **GUID-04**: 系统能判断当前更适合继续深挖、比较选项还是开始收敛，并把该判断反映到下一轮引导动作
 
 ### Diagnostics
 
-- [ ] **DIAG-01**: 系统能识别用户表达中的矛盾、信息缺口和隐含假设，并以结构化问题或提示的形式暴露给用户
-- [ ] **DIAG-02**: 每个被识别的问题项都必须标明类型（矛盾 / 缺口 / 假设）、影响范围，以及建议下一步澄清动作
-- [ ] **DIAG-03**: 系统必须维护“未知项 / 风险 / 待验证清单”，并随着对话推进持续更新，而不是只在最终导出时一次性总结
+- [x] **DIAG-01**: 系统能识别用户表达中的矛盾、信息缺口和隐含假设，并以结构化问题或提示的形式暴露给用户
+- [x] **DIAG-02**: 每个被识别的问题项都必须标明类型（矛盾 / 缺口 / 假设）、影响范围，以及建议下一步澄清动作
+- [x] **DIAG-03**: 系统必须维护“未知项 / 风险 / 待验证清单”，并随着对话推进持续更新，而不是只在最终导出时一次性总结
 
 ### PRD Composition
 
@@ -77,13 +77,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTK-01 | Phase 7 | Pending |
 | INTK-02 | Phase 7 | Pending |
 | INTK-03 | Phase 7 | Pending |
-| GUID-01 | Phase 6 | Pending |
-| GUID-02 | Phase 6 | Pending |
-| GUID-03 | Phase 6 | Pending |
-| GUID-04 | Phase 6 | Pending |
-| DIAG-01 | Phase 6 | Pending |
-| DIAG-02 | Phase 6 | Pending |
-| DIAG-03 | Phase 6 | Pending |
+| GUID-01 | Phase 6 | Complete |
+| GUID-02 | Phase 6 | Complete |
+| GUID-03 | Phase 6 | Complete |
+| GUID-04 | Phase 6 | Complete |
+| DIAG-01 | Phase 6 | Complete |
+| DIAG-02 | Phase 6 | Complete |
+| DIAG-03 | Phase 6 | Complete |
 | PRD-01 | Phase 7 | Pending |
 | PRD-02 | Phase 7 | Pending |
 | PRD-03 | Phase 7 | Pending |
