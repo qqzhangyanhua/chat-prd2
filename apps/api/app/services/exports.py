@@ -1,9 +1,14 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.repositories import prd as prd_repository
 from app.repositories import sessions as sessions_repository
 from app.repositories import state as state_repository
+from app.services.finalize_session import build_finalize_delivery_milestone
+from app.services.prd_review import build_prd_review
+from app.services.prd_runtime import build_prd_updated_event_data
 
 
 def _compact_text(value: object) -> str:
@@ -119,7 +124,15 @@ def build_export_sections(state: dict, snapshot: dict) -> tuple[dict, bool]:
     if isinstance(prd_draft, dict):
         raw_sections = prd_draft.get("sections")
         if isinstance(raw_sections, dict) and raw_sections:
+            panel_sections = build_prd_updated_event_data(state, {}, {}).get("sections", {})
             normalized = _normalize_export_sections_from_draft(raw_sections)
+            normalized.update(
+                {
+                    key: value
+                    for key, value in panel_sections.items()
+                    if key in {"target_user", "problem", "solution", "mvp_scope", "constraints", "success_metrics", "risks_to_validate", "open_questions"}
+                }
+            )
             return normalized, prd_draft.get("status") == "finalized"
 
     snapshot_sections = snapshot.get("sections", {}) if isinstance(snapshot, dict) else {}
@@ -147,6 +160,7 @@ def build_markdown_export(sections: dict, *, is_final: bool) -> str:
         ("constraints", "约束条件"),
         ("success_metrics", "成功指标"),
         ("out_of_scope", "不做清单"),
+        ("risks_to_validate", "待验证 / 风险"),
         ("open_questions", "待确认问题"),
     ]
 
@@ -163,16 +177,102 @@ def build_markdown_export(sections: dict, *, is_final: bool) -> str:
     return "\n".join(blocks)
 
 
-def export_markdown(db: Session, session_id: str, user_id: str) -> dict[str, str]:
+def _build_handoff_summary(review: dict) -> str:
+    lines: list[str] = []
+    checks = review.get("checks")
+    if isinstance(checks, dict):
+        for key in ("goal_clarity", "scope_boundary", "success_metrics", "risk_exposure", "validation_completeness"):
+            value = checks.get(key)
+            if not isinstance(value, dict):
+                continue
+            verdict = _compact_text(value.get("verdict"))
+            if verdict:
+                lines.append(f"{key}: {verdict}")
+    missing_sections = review.get("missing_sections")
+    if isinstance(missing_sections, list):
+        section_order = {
+            "target_user": 0,
+            "problem": 1,
+            "solution": 2,
+            "mvp_scope": 3,
+            "constraints": 4,
+            "success_metrics": 5,
+            "risks_to_validate": 6,
+            "open_questions": 7,
+        }
+        normalized = sorted(
+            [item for item in missing_sections if isinstance(item, str) and item.strip()],
+            key=lambda item: section_order.get(item, 999),
+        )
+        if normalized:
+            lines.append(f"missing_sections: {', '.join(normalized)}")
+    return "\n".join(lines)
+
+
+def _resolve_appendix_review_summary(review: dict) -> str:
+    checks = review.get("checks")
+    if isinstance(checks, dict):
+        verdicts = {
+            _compact_text(value.get("verdict"))
+            for value in checks.values()
+            if isinstance(value, dict)
+        }
+        if "missing" in verdicts:
+            return "当前 PRD 仍缺少关键章节，尚不能作为稳定交付基线。"
+        if "needs_input" in verdicts:
+            return "当前 PRD 结构已成型，但仍有待验证项或开放风险需要补齐。"
+    return _compact_text(review.get("summary"))
+
+
+def _build_export_appendix(review: dict) -> dict[str, str]:
+    return {
+        "review_summary": _resolve_appendix_review_summary(review),
+        "handoff_summary": _build_handoff_summary(review),
+    }
+
+
+def _append_delivery_appendix(markdown: str, appendix: dict[str, str]) -> str:
+    appendix_blocks: list[str] = []
+    review_summary = _compact_text(appendix.get("review_summary"))
+    handoff_summary = _compact_text(appendix.get("handoff_summary"))
+    if review_summary:
+        appendix_blocks.extend(["", "## 交付附录", review_summary])
+    if handoff_summary:
+        if not appendix_blocks:
+            appendix_blocks.extend(["", "## 交付附录"])
+        appendix_blocks.extend(["", "### Handoff Summary", handoff_summary])
+    if not appendix_blocks:
+        return markdown
+    return f"{markdown}\n" + "\n".join(appendix_blocks)
+
+
+def export_markdown(db: Session, session_id: str, user_id: str) -> dict[str, object]:
     session = sessions_repository.get_session_for_user(db, session_id, user_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
+    file_name = "ai-cofounder-prd.md"
     latest_state = state_repository.get_latest_state(db, session_id) or {}
     snapshot = prd_repository.get_latest_prd_snapshot(db, session_id)
     sections, is_final = build_export_sections(
         latest_state,
         {"sections": snapshot.sections if snapshot else {}},
     )
-    content = build_markdown_export(sections, is_final=is_final)
-    return {"file_name": "ai-cofounder-prd.md", "content": content}
+    review = build_prd_review(latest_state)
+    appendix = _build_export_appendix(review)
+    content = _append_delivery_appendix(
+        build_markdown_export(sections, is_final=is_final),
+        appendix,
+    )
+    return {
+        "file_name": file_name,
+        "content": content,
+        "appendix": appendix,
+        "delivery_milestones": {
+            "finalize": build_finalize_delivery_milestone(latest_state),
+            "export": {
+                "file_name": file_name,
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+            },
+        },
+    }

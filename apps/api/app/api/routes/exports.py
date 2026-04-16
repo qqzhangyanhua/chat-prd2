@@ -14,5 +14,5 @@ def export_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> dict[str, object]:
     return export_service.export_markdown(db, session_id, current_user.id)

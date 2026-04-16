@@ -1512,6 +1512,15 @@ def test_export_keeps_phase4_risk_and_question_sections(
     assert "需确认：用户付费意愿尚未验证" in data["content"]
     assert "## 待确认问题" in data["content"]
     assert "是否愿意持续付费仍需验证" in data["content"]
+    assert "\n## 交付附录\n" in data["content"]
+    assert data["content"].index("## 交付附录") > data["content"].index("## 待确认问题")
+    assert data["appendix"]["review_summary"] == "当前 PRD 结构已成型，但仍有待验证项或开放风险需要补齐。"
+    assert "goal_clarity: pass" in data["appendix"]["handoff_summary"]
+    assert "validation_completeness: needs_input" in data["appendix"]["handoff_summary"]
+    assert data["delivery_milestones"]["finalize"]["confirmation_source"] is None
+    assert data["delivery_milestones"]["finalize"]["prd_snapshot_version"] == 3
+    assert data["delivery_milestones"]["export"]["file_name"] == "ai-cofounder-prd.md"
+    assert data["delivery_milestones"]["export"]["exported_at"]
 
 
 def test_export_returns_draft_status_when_not_finalized(
@@ -1556,6 +1565,11 @@ def test_export_returns_draft_status_when_not_finalized(
     data = response.json()
     assert "状态：草稿" in data["content"]
     assert "草稿用户" in data["content"]
+    assert data["appendix"]["review_summary"] == "当前 PRD 仍缺少关键章节，尚不能作为稳定交付基线。"
+    assert "missing_sections: solution, mvp_scope, constraints, success_metrics" in data["appendix"]["handoff_summary"]
+    assert data["delivery_milestones"]["finalize"]["status"] == "draft"
+    assert data["delivery_milestones"]["finalize"]["confirmation_source"] is None
+    assert data["delivery_milestones"]["export"]["file_name"] == "ai-cofounder-prd.md"
 
 
 def test_finalize_route_moves_ready_session_to_completed(
