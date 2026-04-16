@@ -94,7 +94,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — 后端 review contract 与 snapshot expose，保持 review/panel contract 分离
-- [ ] 05-02-PLAN.md — 导出与交付链路复用后端 projection，保留章节与待验证项
+- [x] 05-02-PLAN.md — 导出与交付链路复用后端 projection，保留章节与待验证项
 - [ ] 05-03-PLAN.md — 单会话 replay timeline 聚合与前端 review/replay 消费
 
 ## Progress

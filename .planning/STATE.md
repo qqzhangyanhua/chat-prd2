@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang-01-PLAN.md
-last_updated: "2026-04-16T05:30:40.697Z"
+stopped_at: Completed 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang-02-PLAN.md
+last_updated: "2026-04-16T05:38:18.342Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-16)
 ## Current Position
 
 Phase: 05 (zhi-liang-fu-he-yu-jiao-fu-hui-fang) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Plan: 2 of 3
 - Trend: Stable
 
 | Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang P01 | 4min | 2 tasks | 6 files |
+| Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang P02 | 7min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Recent decisions affecting current work:
 - Phase 4 execution (04-03): 前端 `prd` store 与右侧 `PrdPanel` 已消费章节化 panel contract，支持 changed section、gap prompts、ready-for-confirmation，并保持 first-draft/evidence 继续留在会话列。
 - Phase 5 planning: 质量复核使用独立 `review contract`；导出继续复用后端 projection；回放先做单会话 timeline 聚合，不新增持久化层。
 - [Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang]: 质量复核独立于 panel projection，通过 prd_review sibling 字段暴露，避免污染 prd_snapshot contract。
+- [Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang]: 导出正文继续完全复用 panel projection，review/handoff 仅作为独立 appendix 追加。
+- [Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang]: finalize/export 里程碑通过现有 state 版本与 export response 暴露，不新增持久化层。
 
 ### Pending Todos
 
@@ -78,10 +81,10 @@ None yet.
 ### Blockers/Concerns
 
 - 前端 mode switch 目前仅做提示，不支持主动切换，这一点在后续阶段仍需评估。
-- Phase 05-01 已完成，下一步执行 05-02 导出链路与 05-03 replay timeline。
+- Phase 05-02 已完成，下一步执行 05-03 replay timeline 聚合与前端消费。
 
 ## Session Continuity
 
-Last session: 2026-04-16T05:30:40.694Z
-Stopped at: Completed 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang-01-PLAN.md
+Last session: 2026-04-16T05:38:18.335Z
+Stopped at: Completed 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang-02-PLAN.md
 Resume file: None
