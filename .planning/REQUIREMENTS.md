@@ -1,0 +1,102 @@
+# Requirements: AI Brainstorming PRD Copilot
+
+**Defined:** 2026-04-16
+**Core Value:** 把个人开发者脑中模糊的产品想法持续压实成可确认、可执行的 PRD，而不是停留在泛泛陪聊。
+
+## v1 Requirements
+
+Requirements for the current enhancement release. Each maps to roadmap phases.
+
+### Intake & Drafting
+
+- [ ] **INTK-01**: 用户输入一句模糊想法后，系统能生成覆盖目标用户、核心问题、方案方向、范围边界与成功标准的结构化首稿
+- [ ] **INTK-02**: 系统生成首稿时，必须把内容区分为“已确认”“推断”“待验证”，不能把未确认信息直接写成确定事实
+- [ ] **INTK-03**: 用户可以查看首稿来源于哪些对话轮次或证据项，而不是只能看到最终成文结果
+
+### Guided Clarification
+
+- [ ] **GUID-01**: 系统默认采用“先探索、再逐步收紧”的引导节奏，并能在关键节点切换为聚焦澄清或确认模式
+- [ ] **GUID-02**: 系统每轮追问都必须围绕用户、问题、方案、边界、约束或验证路径推进，避免泛泛陪聊式提问
+- [ ] **GUID-03**: 在高不确定节点，系统优先给出 2-4 个可反应选项，并始终提供“都不对，我补充”入口
+- [ ] **GUID-04**: 系统能判断当前更适合继续深挖、比较选项还是开始收敛，并把该判断反映到下一轮引导动作
+
+### Diagnostics
+
+- [ ] **DIAG-01**: 系统能识别用户表达中的矛盾、信息缺口和隐含假设，并以结构化问题或提示的形式暴露给用户
+- [ ] **DIAG-02**: 每个被识别的问题项都必须标明类型（矛盾 / 缺口 / 假设）、影响范围，以及建议下一步澄清动作
+- [ ] **DIAG-03**: 系统必须维护“未知项 / 风险 / 待验证清单”，并随着对话推进持续更新，而不是只在最终导出时一次性总结
+
+### PRD Composition
+
+- [ ] **PRD-01**: PRD 视图必须按章节结构化展示，至少包含目标用户、问题、方案、范围边界、成功标准、风险 / 待验证项
+- [ ] **PRD-02**: 系统必须按章节增量更新 PRD，而不是每轮整篇重写，避免用户难以判断哪些内容发生了变化
+- [ ] **PRD-03**: 用户可以在任何时刻看到当前 PRD 仍有哪些关键章节信息不足，系统应提示需要继续澄清的缺口
+- [ ] **PRD-04**: 当系统判断已经具备足够信息时，能够输出结构化 PRD 初稿供用户确认，而不是无限追问
+
+### Review & Handoff
+
+- [ ] **RVW-01**: 系统必须对当前 PRD 给出基础质量检查，至少覆盖目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度
+- [ ] **RVW-02**: 用户确认后，系统可以导出可复制或可下载的结构化 PRD 文本，保留章节与待验证项
+- [ ] **RVW-03**: 系统需要保留引导决策、问题诊断与 PRD 变更记录，以便后续回放、调优与质量评测
+
+## v2 Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### Context Extension
+
+- **CTX-01**: 用户可以导入外部上下文材料（如笔记、链接、代码仓库摘要）增强需求澄清 grounding
+- **CTX-02**: 系统可以基于历史成功样本，为独立开发者自动应用更细分的默认引导风格
+
+### Execution Bridge
+
+- **EXEC-01**: 用户可以在 PRD 稳定后生成 build brief、MVP scope 或 AI coding prompt
+- **EXEC-02**: 系统可以把已确认 PRD 映射为更细的执行前工件，而不仅是导出文档
+
+### Collaboration
+
+- **COLL-01**: 用户可以分享带批注的 PRD 链接给他人协作审阅
+- **COLL-02**: 系统支持多人评论、审阅状态和轻量反馈汇总
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| 通用闲聊人格优化 | 当前目标是更强的需求澄清与收敛，不是让系统更像陪聊助手 |
+| 大而全模板市场 | 会分散模糊想法用户的注意力，优先做少而强的固定收敛骨架 |
+| 过早生成 Jira / Linear 大量任务 | 在需求未收敛前会固化错误理解，返工成本高 |
+| 重型多人协作与审批流 | 当前主要用户是个人开发者，不引入企业型流程复杂度 |
+| 原生移动端产品 | 当前聚焦已有 Web 工作台内把核心引导链路做深 |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| INTK-01 | Phase [TBD] | Pending |
+| INTK-02 | Phase [TBD] | Pending |
+| INTK-03 | Phase [TBD] | Pending |
+| GUID-01 | Phase [TBD] | Pending |
+| GUID-02 | Phase [TBD] | Pending |
+| GUID-03 | Phase [TBD] | Pending |
+| GUID-04 | Phase [TBD] | Pending |
+| DIAG-01 | Phase [TBD] | Pending |
+| DIAG-02 | Phase [TBD] | Pending |
+| DIAG-03 | Phase [TBD] | Pending |
+| PRD-01 | Phase [TBD] | Pending |
+| PRD-02 | Phase [TBD] | Pending |
+| PRD-03 | Phase [TBD] | Pending |
+| PRD-04 | Phase [TBD] | Pending |
+| RVW-01 | Phase [TBD] | Pending |
+| RVW-02 | Phase [TBD] | Pending |
+| RVW-03 | Phase [TBD] | Pending |
+
+**Coverage:**
+- v1 requirements: 17 total
+- Mapped to phases: 0
+- Unmapped: 17 ⚠️
+
+---
+*Requirements defined: 2026-04-16*
+*Last updated: 2026-04-16 after initial definition*
