@@ -125,7 +125,12 @@ Plans:
   1. Phase 3 和 Phase 4 都存在可审计的 `VERIFICATION.md`，覆盖首稿 truth、evidence registry、panel projection、readiness/gap projector 与前端 panel 行为。
   2. 从 draft/evidence 到 PRD panel projection 的跨阶段流转有独立验证记录，能支撑 requirement satisfied 判定。
   3. ROADMAP.md、REQUIREMENTS.md、STATE.md 对 INTK/PRD 完成状态的描述收敛一致。
-**Plans**: 0 plans yet
+**Plans**: 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — 生成 `03-VERIFICATION.md`，把 INTK requirements 提升为可审计证据
+- [ ] 07-02-PLAN.md — 生成 `04-VERIFICATION.md` 与 `07-INTEGRATION.md`，关闭 `Phase 3 → Phase 4` integration gap
+- [ ] 07-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
 
 ### Phase 8: 交付回放与里程碑验收收口
 **Goal**: 为质量复核、导出、回放和整条主线补 milestone 级验证证据，完成归档前的验收闭环。
@@ -151,5 +156,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
 | 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
 | 6. 引导与诊断验证补录 | 3/3 | Completed | 2026-04-16 |
-| 7. 首稿与 PRD 收敛验证补录 | 0/0 | Planned | - |
+| 7. 首稿与 PRD 收敛验证补录 | 0/3 | Planned | - |
 | 8. 交付回放与里程碑验收收口 | 0/0 | Planned | - |
