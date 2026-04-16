@@ -109,7 +109,12 @@ Plans:
   1. Phase 1 和 Phase 2 都存在可审计的 `VERIFICATION.md`，明确 requirement-by-requirement 的验证结论与证据。
   2. guidance contract、options-first、diagnostics ledger 与 session/snapshot 恢复的跨阶段行为有单独的验证记录，而不是只依赖 SUMMARY 声明。
   3. REQUIREMENTS.md 与 ROADMAP.md 中 GUID/DIAG 相关状态与实际验证结果一致。
-**Plans**: 0 plans yet
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — 生成 `01-VERIFICATION.md`，把 GUID requirements 提升为可审计证据
+- [ ] 06-02-PLAN.md — 生成 `02-VERIFICATION.md` 与 `06-INTEGRATION.md`，关闭 `Phase 1 → Phase 2` integration gap
+- [ ] 06-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
 
 ### Phase 7: 首稿与 PRD 收敛验证补录
 **Goal**: 为首稿生成、证据追溯与 PRD 章节化收敛补齐验证证据，消除 INTK/PRD requirements 的 orphaned 状态，并收口文档漂移。
@@ -145,6 +150,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
 | 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
 | 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
-| 6. 引导与诊断验证补录 | 0/0 | Planned | - |
+| 6. 引导与诊断验证补录 | 0/3 | Planned | - |
 | 7. 首稿与 PRD 收敛验证补录 | 0/0 | Planned | - |
 | 8. 交付回放与里程碑验收收口 | 0/0 | Planned | - |
