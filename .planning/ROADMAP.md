@@ -1,165 +1,32 @@
 # Roadmap: AI Brainstorming PRD Copilot
 
-## Overview
+## Milestones
 
-本路线图围绕“把模糊产品想法持续压实成可确认、可执行的 PRD”展开，按能力依赖与产品优先级拆成五个阶段：先把引导节奏和选项式交互做对，再补足矛盾/缺口诊断深度，然后把澄清结果沉淀成带证据的首稿，接着完成按章节增量收敛的 PRD 编排，最后补质量复核、导出与回放能力。
+- ✅ [v1.0 AI Brainstorming PRD Copilot v1](/Users/zhangyanhua/AI/chat-prd2/.planning/milestones/v1.0-ROADMAP.md) — Phases 1-8, 24 plans, shipped 2026-04-16
+- 📋 下一个里程碑尚未定义 — 使用 `$gsd-new-milestone` 启动下一轮需求与路线图
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 AI Brainstorming PRD Copilot v1 (Phases 1-8) — SHIPPED 2026-04-16</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: 引导节奏与选项澄清 — 3/3 plans
+- [x] Phase 2: 诊断深挖与问题台账 — 3/3 plans
+- [x] Phase 3: 首稿生成与证据追溯 — 3/3 plans
+- [x] Phase 4: PRD 增量编排与收敛确认 — 3/3 plans
+- [x] Phase 5: 质量复核与交付回放 — 3/3 plans
+- [x] Phase 6: 引导与诊断验证补录 — 3/3 plans
+- [x] Phase 7: 首稿与 PRD 收敛验证补录 — 3/3 plans
+- [x] Phase 8: 交付回放与里程碑验收收口 — 3/3 plans
 
-- [x] **Phase 1: 引导节奏与选项澄清** - 建立先探索后收紧的默认引导结构与选项式推进机制。
-- [x] **Phase 2: 诊断深挖与问题台账** - 识别矛盾、缺口和假设，并把问题持续维护成可行动清单。
-- [x] **Phase 3: 首稿生成与证据追溯** - 把澄清结果沉淀为可区分确认状态、可回溯来源的结构化首稿。
-- [x] **Phase 4: PRD 增量编排与收敛确认** - 以章节化、增量更新的方式把会话收束成可确认 PRD 初稿。
-- [x] **Phase 5: 质量复核与交付回放** - 对 PRD 做基础质量检查，并支持导出与回放分析。
-- [x] **Phase 6: 引导与诊断验证补录** - 为 Phase 1-2 补 phase 级验证证据并校验 guidance 到 diagnostics 的跨阶段链路。
-- [x] **Phase 7: 首稿与 PRD 收敛验证补录** - 为 Phase 3-4 补验证证据并收口首稿到 panel projection 的跨阶段行为。
-- [x] **Phase 8: 交付回放与里程碑验收收口** - 为 Phase 5 与整条主线补 milestone 级 integration / E2E 验证并完成归档前一致性修正。
-
-## Phase Details
-
-### Phase 1: 引导节奏与选项澄清
-**Goal**: 用户在工作台里获得稳定、可切换的引导节奏，系统能优先用可反应选项推动澄清而不是泛泛追问。
-**Depends on**: Nothing (first phase)
-**Requirements**: GUID-01, GUID-02, GUID-03, GUID-04
-**Success Criteria** (what must be TRUE):
-  1. 用户输入模糊想法后，系统默认先进行开放探索，再在关键节点切换到聚焦澄清或确认模式。
-  2. 每一轮系统追问都明显围绕用户、问题、方案、边界、约束或验证路径推进，而不是闲聊式延展。
-  3. 在高不确定节点，用户能直接从 2-4 个候选选项中反应，并始终看到“都不对，我补充”的入口。
-  4. 用户能感知系统会根据当前上下文在“继续深挖 / 比较选项 / 开始收敛”之间切换下一步动作。
-**Plans**: 3 plans
-
-Plans:
-- [x] 01-01-PLAN.md — 扩展后端 guidance contract 与 decision.ready 结构化字段
-- [x] 01-02-PLAN.md — 让 snapshot / session / SSE guidance 保持同一份真相
-- [x] 01-03-PLAN.md — 消费 guidance contract 并完成工作台引导 UI 渲染
-
-### Phase 2: 诊断深挖与问题台账
-**Goal**: 用户可以看到系统主动指出当前想法中的矛盾、信息缺口和隐含假设，并给出下一步澄清方向。
-**Depends on**: Phase 1
-**Requirements**: DIAG-01, DIAG-02, DIAG-03
-**Success Criteria** (what must be TRUE):
-  1. 当用户前后表达冲突、信息缺失或带有隐含前提时，系统会把这些问题明确暴露出来，而不是继续顺着错误假设生成内容。
-  2. 每个问题项都能让用户看到其类型、影响范围以及建议的下一步澄清动作。
-  3. 用户在对话过程中随时都能看到持续更新的未知项、风险和待验证清单，而不是只在结束时一次性总结。
-**Plans**: 3 plans
-
-Plans:
-- [x] 02-01-PLAN.md — 后端诊断契约与 contradiction/gap/assumption 检测规则
-- [x] 02-02-PLAN.md — 持久化、SSE 与 session snapshot 问题台账贯通
-- [x] 02-03-PLAN.md — 会话列最小诊断 UI 与前端台账消费
-
-### Phase 3: 首稿生成与证据追溯
-**Goal**: 系统把已澄清的内容快速沉淀为结构化首稿，并明确哪些内容已确认、哪些仍是推断或待验证。
-**Depends on**: Phase 2
-**Requirements**: INTK-01, INTK-02, INTK-03
-**Success Criteria** (what must be TRUE):
-  1. 用户输入初始想法并经历基础澄清后，系统能生成覆盖目标用户、核心问题、方案方向、范围边界和成功标准的结构化首稿。
-  2. 用户在首稿中能清楚区分“已确认”“推断”“待验证”内容，不会把未确认信息误看成既定事实。
-  3. 用户查看首稿任一关键内容时，能够回溯到对应的对话轮次或证据项来源。
-**Plans**: 3 plans
-
-Plans:
-- [x] 03-01-PLAN.md — 首稿与 evidence contract：entry 级 assertion_state + 证据 registry
-- [x] 03-02-PLAN.md — enriched prd_draft 持久化、draft.updated 与 snapshot/导出兼容
-- [x] 03-03-PLAN.md — 会话列首稿卡片与证据抽屉，保持 PrdPanel 边界不变
-
-### Phase 4: PRD 增量编排与收敛确认
-**Goal**: 用户可以在对话进行中持续看到按章节增量更新的 PRD，并在信息充分时获得可确认的结构化初稿。
-**Depends on**: Phase 3
-**Requirements**: PRD-01, PRD-02, PRD-03, PRD-04
-**Success Criteria** (what must be TRUE):
-  1. PRD 视图按目标用户、问题、方案、范围边界、成功标准、风险/待验证项等章节结构化展示，而不是杂乱长文。
-  2. 用户在每轮推进后只会看到受影响章节被增量更新，能够直观看出哪些部分发生了变化。
-  3. 当某些关键章节信息不足时，PRD 视图会明确提示缺口，并引导继续澄清。
-  4. 当系统判断信息已经足够时，用户能收到可确认的结构化 PRD 初稿，而不是被无限追问。
-**Plans**: 3 plans
-
-Plans:
-- [x] 04-01-PLAN.md — 后端 panel contract、章节投影与 readiness/gap projector
-- [x] 04-02-PLAN.md — SSE / snapshot / finalize / export 接入统一 PRD projection
-- [x] 04-03-PLAN.md — 前端 store 与 PrdPanel 升级，完成增量高亮、缺口提示和确认 CTA
-
-### Phase 5: 质量复核与交付回放
-**Goal**: 用户在确认 PRD 前后都能获得基础质量反馈、结构化导出结果，以及完整的引导与变更留痕。
-**Depends on**: Phase 4
-**Requirements**: RVW-01, RVW-02, RVW-03
-**Success Criteria** (what must be TRUE):
-  1. 用户查看当前 PRD 时，系统会从目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度等维度给出基础质量检查结果。
-  2. 用户确认后，可以导出保留章节结构和待验证项的结构化 PRD 文本，用于复制或下载。
-  3. 用户或系统后续回放时，能够看到引导决策、问题诊断和 PRD 变更记录，而不是只剩最终文档。
-**Plans**: 3 plans
-
-Plans:
-- [x] 05-01-PLAN.md — 后端 review contract 与 snapshot expose，保持 review/panel contract 分离
-- [x] 05-02-PLAN.md — 导出与交付链路复用后端 projection，保留章节与待验证项
-- [x] 05-03-PLAN.md — 单会话 replay timeline 聚合与前端 review/replay 消费
-
-### Phase 6: 引导与诊断验证补录
-**Goal**: 为已实现的引导与诊断能力补齐 phase 级验证证据，消除 GUID/DIAG requirements 的 orphaned 状态，并确认 guidance 到 diagnostics 的跨阶段链路可追溯。
-**Depends on**: Phase 5
-**Requirements**: GUID-01, GUID-02, GUID-03, GUID-04, DIAG-01, DIAG-02, DIAG-03
-**Gap Closure**: Closes audit requirement gaps for Phases 1-2 and the integration gap from Phase 1 → Phase 2.
-**Success Criteria** (what must be TRUE):
-  1. Phase 1 和 Phase 2 都存在可审计的 `VERIFICATION.md`，明确 requirement-by-requirement 的验证结论与证据。
-  2. guidance contract、options-first、diagnostics ledger 与 session/snapshot 恢复的跨阶段行为有单独的验证记录，而不是只依赖 SUMMARY 声明。
-  3. REQUIREMENTS.md 与 ROADMAP.md 中 GUID/DIAG 相关状态与实际验证结果一致。
-**Plans**: 3 plans
-
-Plans:
-- [x] 06-01-PLAN.md — 生成 `01-VERIFICATION.md`，把 GUID requirements 提升为可审计证据
-- [x] 06-02-PLAN.md — 生成 `02-VERIFICATION.md` 与 `06-INTEGRATION.md`，关闭 `Phase 1 → Phase 2` integration gap
-- [x] 06-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
-
-### Phase 7: 首稿与 PRD 收敛验证补录
-**Goal**: 为首稿生成、证据追溯与 PRD 章节化收敛补齐验证证据，消除 INTK/PRD requirements 的 orphaned 状态，并收口文档漂移。
-**Depends on**: Phase 6
-**Requirements**: INTK-01, INTK-02, INTK-03, PRD-01, PRD-02, PRD-03, PRD-04
-**Gap Closure**: Closes audit requirement gaps for Phases 3-4 and the integration gap from Phase 3 → Phase 4.
-**Success Criteria** (what must be TRUE):
-  1. Phase 3 和 Phase 4 都存在可审计的 `VERIFICATION.md`，覆盖首稿 truth、evidence registry、panel projection、readiness/gap projector 与前端 panel 行为。
-  2. 从 draft/evidence 到 PRD panel projection 的跨阶段流转有独立验证记录，能支撑 requirement satisfied 判定。
-  3. ROADMAP.md、REQUIREMENTS.md、STATE.md 对 INTK/PRD 完成状态的描述收敛一致。
-**Plans**: 3 plans
-
-Plans:
-- [x] 07-01-PLAN.md — 生成 `03-VERIFICATION.md`，把 INTK requirements 提升为可审计证据
-- [x] 07-02-PLAN.md — 生成 `04-VERIFICATION.md` 与 `07-INTEGRATION.md`，关闭 `Phase 3 → Phase 4` integration gap
-- [x] 07-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
-
-### Phase 8: 交付回放与里程碑验收收口
-**Goal**: 为质量复核、导出、回放和整条主线补 milestone 级验证证据，完成归档前的验收闭环。
-**Depends on**: Phase 7
-**Requirements**: RVW-01, RVW-02, RVW-03
-**Gap Closure**: Closes audit requirement gaps for Phase 5, the integration gap from Phase 4 → Phase 5, and the E2E flow gap spanning the full product loop.
-**Success Criteria** (what must be TRUE):
-  1. Phase 5 存在可审计的 `VERIFICATION.md`，覆盖 review/export/replay 的 requirement-level 证据。
-  2. milestone 级 integration / E2E verification artifact 能证明“模糊想法 → 澄清 → 首稿 → PRD → review/export/replay”整条主线可用。
-  3. 归档前所有 planning 文档状态一致，不再出现 completed 与 pending 混杂的漂移。
-**Plans**: 3 plans
-
-Plans:
-- [x] 08-01-PLAN.md — 生成 `05-VERIFICATION.md`，把 RVW requirements 提升为可审计证据
-- [x] 08-02-PLAN.md — 生成 `08-INTEGRATION.md` 与 `08-E2E.md`，关闭 `Phase 4 → Phase 5` 与 milestone 主线 gap
-- [x] 08-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
+</details>
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+| Milestone | Phases | Plans | Status | Shipped |
+|-----------|--------|-------|--------|---------|
+| v1.0 | 8 | 24 | Archived | 2026-04-16 |
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. 引导节奏与选项澄清 | 3/3 | Completed | 2026-04-16 |
-| 2. 诊断深挖与问题台账 | 3/3 | Completed | 2026-04-16 |
-| 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
-| 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
-| 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
-| 6. 引导与诊断验证补录 | 3/3 | Completed | 2026-04-16 |
-| 7. 首稿与 PRD 收敛验证补录 | 3/3 | Completed | 2026-04-16 |
-| 8. 交付回放与里程碑验收收口 | 3/3 | Completed | 2026-04-16 |
+## Next Up
+
+当前没有活动中的 roadmap phase。下一步应该先定义新里程碑目标，再生成新的 `REQUIREMENTS.md` 和 phase 计划。
