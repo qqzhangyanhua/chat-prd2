@@ -15,8 +15,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: 引导节奏与选项澄清** - 建立先探索后收紧的默认引导结构与选项式推进机制。
 - [x] **Phase 2: 诊断深挖与问题台账** - 识别矛盾、缺口和假设，并把问题持续维护成可行动清单。
 - [x] **Phase 3: 首稿生成与证据追溯** - 把澄清结果沉淀为可区分确认状态、可回溯来源的结构化首稿。
-- [ ] **Phase 4: PRD 增量编排与收敛确认** - 以章节化、增量更新的方式把会话收束成可确认 PRD 初稿。
-- [ ] **Phase 5: 质量复核与交付回放** - 对 PRD 做基础质量检查，并支持导出与回放分析。
+- [x] **Phase 4: PRD 增量编排与收敛确认** - 以章节化、增量更新的方式把会话收束成可确认 PRD 初稿。
+- [x] **Phase 5: 质量复核与交付回放** - 对 PRD 做基础质量检查，并支持导出与回放分析。
+- [ ] **Phase 6: 引导与诊断验证补录** - 为 Phase 1-2 补 phase 级验证证据并校验 guidance 到 diagnostics 的跨阶段链路。
+- [ ] **Phase 7: 首稿与 PRD 收敛验证补录** - 为 Phase 3-4 补验证证据并收口首稿到 panel projection 的跨阶段行为。
+- [ ] **Phase 8: 交付回放与里程碑验收收口** - 为 Phase 5 与整条主线补 milestone 级 integration / E2E 验证并完成归档前一致性修正。
 
 ## Phase Details
 
@@ -97,6 +100,39 @@ Plans:
 - [x] 05-02-PLAN.md — 导出与交付链路复用后端 projection，保留章节与待验证项
 - [x] 05-03-PLAN.md — 单会话 replay timeline 聚合与前端 review/replay 消费
 
+### Phase 6: 引导与诊断验证补录
+**Goal**: 为已实现的引导与诊断能力补齐 phase 级验证证据，消除 GUID/DIAG requirements 的 orphaned 状态，并确认 guidance 到 diagnostics 的跨阶段链路可追溯。
+**Depends on**: Phase 5
+**Requirements**: GUID-01, GUID-02, GUID-03, GUID-04, DIAG-01, DIAG-02, DIAG-03
+**Gap Closure**: Closes audit requirement gaps for Phases 1-2 and the integration gap from Phase 1 → Phase 2.
+**Success Criteria** (what must be TRUE):
+  1. Phase 1 和 Phase 2 都存在可审计的 `VERIFICATION.md`，明确 requirement-by-requirement 的验证结论与证据。
+  2. guidance contract、options-first、diagnostics ledger 与 session/snapshot 恢复的跨阶段行为有单独的验证记录，而不是只依赖 SUMMARY 声明。
+  3. REQUIREMENTS.md 与 ROADMAP.md 中 GUID/DIAG 相关状态与实际验证结果一致。
+**Plans**: 0 plans yet
+
+### Phase 7: 首稿与 PRD 收敛验证补录
+**Goal**: 为首稿生成、证据追溯与 PRD 章节化收敛补齐验证证据，消除 INTK/PRD requirements 的 orphaned 状态，并收口文档漂移。
+**Depends on**: Phase 6
+**Requirements**: INTK-01, INTK-02, INTK-03, PRD-01, PRD-02, PRD-03, PRD-04
+**Gap Closure**: Closes audit requirement gaps for Phases 3-4 and the integration gap from Phase 3 → Phase 4.
+**Success Criteria** (what must be TRUE):
+  1. Phase 3 和 Phase 4 都存在可审计的 `VERIFICATION.md`，覆盖首稿 truth、evidence registry、panel projection、readiness/gap projector 与前端 panel 行为。
+  2. 从 draft/evidence 到 PRD panel projection 的跨阶段流转有独立验证记录，能支撑 requirement satisfied 判定。
+  3. ROADMAP.md、REQUIREMENTS.md、STATE.md 对 INTK/PRD 完成状态的描述收敛一致。
+**Plans**: 0 plans yet
+
+### Phase 8: 交付回放与里程碑验收收口
+**Goal**: 为质量复核、导出、回放和整条主线补 milestone 级验证证据，完成归档前的验收闭环。
+**Depends on**: Phase 7
+**Requirements**: RVW-01, RVW-02, RVW-03
+**Gap Closure**: Closes audit requirement gaps for Phase 5, the integration gap from Phase 4 → Phase 5, and the E2E flow gap spanning the full product loop.
+**Success Criteria** (what must be TRUE):
+  1. Phase 5 存在可审计的 `VERIFICATION.md`，覆盖 review/export/replay 的 requirement-level 证据。
+  2. milestone 级 integration / E2E verification artifact 能证明“模糊想法 → 澄清 → 首稿 → PRD → review/export/replay”整条主线可用。
+  3. 归档前所有 planning 文档状态一致，不再出现 completed 与 pending 混杂的漂移。
+**Plans**: 0 plans yet
+
 ## Progress
 
 **Execution Order:**
@@ -109,3 +145,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
 | 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
 | 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
+| 6. 引导与诊断验证补录 | 0/0 | Planned | - |
+| 7. 首稿与 PRD 收敛验证补录 | 0/0 | Planned | - |
+| 8. 交付回放与里程碑验收收口 | 0/0 | Planned | - |

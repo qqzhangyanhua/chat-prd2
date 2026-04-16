@@ -35,9 +35,9 @@ Requirements for the current enhancement release. Each maps to roadmap phases.
 
 ### Review & Handoff
 
-- [x] **RVW-01**: 系统必须对当前 PRD 给出基础质量检查，至少覆盖目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度
-- [x] **RVW-02**: 用户确认后，系统可以导出可复制或可下载的结构化 PRD 文本，保留章节与待验证项
-- [x] **RVW-03**: 系统需要保留引导决策、问题诊断与 PRD 变更记录，以便后续回放、调优与质量评测
+- [ ] **RVW-01**: 系统必须对当前 PRD 给出基础质量检查，至少覆盖目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度
+- [ ] **RVW-02**: 用户确认后，系统可以导出可复制或可下载的结构化 PRD 文本，保留章节与待验证项
+- [ ] **RVW-03**: 系统需要保留引导决策、问题诊断与 PRD 变更记录，以便后续回放、调优与质量评测
 
 ## v2 Requirements
 
@@ -74,23 +74,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTK-01 | Phase 3 | Pending |
-| INTK-02 | Phase 3 | Pending |
-| INTK-03 | Phase 3 | Pending |
-| GUID-01 | Phase 1 | Pending |
-| GUID-02 | Phase 1 | Pending |
-| GUID-03 | Phase 1 | Pending |
-| GUID-04 | Phase 1 | Pending |
-| DIAG-01 | Phase 2 | Pending |
-| DIAG-02 | Phase 2 | Pending |
-| DIAG-03 | Phase 2 | Pending |
-| PRD-01 | Phase 4 | Pending |
-| PRD-02 | Phase 4 | Pending |
-| PRD-03 | Phase 4 | Pending |
-| PRD-04 | Phase 4 | Pending |
-| RVW-01 | Phase 5 | Complete |
-| RVW-02 | Phase 5 | Complete |
-| RVW-03 | Phase 5 | Complete |
+| INTK-01 | Phase 7 | Pending |
+| INTK-02 | Phase 7 | Pending |
+| INTK-03 | Phase 7 | Pending |
+| GUID-01 | Phase 6 | Pending |
+| GUID-02 | Phase 6 | Pending |
+| GUID-03 | Phase 6 | Pending |
+| GUID-04 | Phase 6 | Pending |
+| DIAG-01 | Phase 6 | Pending |
+| DIAG-02 | Phase 6 | Pending |
+| DIAG-03 | Phase 6 | Pending |
+| PRD-01 | Phase 7 | Pending |
+| PRD-02 | Phase 7 | Pending |
+| PRD-03 | Phase 7 | Pending |
+| PRD-04 | Phase 7 | Pending |
+| RVW-01 | Phase 8 | Pending |
+| RVW-02 | Phase 8 | Pending |
+| RVW-03 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 17 total
