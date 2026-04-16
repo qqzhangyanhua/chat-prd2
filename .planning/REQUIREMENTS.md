@@ -9,9 +9,9 @@ Requirements for the current enhancement release. Each maps to roadmap phases.
 
 ### Intake & Drafting
 
-- [ ] **INTK-01**: 用户输入一句模糊想法后，系统能生成覆盖目标用户、核心问题、方案方向、范围边界与成功标准的结构化首稿
-- [ ] **INTK-02**: 系统生成首稿时，必须把内容区分为“已确认”“推断”“待验证”，不能把未确认信息直接写成确定事实
-- [ ] **INTK-03**: 用户可以查看首稿来源于哪些对话轮次或证据项，而不是只能看到最终成文结果
+- [x] **INTK-01**: 用户输入一句模糊想法后，系统能生成覆盖目标用户、核心问题、方案方向、范围边界与成功标准的结构化首稿
+- [x] **INTK-02**: 系统生成首稿时，必须把内容区分为“已确认”“推断”“待验证”，不能把未确认信息直接写成确定事实
+- [x] **INTK-03**: 用户可以查看首稿来源于哪些对话轮次或证据项，而不是只能看到最终成文结果
 
 ### Guided Clarification
 
@@ -28,10 +28,10 @@ Requirements for the current enhancement release. Each maps to roadmap phases.
 
 ### PRD Composition
 
-- [ ] **PRD-01**: PRD 视图必须按章节结构化展示，至少包含目标用户、问题、方案、范围边界、成功标准、风险 / 待验证项
-- [ ] **PRD-02**: 系统必须按章节增量更新 PRD，而不是每轮整篇重写，避免用户难以判断哪些内容发生了变化
-- [ ] **PRD-03**: 用户可以在任何时刻看到当前 PRD 仍有哪些关键章节信息不足，系统应提示需要继续澄清的缺口
-- [ ] **PRD-04**: 当系统判断已经具备足够信息时，能够输出结构化 PRD 初稿供用户确认，而不是无限追问
+- [x] **PRD-01**: PRD 视图必须按章节结构化展示，至少包含目标用户、问题、方案、范围边界、成功标准、风险 / 待验证项
+- [x] **PRD-02**: 系统必须按章节增量更新 PRD，而不是每轮整篇重写，避免用户难以判断哪些内容发生了变化
+- [x] **PRD-03**: 用户可以在任何时刻看到当前 PRD 仍有哪些关键章节信息不足，系统应提示需要继续澄清的缺口
+- [x] **PRD-04**: 当系统判断已经具备足够信息时，能够输出结构化 PRD 初稿供用户确认，而不是无限追问
 
 ### Review & Handoff
 
@@ -74,9 +74,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTK-01 | Phase 7 | Pending |
-| INTK-02 | Phase 7 | Pending |
-| INTK-03 | Phase 7 | Pending |
+| INTK-01 | Phase 7 | Complete |
+| INTK-02 | Phase 7 | Complete |
+| INTK-03 | Phase 7 | Complete |
 | GUID-01 | Phase 6 | Complete |
 | GUID-02 | Phase 6 | Complete |
 | GUID-03 | Phase 6 | Complete |
@@ -84,10 +84,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DIAG-01 | Phase 6 | Complete |
 | DIAG-02 | Phase 6 | Complete |
 | DIAG-03 | Phase 6 | Complete |
-| PRD-01 | Phase 7 | Pending |
-| PRD-02 | Phase 7 | Pending |
-| PRD-03 | Phase 7 | Pending |
-| PRD-04 | Phase 7 | Pending |
+| PRD-01 | Phase 7 | Complete |
+| PRD-02 | Phase 7 | Complete |
+| PRD-03 | Phase 7 | Complete |
+| PRD-04 | Phase 7 | Complete |
 | RVW-01 | Phase 8 | Pending |
 | RVW-02 | Phase 8 | Pending |
 | RVW-03 | Phase 8 | Pending |
