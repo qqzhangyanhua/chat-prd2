@@ -29,11 +29,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. 每一轮系统追问都明显围绕用户、问题、方案、边界、约束或验证路径推进，而不是闲聊式延展。
   3. 在高不确定节点，用户能直接从 2-4 个候选选项中反应，并始终看到“都不对，我补充”的入口。
   4. 用户能感知系统会根据当前上下文在“继续深挖 / 比较选项 / 开始收敛”之间切换下一步动作。
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — 扩展后端 guidance contract、snapshot 与 SSE 一致性
-- [ ] 01-02-PLAN.md — 消费 guidance contract 并完成工作台引导 UI 渲染
+- [ ] 01-01-PLAN.md — 扩展后端 guidance contract 与 decision.ready 结构化字段
+- [ ] 01-02-PLAN.md — 让 snapshot / session / SSE guidance 保持同一份真相
+- [ ] 01-03-PLAN.md — 消费 guidance contract 并完成工作台引导 UI 渲染
 
 ### Phase 2: 诊断深挖与问题台账
 **Goal**: 用户可以看到系统主动指出当前想法中的矛盾、信息缺口和隐含假设，并给出下一步澄清方向。
