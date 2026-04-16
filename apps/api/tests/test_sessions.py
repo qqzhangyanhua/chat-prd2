@@ -242,6 +242,22 @@ def test_create_session_returns_initial_state(auth_client):
     assert data["session"]["title"] == "AI Co-founder"
     assert data["state"]["stage_hint"] == "问题探索"
     assert data["prd_snapshot"]["sections"] == {}
+    assert data["prd_review"]["verdict"] == "revise"
+    assert set(data["prd_review"]["checks"].keys()) == {
+        "goal_clarity",
+        "scope_boundary",
+        "success_metrics",
+        "risk_exposure",
+        "validation_completeness",
+    }
+    assert data["prd_review"]["missing_sections"] == [
+        "constraints",
+        "mvp_scope",
+        "problem",
+        "solution",
+        "success_metrics",
+        "target_user",
+    ]
 
 
 def test_create_session_persists_phase1_default_state(auth_client, testing_session_local):
@@ -402,6 +418,10 @@ def test_get_session_snapshot_backfills_legacy_state_when_explicit_closure_field
     assert result.state.prd_draft is not None
     assert result.state.critic_result is not None
     assert result.state.finalization_ready is False
+    assert result.prd_review.verdict == "revise"
+    assert result.prd_review.status == "drafting"
+    assert "constraints" in result.prd_review.missing_sections
+    assert "success_metrics" in result.prd_review.missing_sections
 
 
 def test_get_session_snapshot_backfills_ready_legacy_state_to_finalize_only(db_session):
@@ -425,6 +445,187 @@ def test_get_session_snapshot_backfills_ready_legacy_state_to_finalize_only(db_s
     assert result.state.finalization_ready is True
     assert result.state.prd_draft is not None
     assert result.state.prd_draft["status"] != "finalized"
+
+
+def test_get_session_snapshot_returns_panel_projection_shape_from_structured_draft(auth_client, seeded_session, testing_session_local):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "refine_loop",
+                    "prd_draft": {
+                        "version": 3,
+                        "status": "drafting",
+                        "summary": {
+                            "section_keys": ["target_user"],
+                        },
+                        "sections": {
+                        "target_user": {
+                            "title": "目标用户",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-target-user-1",
+                                    "text": "第一版先服务独立开发者。",
+                                    "assertion_state": "confirmed",
+                                    "evidence_ref_ids": ["evidence-1"],
+                                }
+                            ],
+                        },
+                        "problem": {
+                            "title": "核心问题",
+                            "completeness": "partial",
+                            "entries": [
+                                {
+                                    "id": "entry-problem-1",
+                                    "text": "需求确认成本仍然过高。",
+                                    "assertion_state": "inferred",
+                                    "evidence_ref_ids": ["evidence-2"],
+                                }
+                            ],
+                        },
+                        "success_metrics": {
+                            "title": "成功指标",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-metric-1",
+                                    "text": "7 天内完成一次可确认初稿。",
+                                    "assertion_state": "to_validate",
+                                    "evidence_ref_ids": ["evidence-3"],
+                                }
+                            ],
+                        },
+                    },
+                },
+                "diagnostics": [
+                    {
+                        "id": "risk-1",
+                        "type": "assumption",
+                        "bucket": "risk",
+                        "status": "open",
+                        "title": "默认只做 Web 端",
+                        "detail": "首发载体仍待确认。",
+                        "impact_scope": ["mvp_scope"],
+                        "suggested_next_step": {
+                            "action_kind": "ask_user",
+                            "label": "确认首发载体",
+                            "prompt": "第一版是不是只做 Web 端？",
+                        },
+                        "confidence": "medium",
+                    }
+                ],
+                "diagnostic_summary": {
+                    "open_count": 1,
+                    "unknown_count": 0,
+                    "risk_count": 1,
+                    "to_validate_count": 0,
+                },
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    snapshot = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert snapshot.status_code == 200
+    data = snapshot.json()
+
+    assert "target_user" in data["prd_snapshot"]["sections"]
+    assert "risks_to_validate" in data["prd_snapshot"]["sections"]
+    assert "open_questions" in data["prd_snapshot"]["sections"]
+    assert data["prd_snapshot"]["sections_changed"] == ["target_user"]
+    assert data["prd_snapshot"]["missing_sections"] == ["solution", "mvp_scope", "constraints"]
+    assert data["prd_snapshot"]["gap_prompts"] == [
+        "请补充「solution」内容",
+        "请补充「mvp_scope」内容",
+        "请补充「constraints」内容",
+        "「success_metrics」已有内容，但仍存在待验证项，请先补齐验证信息。",
+        "当前仍有 1 个开放风险待处理，请先完成关键确认。",
+    ]
+    assert data["prd_snapshot"]["ready_for_confirmation"] is False
+    assert data["prd_snapshot"]["meta"]["stageLabel"] == "草稿中"
+    assert data["prd_snapshot"]["sections"]["target_user"]["title"] == "目标用户"
+    assert data["prd_snapshot"]["sections"]["target_user"]["content"] == "第一版先服务独立开发者。"
+    assert data["prd_snapshot"]["sections"]["problem"]["status"] == "inferred"
+    assert data["prd_review"]["verdict"] == "needs_input"
+    assert data["prd_review"]["status"] == "needs_input"
+    assert data["prd_review"]["missing_sections"] == ["constraints", "mvp_scope", "solution"]
+    assert data["prd_review"]["checks"]["goal_clarity"]["verdict"] == "pass"
+    assert data["prd_review"]["checks"]["scope_boundary"]["verdict"] == "missing"
+    assert data["prd_review"]["checks"]["success_metrics"]["verdict"] == "needs_input"
+    assert data["prd_review"]["checks"]["risk_exposure"]["verdict"] == "needs_input"
+    assert data["prd_review"]["checks"]["validation_completeness"]["verdict"] == "needs_input"
+
+
+def test_get_session_snapshot_preserves_prd_panel_contract_after_stream_refresh(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+    monkeypatch,
+):
+    model_config_id = _create_enabled_model_config(testing_session_local)
+    _mock_gateway_reply(
+        monkeypatch,
+        prd_updates={
+            "target_user": {
+                "title": "目标用户",
+                "content": "独立开发者",
+                "status": "confirmed",
+            },
+            "success_metrics": {
+                "title": "成功指标",
+                "content": "7 天内完成一次 PRD 初稿",
+                "status": "draft",
+            },
+        },
+    )
+
+    with auth_client.stream(
+        "POST",
+        f"/api/sessions/{seeded_session}/messages",
+        json={
+            "content": "先服务独立开发者，成功指标后面再补",
+            "model_config_id": model_config_id,
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    parsed_events: list[tuple[str, dict]] = []
+    current_event = None
+    for line in body.splitlines():
+        if line.startswith("event: "):
+            current_event = line.removeprefix("event: ").strip()
+            continue
+        if line.startswith("data: ") and current_event is not None:
+            parsed_events.append((current_event, json.loads(line.removeprefix("data: "))))
+            current_event = None
+
+    prd_payload = next(payload for name, payload in parsed_events if name == "prd.updated")
+
+    response = auth_client.get(f"/api/sessions/{seeded_session}")
+    assert response.status_code == 200
+    snapshot = response.json()["prd_snapshot"]
+
+    assert snapshot["sections"] == prd_payload["sections"]
+    assert snapshot["sections_changed"] == prd_payload["sections_changed"]
+    assert snapshot["missing_sections"] == prd_payload["missing_sections"]
+    assert snapshot["gap_prompts"] == prd_payload["gap_prompts"]
+    assert snapshot["ready_for_confirmation"] == prd_payload["ready_for_confirmation"]
+    assert snapshot["meta"] == prd_payload["meta"]
 
 
 def test_get_session_snapshot_rolls_back_legacy_backfill_failure(db_session, monkeypatch):
@@ -1162,6 +1363,157 @@ def test_export_prefers_finalized_prd_draft_over_legacy_snapshot(
     assert "旧快照用户" not in data["content"]
 
 
+def test_export_keeps_phase4_risk_and_question_sections(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "completed",
+                "prd_draft": {
+                    "version": 3,
+                    "status": "finalized",
+                    "summary": {
+                        "section_keys": ["target_user", "success_metrics"],
+                    },
+                    "sections": {
+                        "target_user": {
+                            "title": "目标用户",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-user-1",
+                                    "text": "独立开发者",
+                                    "assertion_state": "confirmed",
+                                    "evidence_ref_ids": ["evidence-user-1"],
+                                }
+                            ],
+                        },
+                        "problem": {
+                            "title": "核心问题",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-problem-1",
+                                    "text": "需求收敛慢",
+                                    "assertion_state": "confirmed",
+                                    "evidence_ref_ids": ["evidence-problem-1"],
+                                }
+                            ],
+                        },
+                        "solution": {
+                            "title": "解决方案",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-solution-1",
+                                    "text": "结构化协作",
+                                    "assertion_state": "confirmed",
+                                    "evidence_ref_ids": ["evidence-solution-1"],
+                                }
+                            ],
+                        },
+                        "mvp_scope": {
+                            "title": "MVP 范围",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-scope-1",
+                                    "text": "会话 + 导出",
+                                    "assertion_state": "confirmed",
+                                    "evidence_ref_ids": ["evidence-scope-1"],
+                                }
+                            ],
+                        },
+                        "constraints": {
+                            "title": "约束条件",
+                            "completeness": "complete",
+                            "entries": [
+                                {
+                                    "id": "entry-constraint-1",
+                                    "text": "首版只做网页端",
+                                    "assertion_state": "confirmed",
+                                    "evidence_ref_ids": ["evidence-constraint-1"],
+                                }
+                            ],
+                        },
+                        "success_metrics": {
+                            "title": "成功指标",
+                            "completeness": "partial",
+                            "entries": [
+                                {
+                                    "id": "entry-metric-1",
+                                    "text": "7 天内完成一版 PRD",
+                                    "assertion_state": "to_validate",
+                                    "evidence_ref_ids": ["evidence-metric-1"],
+                                }
+                            ],
+                        },
+                        "open_questions": {
+                            "title": "待确认问题",
+                            "completeness": "partial",
+                            "entries": [
+                                {
+                                    "id": "entry-question-1",
+                                    "text": "是否愿意持续付费仍需验证",
+                                    "assertion_state": "to_validate",
+                                    "evidence_ref_ids": ["evidence-question-1"],
+                                }
+                            ],
+                        },
+                    },
+                },
+                "critic_result": {"overall_verdict": "pass", "question_queue": []},
+                "diagnostics": [
+                    {
+                        "id": "diag-risk-1",
+                        "bucket": "risk",
+                        "title": "用户付费意愿尚未验证",
+                        "status": "open",
+                    }
+                ],
+                "diagnostic_summary": {
+                    "open_count": 1,
+                    "unknown_count": 0,
+                    "risk_count": 1,
+                    "to_validate_count": 1,
+                },
+                "finalization_ready": True,
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = auth_client.post(
+        f"/api/sessions/{seeded_session}/export",
+        json={"format": "md"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "## 待验证 / 风险" in data["content"]
+    assert "需确认：用户付费意愿尚未验证" in data["content"]
+    assert "## 待确认问题" in data["content"]
+    assert "是否愿意持续付费仍需验证" in data["content"]
+
+
 def test_export_returns_draft_status_when_not_finalized(
     auth_client,
     seeded_session,
@@ -1232,6 +1584,8 @@ def test_finalize_route_moves_ready_session_to_completed(
                         "problem": {"title": "核心问题", "content": "需求沟通低效", "status": "confirmed"},
                         "solution": {"title": "解决方案", "content": "结构化协作", "status": "confirmed"},
                         "mvp_scope": {"title": "MVP 范围", "content": "会话 + 导出", "status": "confirmed"},
+                        "constraints": {"title": "约束条件", "content": "两周内上线", "status": "confirmed"},
+                        "success_metrics": {"title": "成功指标", "content": "7 天内完成可确认初稿", "status": "confirmed"},
                     },
                 },
             },
@@ -1284,6 +1638,18 @@ def test_finalize_route_rejects_invalid_confirmation_source(
                 **session_service.build_initial_state(session.initial_idea),
                 "workflow_stage": "finalize",
                 "finalization_ready": True,
+                "prd_draft": {
+                    "version": 2,
+                    "status": "draft_refined",
+                    "sections": {
+                        "target_user": {"title": "目标用户", "content": "产品经理", "status": "confirmed"},
+                        "problem": {"title": "核心问题", "content": "需求沟通低效", "status": "confirmed"},
+                        "solution": {"title": "解决方案", "content": "结构化协作", "status": "confirmed"},
+                        "mvp_scope": {"title": "MVP 范围", "content": "会话 + 导出", "status": "confirmed"},
+                        "constraints": {"title": "约束条件", "content": "两周内上线", "status": "confirmed"},
+                        "success_metrics": {"title": "成功指标", "content": "7 天内完成可确认初稿", "status": "confirmed"},
+                    },
+                },
             },
         )
         prd_repository.create_prd_snapshot(
