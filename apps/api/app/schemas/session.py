@@ -6,6 +6,7 @@ from app.schemas.message import AssistantReplyGroupResponse
 from app.schemas.message import AgentTurnDecisionResponse
 from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
+from app.schemas.replay import ReplayTimelineItemResponse
 from app.schemas.review import PrdReviewResponse
 from app.schemas.state import StateSnapshot
 
@@ -38,6 +39,7 @@ class SessionCreateResponse(BaseModel):
     state: StateSnapshot
     prd_snapshot: PrdSnapshotResponse
     prd_review: PrdReviewResponse
+    replay_timeline: list[ReplayTimelineItemResponse] = Field(default_factory=list)
     messages: list[ConversationMessageResponse] = Field(default_factory=list)
     assistant_reply_groups: list[AssistantReplyGroupResponse] = Field(default_factory=list)
     turn_decisions: list[AgentTurnDecisionResponse] = Field(default_factory=list)

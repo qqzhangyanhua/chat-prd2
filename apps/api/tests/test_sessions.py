@@ -1572,6 +1572,191 @@ def test_export_returns_draft_status_when_not_finalized(
     assert data["delivery_milestones"]["export"]["file_name"] == "ai-cofounder-prd.md"
 
 
+def test_get_session_snapshot_returns_replay_timeline_with_delivery_milestones(
+    auth_client,
+    seeded_session,
+    testing_session_local,
+):
+    db = testing_session_local()
+    try:
+        session = db.get(ProjectSession, seeded_session)
+        assert session is not None
+        user_id = session.user_id
+
+        state_repository.create_state_version(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            state_json={
+                **session_service.build_initial_state(session.initial_idea),
+                "workflow_stage": "completed",
+                "finalization_ready": True,
+                "finalize_confirmation_source": "button",
+                "finalize_preference": "business",
+                "prd_draft": {
+                    "version": 3,
+                    "status": "finalized",
+                    "sections": {
+                        "target_user": {"title": "目标用户", "content": "独立开发者", "status": "confirmed"},
+                        "problem": {"title": "核心问题", "content": "需求确认成本高", "status": "confirmed"},
+                        "solution": {"title": "解决方案", "content": "单会话 replay", "status": "confirmed"},
+                        "mvp_scope": {"title": "MVP 范围", "content": "只做 narrative timeline", "status": "confirmed"},
+                        "constraints": {"title": "约束条件", "content": "不新增持久化层", "status": "confirmed"},
+                        "success_metrics": {"title": "成功指标", "content": "用户能看懂为什么变成现在这样", "status": "confirmed"},
+                        "open_questions": {"title": "待确认问题", "content": "是否需要跨会话对比", "status": "inferred"},
+                    },
+                },
+                "diagnostics": [
+                    {
+                        "id": "diagnostic-risk-1",
+                        "type": "assumption",
+                        "bucket": "risk",
+                        "status": "open",
+                        "title": "用户是否真的需要回放",
+                        "detail": "仍需验证 replay 的实际使用频率。",
+                        "impact_scope": ["success_metrics"],
+                        "suggested_next_step": {
+                            "action_kind": "ask_user",
+                            "label": "确认使用频率",
+                            "prompt": "你预计一周会回看几次？",
+                        },
+                        "confidence": "medium",
+                    }
+                ],
+                "delivery_milestone": {
+                    "status": "finalized",
+                    "prd_snapshot_version": 3,
+                    "confirmation_source": "button",
+                    "finalize_preference": "business",
+                },
+            },
+        )
+        prd_repository.create_prd_snapshot(
+            db=db,
+            session_id=seeded_session,
+            version=2,
+            sections={
+                "target_user": {"title": "目标用户", "content": "独立开发者", "status": "confirmed"},
+                "problem": {"title": "核心问题", "content": "需求确认成本高", "status": "confirmed"},
+            },
+        )
+        user_message = ConversationMessage(
+            id="message-user-1",
+            session_id=seeded_session,
+            role="user",
+            content="我想让用户回看 PRD 为什么会变成这样。",
+            message_type="chat",
+        )
+        assistant_message = ConversationMessage(
+            id="message-assistant-1",
+            session_id=seeded_session,
+            role="assistant",
+            content="我们先把 guidance、diagnostics 和 PRD 变化串起来。",
+            message_type="chat",
+        )
+        db.add_all([user_message, assistant_message])
+        reply_group = AssistantReplyGroup(
+            id="reply-group-1",
+            session_id=seeded_session,
+            user_message_id="message-user-1",
+            latest_version_id="reply-version-1",
+        )
+        reply_version = AssistantReplyVersion(
+            id="reply-version-1",
+            reply_group_id="reply-group-1",
+            session_id=seeded_session,
+            user_message_id="message-user-1",
+            version_no=1,
+            content="我们先把 guidance、diagnostics 和 PRD 变化串起来。",
+            action_snapshot={},
+            model_meta={},
+            state_version_id=None,
+            prd_snapshot_version=2,
+        )
+        db.add_all([reply_group, reply_version])
+        decision = AgentTurnDecision(
+            id="decision-replay-1",
+            session_id=seeded_session,
+            user_message_id="message-user-1",
+            phase="solution",
+            phase_goal="先聚合单会话 replay timeline",
+            understanding_summary="用户想知道 PRD 为什么变成现在这样。",
+            assumptions_json=[],
+            risk_flags_json=["user_too_broad"],
+            next_move="force_rank_or_choose",
+            suggestions_json=[],
+            recommendation_json={"label": "先做单会话 replay"},
+            needs_confirmation_json=[],
+            confidence="medium",
+            state_patch_json={
+                "strategy_reason": "先让用户看到关键决策和变更，再考虑更细 diff。",
+                "conversation_strategy": "choose",
+                "next_best_questions": ["你最想先看 guidance 还是 PRD 变化？"],
+                "diagnostics": [
+                    {
+                        "id": "diagnostic-risk-1",
+                        "type": "assumption",
+                        "bucket": "risk",
+                        "status": "open",
+                        "title": "用户是否真的需要回放",
+                        "detail": "仍需验证 replay 的实际使用频率。",
+                        "impact_scope": ["success_metrics"],
+                        "suggested_next_step": {
+                            "action_kind": "ask_user",
+                            "label": "确认使用频率",
+                            "prompt": "你预计一周会回看几次？",
+                        },
+                        "confidence": "medium",
+                    }
+                ],
+                "prd_draft": {
+                    "summary": {
+                        "section_keys": ["solution", "mvp_scope"],
+                        "entry_ids": ["entry-solution-1"],
+                        "evidence_ids": ["evidence-1"],
+                    },
+                },
+            },
+            prd_patch_json={
+                "solution": {
+                    "title": "解决方案",
+                    "content": "提供单会话 replay timeline。",
+                    "status": "confirmed",
+                },
+                "mvp_scope": {
+                    "title": "MVP 范围",
+                    "content": "guidance / diagnostics / prd change / milestone",
+                    "status": "confirmed",
+                },
+            },
+        )
+        db.add(decision)
+        db.commit()
+    finally:
+        db.close()
+
+    result = session_service.get_session_snapshot(testing_session_local(), seeded_session, user_id)
+
+    assert result.prd_review.verdict in {"pass", "revise"}
+    event_types = [item.type for item in result.replay_timeline]
+    assert event_types == [
+        "guidance",
+        "diagnostics",
+        "prd_delta",
+        "finalize",
+        "export",
+    ]
+    assert result.replay_timeline[0].summary.startswith("先让用户看到关键决策")
+    assert "用户是否真的需要回放" in result.replay_timeline[1].summary
+    assert result.replay_timeline[2].sections_changed == ["mvp_scope", "solution"]
+    assert "提供单会话 replay timeline" in result.replay_timeline[2].summary
+    assert result.replay_timeline[-2].type == "finalize"
+    assert result.replay_timeline[-2].metadata["confirmation_source"] == "button"
+    assert result.replay_timeline[-1].type == "export"
+    assert result.replay_timeline[-1].metadata["file_name"] == "ai-cofounder-prd.md"
+    assert result.replay_timeline[-1].metadata["finalize_preference"] == "business"
+
+
 def test_finalize_route_moves_ready_session_to_completed(
     auth_client,
     seeded_session,

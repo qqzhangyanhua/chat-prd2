@@ -19,6 +19,7 @@ from app.schemas.message import AssistantReplyVersionResponse
 from app.schemas.message import ConversationMessageResponse
 from app.schemas.prd import PrdSnapshotResponse
 from app.schemas.review import PrdReviewResponse
+from app.schemas.replay import ReplayTimelineItemResponse
 from app.schemas.session import (
     SessionCreateRequest,
     SessionCreateResponse,
@@ -31,6 +32,7 @@ from app.services import legacy_session_backfill as legacy_backfill_service
 from app.services.message_state import build_diagnostics_payload, build_guidance_payload
 from app.services.prd_review import build_prd_review
 from app.services.prd_runtime import build_prd_snapshot_payload
+from app.services.session_replay import build_session_replay_timeline
 
 
 def build_reply_sections(
@@ -479,6 +481,7 @@ def create_session(
             )
         ),
         prd_review=PrdReviewResponse.model_validate(build_prd_review(initial_state)),
+        replay_timeline=[],
         messages=[],
         assistant_reply_groups=[],
         turn_decisions=[],
@@ -529,6 +532,15 @@ def get_session_snapshot(db: Session, session_id: str, user_id: str) -> SessionC
             )
         ),
         prd_review=PrdReviewResponse.model_validate(build_prd_review(state_version.state_json)),
+        replay_timeline=[
+            ReplayTimelineItemResponse.model_validate(item)
+            for item in build_session_replay_timeline(
+                state=state_version.state_json,
+                messages=messages,
+                assistant_reply_groups=assistant_reply_groups,
+                turn_decisions=turn_decisions,
+            )
+        ],
         messages=messages,
         assistant_reply_groups=assistant_reply_groups,
         turn_decisions=turn_decisions,
