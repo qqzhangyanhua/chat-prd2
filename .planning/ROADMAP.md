@@ -95,7 +95,7 @@ Plans:
 Plans:
 - [x] 05-01-PLAN.md — 后端 review contract 与 snapshot expose，保持 review/panel contract 分离
 - [x] 05-02-PLAN.md — 导出与交付链路复用后端 projection，保留章节与待验证项
-- [ ] 05-03-PLAN.md — 单会话 replay timeline 聚合与前端 review/replay 消费
+- [x] 05-03-PLAN.md — 单会话 replay timeline 聚合与前端 review/replay 消费
 
 ## Progress
 
@@ -108,4 +108,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. 诊断深挖与问题台账 | 3/3 | Completed | 2026-04-16 |
 | 3. 首稿生成与证据追溯 | 3/3 | Completed | 2026-04-16 |
 | 4. PRD 增量编排与收敛确认 | 3/3 | Completed | 2026-04-16 |
-| 5. 质量复核与交付回放 | 0/3 | Ready to execute | - |
+| 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
