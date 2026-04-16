@@ -74,29 +74,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTK-01 | Phase [TBD] | Pending |
-| INTK-02 | Phase [TBD] | Pending |
-| INTK-03 | Phase [TBD] | Pending |
-| GUID-01 | Phase [TBD] | Pending |
-| GUID-02 | Phase [TBD] | Pending |
-| GUID-03 | Phase [TBD] | Pending |
-| GUID-04 | Phase [TBD] | Pending |
-| DIAG-01 | Phase [TBD] | Pending |
-| DIAG-02 | Phase [TBD] | Pending |
-| DIAG-03 | Phase [TBD] | Pending |
-| PRD-01 | Phase [TBD] | Pending |
-| PRD-02 | Phase [TBD] | Pending |
-| PRD-03 | Phase [TBD] | Pending |
-| PRD-04 | Phase [TBD] | Pending |
-| RVW-01 | Phase [TBD] | Pending |
-| RVW-02 | Phase [TBD] | Pending |
-| RVW-03 | Phase [TBD] | Pending |
+| INTK-01 | Phase 3 | Pending |
+| INTK-02 | Phase 3 | Pending |
+| INTK-03 | Phase 3 | Pending |
+| GUID-01 | Phase 1 | Pending |
+| GUID-02 | Phase 1 | Pending |
+| GUID-03 | Phase 1 | Pending |
+| GUID-04 | Phase 1 | Pending |
+| DIAG-01 | Phase 2 | Pending |
+| DIAG-02 | Phase 2 | Pending |
+| DIAG-03 | Phase 2 | Pending |
+| PRD-01 | Phase 4 | Pending |
+| PRD-02 | Phase 4 | Pending |
+| PRD-03 | Phase 4 | Pending |
+| PRD-04 | Phase 4 | Pending |
+| RVW-01 | Phase 5 | Pending |
+| RVW-02 | Phase 5 | Pending |
+| RVW-03 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17 ⚠️
+- Mapped to phases: 17
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-16*
-*Last updated: 2026-04-16 after initial definition*
+*Last updated: 2026-04-16 after roadmap creation*
