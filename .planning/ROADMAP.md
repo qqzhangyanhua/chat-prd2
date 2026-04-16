@@ -141,7 +141,12 @@ Plans:
   1. Phase 5 存在可审计的 `VERIFICATION.md`，覆盖 review/export/replay 的 requirement-level 证据。
   2. milestone 级 integration / E2E verification artifact 能证明“模糊想法 → 澄清 → 首稿 → PRD → review/export/replay”整条主线可用。
   3. 归档前所有 planning 文档状态一致，不再出现 completed 与 pending 混杂的漂移。
-**Plans**: 0 plans yet
+**Plans**: 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — 生成 `05-VERIFICATION.md`，把 RVW requirements 提升为可审计证据
+- [ ] 08-02-PLAN.md — 生成 `08-INTEGRATION.md` 与 `08-E2E.md`，关闭 `Phase 4 → Phase 5` 与 milestone 主线 gap
+- [ ] 08-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
 
 ## Progress
 
@@ -157,4 +162,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
 | 6. 引导与诊断验证补录 | 3/3 | Completed | 2026-04-16 |
 | 7. 首稿与 PRD 收敛验证补录 | 3/3 | Completed | 2026-04-16 |
-| 8. 交付回放与里程碑验收收口 | 0/0 | Planned | - |
+| 8. 交付回放与里程碑验收收口 | 0/3 | Planned | - |
