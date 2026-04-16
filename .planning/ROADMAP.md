@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: 质量复核与交付回放** - 对 PRD 做基础质量检查，并支持导出与回放分析。
 - [x] **Phase 6: 引导与诊断验证补录** - 为 Phase 1-2 补 phase 级验证证据并校验 guidance 到 diagnostics 的跨阶段链路。
 - [x] **Phase 7: 首稿与 PRD 收敛验证补录** - 为 Phase 3-4 补验证证据并收口首稿到 panel projection 的跨阶段行为。
-- [ ] **Phase 8: 交付回放与里程碑验收收口** - 为 Phase 5 与整条主线补 milestone 级 integration / E2E 验证并完成归档前一致性修正。
+- [x] **Phase 8: 交付回放与里程碑验收收口** - 为 Phase 5 与整条主线补 milestone 级 integration / E2E 验证并完成归档前一致性修正。
 
 ## Phase Details
 
@@ -144,9 +144,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — 生成 `05-VERIFICATION.md`，把 RVW requirements 提升为可审计证据
-- [ ] 08-02-PLAN.md — 生成 `08-INTEGRATION.md` 与 `08-E2E.md`，关闭 `Phase 4 → Phase 5` 与 milestone 主线 gap
-- [ ] 08-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
+- [x] 08-01-PLAN.md — 生成 `05-VERIFICATION.md`，把 RVW requirements 提升为可审计证据
+- [x] 08-02-PLAN.md — 生成 `08-INTEGRATION.md` 与 `08-E2E.md`，关闭 `Phase 4 → Phase 5` 与 milestone 主线 gap
+- [x] 08-03-PLAN.md — 按 verification 结果同步 `REQUIREMENTS.md`、`ROADMAP.md`、`STATE.md`
 
 ## Progress
 
@@ -162,4 +162,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 5. 质量复核与交付回放 | 3/3 | Completed | 2026-04-16 |
 | 6. 引导与诊断验证补录 | 3/3 | Completed | 2026-04-16 |
 | 7. 首稿与 PRD 收敛验证补录 | 3/3 | Completed | 2026-04-16 |
-| 8. 交付回放与里程碑验收收口 | 0/3 | Planned | - |
+| 8. 交付回放与里程碑验收收口 | 3/3 | Completed | 2026-04-16 |
