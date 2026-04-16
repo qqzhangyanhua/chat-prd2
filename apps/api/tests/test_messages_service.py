@@ -580,6 +580,8 @@ def test_handle_user_message_finalize_action_links_reply_version_to_completed_sn
                     "problem": {"title": "核心问题", "content": "需求沟通效率低", "status": "confirmed"},
                     "solution": {"title": "解决方案", "content": "结构化澄清流程", "status": "confirmed"},
                     "mvp_scope": {"title": "MVP 范围", "content": "会话、总结、导出", "status": "confirmed"},
+                    "constraints": {"title": "约束条件", "content": "两周内上线", "status": "confirmed"},
+                    "success_metrics": {"title": "成功指标", "content": "7 天内完成可确认初稿", "status": "confirmed"},
                 },
             },
         },

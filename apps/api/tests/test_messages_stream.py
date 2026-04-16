@@ -333,7 +333,14 @@ def test_message_stream_emits_draft_updated_without_polluting_prd_updated(
     assert draft_payload["sections_changed"] == ["target_user", "success_metrics"]
     assert draft_payload["entry_ids"]
     assert "evidence_registry" not in prd_payload
-    assert "sections_changed" not in prd_payload
+    assert prd_payload["sections_changed"] == ["target_user", "success_metrics"]
+    assert "problem" in prd_payload["missing_sections"]
+    assert isinstance(prd_payload["gap_prompts"], list)
+    assert prd_payload["ready_for_confirmation"] is False
+    assert "risks_to_validate" in prd_payload["sections"]
+    assert "open_questions" in prd_payload["sections"]
+    assert prd_payload["sections"]["target_user"]["title"] == "目标用户"
+    assert prd_payload["sections"]["success_metrics"]["title"] == "成功指标"
 
 
 def test_message_stream_finalize_action_moves_session_to_completed(
@@ -370,7 +377,8 @@ def test_message_stream_finalize_action_moves_session_to_completed(
                         "problem": {"title": "核心问题", "content": "需求沟通效率低", "status": "confirmed"},
                         "solution": {"title": "解决方案", "content": "结构化澄清流程", "status": "confirmed"},
                         "mvp_scope": {"title": "MVP 范围", "content": "会话、总结、导出", "status": "confirmed"},
-                        "constraints": {"title": "约束条件", "content": "两周内上线", "status": "draft"},
+                        "constraints": {"title": "约束条件", "content": "两周内上线", "status": "confirmed"},
+                        "success_metrics": {"title": "成功指标", "content": "7 天内完成可确认初稿", "status": "confirmed"},
                     },
                 },
             },

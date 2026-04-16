@@ -1,5 +1,5 @@
 from app.agent.types import TurnDecision
-from app.services.message_state import build_decision_state_patch
+from app.services.message_state import build_decision_state_patch, merge_readiness_state_patch
 
 
 def _build_turn_decision_with_diagnostics() -> TurnDecision:
@@ -142,3 +142,57 @@ def test_build_decision_state_patch_keeps_structured_prd_draft_and_evidence():
     assert patch["prd_draft"]["sections"]["target_user"]["entries"][0]["assertion_state"] == "confirmed"
     assert patch["prd_draft"]["sections"]["target_user"]["entries"][0]["evidence_ref_ids"] == ["evidence-user-1"]
     assert patch["evidence"][0]["kind"] == "user_message"
+
+
+def test_merge_readiness_state_patch_keeps_to_validate_as_gap_without_marking_missing():
+    state_patch = {
+        "prd_draft": {
+            "version": 3,
+            "status": "drafting",
+            "sections": {
+                "target_user": {
+                    "title": "目标用户",
+                    "completeness": "complete",
+                    "entries": [{"id": "entry-1", "text": "独立开发者", "assertion_state": "confirmed", "evidence_ref_ids": ["evidence-1"]}],
+                },
+                "problem": {
+                    "title": "核心问题",
+                    "completeness": "complete",
+                    "entries": [{"id": "entry-2", "text": "需求确认成本高", "assertion_state": "confirmed", "evidence_ref_ids": ["evidence-2"]}],
+                },
+                "solution": {
+                    "title": "解决方案",
+                    "completeness": "complete",
+                    "entries": [{"id": "entry-3", "text": "AI 协作问答流", "assertion_state": "confirmed", "evidence_ref_ids": ["evidence-3"]}],
+                },
+                "mvp_scope": {
+                    "title": "MVP 范围",
+                    "completeness": "complete",
+                    "entries": [{"id": "entry-4", "text": "只做 Web 端", "assertion_state": "confirmed", "evidence_ref_ids": ["evidence-4"]}],
+                },
+                "constraints": {
+                    "title": "约束条件",
+                    "completeness": "complete",
+                    "entries": [{"id": "entry-5", "text": "首版不做私有化", "assertion_state": "confirmed", "evidence_ref_ids": ["evidence-5"]}],
+                },
+                "success_metrics": {
+                    "title": "成功指标",
+                    "completeness": "complete",
+                    "entries": [{"id": "entry-6", "text": "7 天留存 >= 20%", "assertion_state": "to_validate", "evidence_ref_ids": ["evidence-6"]}],
+                },
+            },
+        },
+        "diagnostic_summary": {
+            "open_count": 1,
+            "unknown_count": 0,
+            "risk_count": 1,
+            "to_validate_count": 1,
+        },
+    }
+
+    merged = merge_readiness_state_patch(state_patch, current_state={})
+
+    assert merged["finalization_ready"] is False
+    assert merged["critic_result"]["status"] == "needs_input"
+    assert merged["critic_result"]["missing_sections"] == []
+    assert any("待验证" in prompt or "风险" in prompt for prompt in merged["critic_result"]["gap_prompts"])

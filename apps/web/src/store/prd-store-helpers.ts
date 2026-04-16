@@ -1,6 +1,6 @@
-import type { PrdState, SessionSnapshotResponse, StateSnapshotResponse } from "../lib/types";
+import type { PrdMeta, PrdSection, PrdState, SessionSnapshotResponse, StateSnapshotResponse } from "../lib/types";
 
-const initialPrdSections: PrdState["sections"] = {
+const initialPrdSections: Record<string, PrdSection> = {
   target_user: {
     title: "目标用户",
     content: "还需要继续明确谁会最频繁、最迫切地使用这个产品。",
@@ -21,9 +21,29 @@ const initialPrdSections: PrdState["sections"] = {
     content: "需要进一步确认首版最小闭环，包括会话、追问、决策沉淀和 PRD 输出。",
     status: "missing",
   },
+  constraints: {
+    title: "约束条件",
+    content: "",
+    status: "missing",
+  },
+  success_metrics: {
+    title: "成功指标",
+    content: "",
+    status: "missing",
+  },
+  risks_to_validate: {
+    title: "待验证 / 风险",
+    content: "",
+    status: "missing",
+  },
+  open_questions: {
+    title: "待确认问题",
+    content: "",
+    status: "missing",
+  },
 };
 
-const initialPrdMeta: PrdState["meta"] = {
+const initialPrdMeta: PrdMeta = {
   stageLabel: "探索中",
   stageTone: "draft",
   criticSummary: "系统正在持续沉淀当前 PRD 草稿。",
@@ -32,40 +52,77 @@ const initialPrdMeta: PrdState["meta"] = {
   nextQuestion: null,
 };
 
-const primaryPrdSectionKeys = ["target_user", "problem", "solution", "mvp_scope"] as const;
-const extraPrdSectionKeys = ["constraints", "success_metrics", "out_of_scope", "open_questions"] as const;
+export const prdPanelSectionOrder = [
+  "target_user",
+  "problem",
+  "solution",
+  "mvp_scope",
+  "constraints",
+  "success_metrics",
+  "risks_to_validate",
+  "open_questions",
+] as const;
+
+const legacyDraftSectionKeys = ["out_of_scope"] as const;
 
 export function createInitialPrdSections(): PrdState["sections"] {
-  return {
-    target_user: { ...initialPrdSections.target_user },
-    problem: { ...initialPrdSections.problem },
-    solution: { ...initialPrdSections.solution },
-    mvp_scope: { ...initialPrdSections.mvp_scope },
-  };
+  return Object.fromEntries(
+    Object.entries(initialPrdSections).map(([key, section]) => [key, { ...section }]),
+  );
 }
 
 export function createInitialPrdMeta(): PrdState["meta"] {
   return { ...initialPrdMeta };
 }
 
-export function createInitialExtraPrdSections(): PrdState["extraSections"] {
-  return {};
+export function createInitialPrdState(): PrdState {
+  return {
+    meta: createInitialPrdMeta(),
+    sectionOrder: [...prdPanelSectionOrder],
+    sections: createInitialPrdSections(),
+    sectionsChanged: [],
+    missingSections: [],
+    gapPrompts: [],
+    readyForConfirmation: false,
+  };
+}
+
+export function deriveExtraPrdSections(
+  state: Pick<StateSnapshotResponse, "prd_draft">,
+): Record<string, PrdSection> {
+  const sections = asRecord(asRecord(state.prd_draft).sections);
+  const nextSections: Record<string, PrdSection> = {};
+  const legacyExtraKeys = new Set<string>([
+    "constraints",
+    "success_metrics",
+    "open_questions",
+    "out_of_scope",
+  ]);
+
+  for (const [key, value] of Object.entries(sections)) {
+    if (!legacyExtraKeys.has(key)) {
+      continue;
+    }
+    const normalized = normalizePrdSection(key, value);
+    if (!normalized || !normalized.content.trim()) {
+      continue;
+    }
+    nextSections[key] = normalized;
+  }
+
+  return nextSections;
 }
 
 export function normalizePrdSection(
   key: string,
   value: unknown,
-): PrdState["sections"][string] | null {
+): PrdSection | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
 
   const record = value as Record<string, unknown>;
   const content = typeof record.content === "string" ? record.content : "";
-  if (!content.trim()) {
-    return null;
-  }
-
   const title = typeof record.title === "string" && record.title ? record.title : key;
   const status =
     record.status === "confirmed" ||
@@ -77,40 +134,35 @@ export function normalizePrdSection(
   return { content, title, status };
 }
 
-export function derivePrimaryPrdSections(
-  state: Record<string, unknown>,
-  snapshotSections: SessionSnapshotResponse["prd_snapshot"]["sections"],
-): PrdState["sections"] {
-  const prdDraft = asRecord(state.prd_draft);
-  const draftSections = asRecord(prdDraft.sections);
-
-  return Object.fromEntries(
-    primaryPrdSectionKeys.map((key) => {
-      const draftSection = normalizePrdSection(key, draftSections[key]);
-      const snapshotSection = normalizePrdSection(key, snapshotSections[key]);
-      const fallbackSection = createInitialPrdSections()[key];
-
-      return [key, draftSection ?? snapshotSection ?? fallbackSection];
-    }),
-  );
-}
-
-export function deriveExtraPrdSections(state: StateSnapshotResponse): PrdState["extraSections"] {
-  const prdDraft = asRecord(state.prd_draft);
-  const rawSections = asRecord(prdDraft.sections);
-  const extraSections: PrdState["extraSections"] = {};
-
-  for (const key of extraPrdSectionKeys) {
-    const normalized = normalizePrdSection(key, rawSections[key]);
-    if (normalized) {
-      extraSections[key] = normalized;
-    }
+function mergePrdMeta(base: PrdMeta, value: unknown): PrdMeta {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return base;
   }
 
-  return extraSections;
+  const record = value as Record<string, unknown>;
+  const stageTone =
+    record.stageTone === "draft" ||
+    record.stageTone === "ready" ||
+    record.stageTone === "final"
+      ? record.stageTone
+      : base.stageTone;
+
+  return {
+    stageLabel: typeof record.stageLabel === "string" ? record.stageLabel : base.stageLabel,
+    stageTone,
+    criticSummary: typeof record.criticSummary === "string" ? record.criticSummary : base.criticSummary,
+    criticGaps: Array.isArray(record.criticGaps) ? asStringArray(record.criticGaps) : base.criticGaps,
+    draftVersion: typeof record.draftVersion === "number" ? record.draftVersion : base.draftVersion,
+    nextQuestion:
+      record.nextQuestion === null
+        ? null
+        : typeof record.nextQuestion === "string"
+          ? record.nextQuestion
+          : base.nextQuestion,
+  };
 }
 
-export function derivePrdMeta(state: StateSnapshotResponse): PrdState["meta"] {
+export function derivePrdMeta(state: StateSnapshotResponse): PrdMeta {
   const workflowStage = asString(state.workflow_stage);
   const finalizationReady = asBoolean(state.finalization_ready) ?? false;
   const prdDraft = asRecord(state.prd_draft);
@@ -123,7 +175,7 @@ export function derivePrdMeta(state: StateSnapshotResponse): PrdState["meta"] {
   const nextQuestion = questionQueue[0] ?? null;
 
   let stageLabel = "探索中";
-  let stageTone: PrdState["meta"]["stageTone"] = "draft";
+  let stageTone: PrdMeta["stageTone"] = "draft";
 
   if (workflowStage === "completed" || draftStatus === "finalized") {
     stageLabel = "已生成终稿";
@@ -157,29 +209,83 @@ export function derivePrdMeta(state: StateSnapshotResponse): PrdState["meta"] {
   };
 }
 
-export function normalizeIncomingPrdSections(
-  sections: Record<string, PrdState["sections"][string]>,
-): Pick<PrdState, "sections" | "extraSections"> {
-  const nextSections: PrdState["sections"] = {};
-  const nextExtraSections: PrdState["extraSections"] = {};
-
-  for (const key of primaryPrdSectionKeys) {
+function normalizeSectionMap(sections: Record<string, unknown>): Record<string, PrdSection> {
+  const nextSections = createInitialPrdSections();
+  for (const key of prdPanelSectionOrder) {
     const normalized = normalizePrdSection(key, sections[key]);
     if (normalized) {
       nextSections[key] = normalized;
     }
   }
 
-  for (const key of extraPrdSectionKeys) {
+  for (const key of legacyDraftSectionKeys) {
     const normalized = normalizePrdSection(key, sections[key]);
+    if (normalized && normalized.content.trim()) {
+      nextSections[key] = normalized;
+    }
+  }
+
+  return nextSections;
+}
+
+export function normalizePrdSnapshotState(
+  snapshot: SessionSnapshotResponse,
+): PrdState {
+  const snapshotSections = asRecord(snapshot.prd_snapshot.sections);
+  const draftSections = asRecord(asRecord(snapshot.state.prd_draft).sections);
+  const derivedMeta = derivePrdMeta(snapshot.state);
+  const nextSections = normalizeSectionMap({
+    ...snapshotSections,
+    ...draftSections,
+  });
+
+  return {
+    meta: mergePrdMeta(derivedMeta, snapshot.prd_snapshot.meta),
+    sectionOrder: [...prdPanelSectionOrder],
+    sections: nextSections,
+    sectionsChanged: asStringArray(snapshot.prd_snapshot.sections_changed),
+    missingSections: asStringArray(snapshot.prd_snapshot.missing_sections),
+    gapPrompts: asStringArray(snapshot.prd_snapshot.gap_prompts),
+    readyForConfirmation: snapshot.prd_snapshot.ready_for_confirmation === true,
+  };
+}
+
+export function normalizeIncomingPrdPanelUpdate(
+  currentPrd: PrdState,
+  data: {
+    sections: Record<string, unknown>;
+    meta?: unknown;
+    sections_changed?: string[];
+    missing_sections?: string[];
+    gap_prompts?: string[];
+    ready_for_confirmation?: boolean;
+  },
+): PrdState {
+  const mergedSections = { ...currentPrd.sections };
+  for (const key of Object.keys(data.sections ?? {})) {
+    const normalized = normalizePrdSection(key, data.sections[key]);
     if (normalized) {
-      nextExtraSections[key] = normalized;
+      mergedSections[key] = normalized;
     }
   }
 
   return {
-    sections: nextSections,
-    extraSections: nextExtraSections,
+    meta: mergePrdMeta(currentPrd.meta, data.meta),
+    sectionOrder: [...currentPrd.sectionOrder],
+    sections: mergedSections,
+    sectionsChanged: Array.isArray(data.sections_changed)
+      ? data.sections_changed.filter((entry): entry is string => typeof entry === "string")
+      : currentPrd.sectionsChanged,
+    missingSections: Array.isArray(data.missing_sections)
+      ? data.missing_sections.filter((entry): entry is string => typeof entry === "string")
+      : currentPrd.missingSections,
+    gapPrompts: Array.isArray(data.gap_prompts)
+      ? data.gap_prompts.filter((entry): entry is string => typeof entry === "string")
+      : currentPrd.gapPrompts,
+    readyForConfirmation:
+      typeof data.ready_for_confirmation === "boolean"
+        ? data.ready_for_confirmation
+        : currentPrd.readyForConfirmation,
   };
 }
 

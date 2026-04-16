@@ -136,6 +136,19 @@ def _build_draft_updated_event_data(state_patch: dict[str, object]) -> dict[str,
     ).model_dump()
 
 
+def _build_prd_updated_event_payload(
+    state: dict[str, object],
+    state_patch: dict[str, object],
+    prd_patch: dict[str, object],
+) -> dict[str, object]:
+    payload = _build_prd_updated_event_data(state, state_patch, prd_patch)
+    payload["sections_changed"] = list(payload.get("sections_changed", []))
+    payload["missing_sections"] = list(payload.get("missing_sections", []))
+    payload["gap_prompts"] = list(payload.get("gap_prompts", []))
+    payload["ready_for_confirmation"] = bool(payload.get("ready_for_confirmation"))
+    return payload
+
+
 def _require_turn_decision(agent_result: object) -> object:
     return _require_turn_decision_impl(agent_result)
 
@@ -560,13 +573,13 @@ def stream_user_message_events(
             raise
 
         if finalized_transition is None:
-            prd_updated_payload = _build_prd_updated_event_data(
+            prd_updated_payload = _build_prd_updated_event_payload(
                 prepared.state,
                 prepared.state_patch,
                 prepared.prd_patch,
             )
         else:
-            prd_updated_payload = _build_prd_updated_event_data(
+            prd_updated_payload = _build_prd_updated_event_payload(
                 finalized_transition.state,
                 {},
                 {},
@@ -742,7 +755,7 @@ def stream_regenerate_message_events(
 
         yield MessageStreamEvent(
             type="prd.updated",
-            data=_build_prd_updated_event_data(
+            data=_build_prd_updated_event_payload(
                 prepared.state,
                 prepared.state_patch,
                 prepared.prd_patch,

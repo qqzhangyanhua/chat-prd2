@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from app.agent.extractor import normalize_text
+from app.services.prd_runtime import build_prd_updated_event_data
 
 FINALIZE_CONFIRM_PHRASES = (
     "确认设计",
@@ -126,18 +127,29 @@ def normalize_finalize_preference(preference: str | None) -> str | None:
     return normalized if normalized in FINALIZE_PREFERENCES else None
 
 
-def build_finalized_sections(prd_draft: dict, preference: str) -> dict[str, dict[str, str]]:
-    sections = normalize_prd_draft_sections(prd_draft)
+def _normalize_panel_section_status(status: str | None, *, keep_draft: bool = False) -> str:
+    if keep_draft:
+        return "draft"
+    if status == "missing":
+        return "missing"
+    return "confirmed"
 
-    summary = sections["summary"]["content"]
+
+def build_finalized_sections(state: dict, preference: str) -> dict[str, dict[str, str]]:
+    prd_draft = state.get("prd_draft") if isinstance(state.get("prd_draft"), dict) else {}
+    sections = deepcopy(build_prd_updated_event_data(state, {}, {}).get("sections", {}))
+    draft_sections = normalize_prd_draft_sections(prd_draft)
+
+    summary = draft_sections["summary"]["content"]
     target_user = sections["target_user"]["content"]
     problem = sections["problem"]["content"]
     solution = sections["solution"]["content"]
     mvp_scope = sections["mvp_scope"]["content"]
     constraints = sections["constraints"]["content"]
     success_metrics = sections["success_metrics"]["content"]
-    out_of_scope = sections["out_of_scope"]["content"]
-    open_questions = sections["open_questions"]["content"]
+    out_of_scope = draft_sections["out_of_scope"]["content"]
+    risks_to_validate = sections.get("risks_to_validate", {}).get("content", "")
+    open_questions = sections.get("open_questions", {}).get("content", "")
 
     if preference == "technical" and constraints:
         solution = f"{solution}\n\n技术约束：{constraints}".strip()
@@ -153,5 +165,14 @@ def build_finalized_sections(prd_draft: dict, preference: str) -> dict[str, dict
         "constraints": normalize_section("约束条件", constraints, "confirmed" if constraints else "missing"),
         "success_metrics": normalize_section("成功指标", success_metrics, "confirmed" if success_metrics else "missing"),
         "out_of_scope": normalize_section("不做清单", out_of_scope, "confirmed" if out_of_scope else "missing"),
-        "open_questions": normalize_section("待确认问题", open_questions, "draft" if open_questions else "missing"),
+        "risks_to_validate": normalize_section(
+            "待验证 / 风险",
+            risks_to_validate,
+            _normalize_panel_section_status(sections.get("risks_to_validate", {}).get("status"), keep_draft=True),
+        ),
+        "open_questions": normalize_section(
+            "待确认问题",
+            open_questions,
+            _normalize_panel_section_status(sections.get("open_questions", {}).get("status"), keep_draft=True),
+        ),
     }

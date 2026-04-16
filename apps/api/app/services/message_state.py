@@ -478,7 +478,7 @@ def merge_readiness_state_patch(
         readiness_state["prd_snapshot"] = current_state.get("prd_snapshot")
     readiness = evaluate_finalize_readiness(readiness_state)
 
-    patch.setdefault("finalization_ready", bool(readiness["ready"]))
+    patch.setdefault("finalization_ready", bool(readiness.get("ready_for_confirmation", readiness["ready"])))
     patch.setdefault("critic_result", readiness["critic_result"])
 
     if "workflow_stage" not in patch:
