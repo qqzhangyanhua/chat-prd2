@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: active
-stopped_at: 已完成 Phase 03 执行，结构化首稿、证据追溯、draft.updated 与会话列首稿 UI 已贯通
-last_updated: "2026-04-16T03:55:00.000Z"
+status: unknown
+stopped_at: Completed 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang-01-PLAN.md
+last_updated: "2026-04-16T05:30:40.697Z"
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  completed_phases: 4
+  total_plans: 15
+  completed_plans: 13
 ---
 
 # Project State
@@ -19,18 +19,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-16)
 
 **Core value:** 把个人开发者脑中模糊的产品想法持续压实成可确认、可执行的 PRD，而不是停留在泛泛陪聊。
-**Current focus:** Phase 04 — prd-zeng-liang-bian-pai-yu-shou-lian-que-ren
+**Current focus:** Phase 05 — zhi-liang-fu-he-yu-jiao-fu-hui-fang
 
 ## Current Position
 
-Phase: 04 (prd-zeng-liang-bian-pai-yu-shou-lian-que-ren) — READY TO PLAN
-Plan: 0 of 0
+Phase: 05 (zhi-liang-fu-he-yu-jiao-fu-hui-fang) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 12
 - Average duration: 52 min
 - Total execution time: 5.2 hours
 
@@ -41,11 +41,15 @@ Plan: 0 of 0
 | 01 | 3 | 2.8h | 55 min |
 | 02 | 3 | 2.4h | 48 min |
 | 03 | 3 | 2.1h | 42 min |
+| 04 | 3 | 2.2h | 44 min |
+| 05 | 3 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: 02-02, 02-03, 03-01, 03-02, 03-03
+- Last 5 plans: 04-01, 04-02, 04-03, 05-01, 05-02, 05-03
 - Trend: Stable
+
+| Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang P01 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -60,6 +64,12 @@ Recent decisions affecting current work:
 - Phase 3 planning: 首稿继续复用 persisted `prd_draft` 作为内容真源，`state.evidence` 作为证据 registry，`turn_decisions` 仅记录每轮增量摘要。
 - Phase 3 execution: `draft.updated` 与 `prd.updated` 已严格分层；会话列承载首稿与来源追溯，右侧 `PrdPanel` 保持 runtime preview 角色。
 - Phase 4: PRD 收敛采用章节化、增量更新路径，而不是整篇重写。
+- Phase 4 planning: `state.prd_draft/state.evidence` 继续做真源，`prd.updated` 升级成只服务右侧 panel 的章节化投影 contract，并统一承载 changed sections、gap prompts 与 ready-for-confirmation。
+- Phase 4 execution (04-01): readiness 改为 entry/completeness aware；session snapshot 与 `prd.updated` 共用同一套 panel projection；legacy `prd meta` contract 保持兼容。
+- Phase 4 execution (04-02): SSE、snapshot、finalize、export 现已复用统一 panel payload；finalize 改为以 readiness projector 为准，导出保留风险与待确认摘要。
+- Phase 4 execution (04-03): 前端 `prd` store 与右侧 `PrdPanel` 已消费章节化 panel contract，支持 changed section、gap prompts、ready-for-confirmation，并保持 first-draft/evidence 继续留在会话列。
+- Phase 5 planning: 质量复核使用独立 `review contract`；导出继续复用后端 projection；回放先做单会话 timeline 聚合，不新增持久化层。
+- [Phase 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang]: 质量复核独立于 panel projection，通过 prd_review sibling 字段暴露，避免污染 prd_snapshot contract。
 
 ### Pending Todos
 
@@ -68,10 +78,10 @@ None yet.
 ### Blockers/Concerns
 
 - 前端 mode switch 目前仅做提示，不支持主动切换，这一点在后续阶段仍需评估。
-- Phase 4 需要在不破坏当前 first-draft / evidence contract 的前提下，把右侧 `PrdPanel` 升级成按章节增量收敛视图。
+- Phase 05-01 已完成，下一步执行 05-02 导出链路与 05-03 replay timeline。
 
 ## Session Continuity
 
-Last session: 2026-04-16 10:35 CST
-Stopped at: 已完成 Phase 03 执行，下一步进入 Phase 04 规划
+Last session: 2026-04-16T05:30:40.694Z
+Stopped at: Completed 05-zhi-liang-fu-he-yu-jiao-fu-hui-fang-01-PLAN.md
 Resume file: None

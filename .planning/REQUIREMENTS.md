@@ -35,7 +35,7 @@ Requirements for the current enhancement release. Each maps to roadmap phases.
 
 ### Review & Handoff
 
-- [ ] **RVW-01**: 系统必须对当前 PRD 给出基础质量检查，至少覆盖目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度
+- [x] **RVW-01**: 系统必须对当前 PRD 给出基础质量检查，至少覆盖目标清晰度、范围边界、成功标准、风险暴露和待验证项完整度
 - [ ] **RVW-02**: 用户确认后，系统可以导出可复制或可下载的结构化 PRD 文本，保留章节与待验证项
 - [ ] **RVW-03**: 系统需要保留引导决策、问题诊断与 PRD 变更记录，以便后续回放、调优与质量评测
 
@@ -88,7 +88,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRD-02 | Phase 4 | Pending |
 | PRD-03 | Phase 4 | Pending |
 | PRD-04 | Phase 4 | Pending |
-| RVW-01 | Phase 5 | Pending |
+| RVW-01 | Phase 5 | Complete |
 | RVW-02 | Phase 5 | Pending |
 | RVW-03 | Phase 5 | Pending |
 
